@@ -659,6 +659,8 @@ class ContextBundle(ContractModel):
     character_count: int = Field(default=0, ge=0)
     token_estimate: int = Field(default=0, ge=0)
     token_budget: int = Field(default=0, ge=0)
+    # Selection audit: what was included/omitted and why (not prompt content).
+    composition: dict[str, Any] = Field(default_factory=dict)
 
 
 class SearchResult(ContractModel):

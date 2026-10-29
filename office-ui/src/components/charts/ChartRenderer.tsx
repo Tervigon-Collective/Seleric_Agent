@@ -4,6 +4,7 @@ import { useShellStore } from '../../stores/shell';
 import { useConversationStore } from '../../stores/conversation';
 import { CheckIcon, CopyIcon, DownloadIcon, ExpandIcon, ShrinkIcon, ResetZoomIcon, ImageIcon } from '../icons';
 import {
+  CHART_TYPES,
   normalizeChartType,
   type ChartType,
 } from '../../api/chartContract';
@@ -12,6 +13,8 @@ import { buildFollowUp, buildPointContext } from '../../api/drillContext';
 export interface ChartSeries {
   key: string;
   name?: string;
+  /** Metric id the series was drawn from (the backend keeps it so axes are assigned by metric, not by label). */
+  metric?: string;
   type?: string;
   stack?: string;
   yAxisIndex?: number;
@@ -36,8 +39,17 @@ export interface CausalGraphLink {
   classification?: string | null;
 }
 
+/** Series of a different kind or size drawn in their own panel (own axis, shared x) instead of on twin axes. */
+export interface ChartPanel {
+  title: string;
+  unit?: string;
+  series: string[];
+  mark?: 'bar' | 'line';
+}
+
 export interface ChartSpec {
   chart_type: string;
+  panels?: ChartPanel[];
   title?: string;
   metrics: string[];
   dimensions: string[];
@@ -64,7 +76,7 @@ const PALETTE = [
 ];
 
 /** Forms drawn as flat bars rather than as a continuous line. */
-const FLAT_MARK_FORMS = new Set(['bar', 'stacked_bar', 'grouped_bar']);
+const FLAT_MARK_FORMS = new Set(['bar', 'horizontal_bar', 'stacked_bar', 'grouped_bar', 'combo']);
 
 export interface ChartThemeColors {
   text: string;
@@ -163,7 +175,8 @@ export function formatChartValue(value: unknown): string {
   const abs = Math.abs(value);
   const fractionDigits = abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
   // Trim trailing zeros (389.50 -> 389.5) without ever showing float noise.
-  const text = value.toLocaleString('en-US', {
+  // Indian grouping (22,53,608), as the answer text writes it.
+  const text = value.toLocaleString('en-IN', {
     minimumFractionDigits: 0,
     maximumFractionDigits: fractionDigits,
   });
@@ -173,18 +186,10 @@ export function formatChartValue(value: unknown): string {
 function formatAxisTick(value: unknown): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return String(value ?? '');
   const abs = Math.abs(value);
-  if (abs >= 1_000_000) {
-    const trimmed = (value / 1_000_000).toLocaleString('en-US', { maximumFractionDigits: 1 });
-    return `${trimmed}M`;
-  }
-  if (abs >= 10_000) {
-    const trimmed = (value / 1_000).toLocaleString('en-US', { maximumFractionDigits: 0 });
-    return `${trimmed}k`;
-  }
-  if (abs >= 1_000) {
-    const trimmed = (value / 1_000).toLocaleString('en-US', { maximumFractionDigits: 1 });
-    return `${trimmed}k`;
-  }
+  const trimmed = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 1 });
+  if (abs >= 10_000_000) return `${trimmed(value / 10_000_000)}Cr`;
+  if (abs >= 100_000) return `${trimmed(value / 100_000)}L`;
+  if (abs >= 1_000) return `${trimmed(value / 1_000)}k`;
   return formatChartValue(value);
 }
 
@@ -473,6 +478,7 @@ function cartesianSeries(spec: ChartSpec, mark?: CartesianMark): Array<Record<st
 }
 
 function renderCartesian(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
+  if ((spec.panels?.length ?? 0) > 1) return renderPanels(spec, theme, opts);
   const option = baseOption(spec, theme, opts);
   withCartesianAxes(option, spec, theme, opts);
   option.dataset = {
@@ -480,6 +486,202 @@ function renderCartesian(spec: ChartSpec, theme: ChartThemeColors, opts: RenderO
     source: spec.data,
   };
   option.series = cartesianSeries(spec, opts.mark);
+  return option;
+}
+
+const PANEL_BLOCK_PX = 128;
+const PANEL_TOP_PX = 30;
+const PANEL_BOTTOM_PX = 56;
+
+/** Pixel height a spec wants: panels and long rankings grow with their content, the rest use the default. */
+export function chartHeightPx(spec: ChartSpec): number {
+  const panels = spec.panels?.length ?? 0;
+  if (panels > 1) return PANEL_TOP_PX + panels * PANEL_BLOCK_PX + PANEL_BOTTOM_PX;
+  if (normalizeChartType(spec.chart_type) === 'horizontal_bar') {
+    return Math.min(620, Math.max(260, 96 + (Array.isArray(spec.data) ? spec.data.length : 0) * 28));
+  }
+  if (normalizeChartType(spec.chart_type) === 'waterfall') return (Array.isArray(spec.data) ? spec.data.length : 0) > 6 ? 380 : 320;
+  return 300;
+}
+
+function axisLabelStyle(theme: ChartThemeColors, extra: Record<string, unknown> = {}) {
+  return { color: theme.dim, fontSize: 11, fontFamily: 'inherit', ...extra };
+}
+
+/** One small chart per panel, stacked, sharing the x axis: a count is never read against a rupee scale. */
+function renderPanels(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
+  const panels = spec.panels ?? [];
+  const option = baseOption(spec, theme, opts);
+  const xKey = spec.xAxis?.key ?? 'name';
+  const single = panels.every((p) => p.series.length <= 1);
+  option.title = [
+    option.title as Record<string, unknown>,
+    ...panels.map((panel, i) => ({
+      text: panel.unit && panel.unit !== 'val' ? `${panel.title} (${panel.unit})` : panel.title,
+      left: 56,
+      top: PANEL_TOP_PX + i * PANEL_BLOCK_PX + 2,
+      textStyle: { color: theme.dim, fontSize: 11, fontWeight: 600, fontFamily: 'inherit' },
+    })),
+  ];
+  option.legend = single ? { show: false } : { ...(option.legend as Record<string, unknown>), bottom: 0 };
+  option.grid = panels.map((_, i) => ({
+    left: 56, right: 24, top: PANEL_TOP_PX + i * PANEL_BLOCK_PX + 22, height: PANEL_BLOCK_PX - 40,
+  }));
+  option.xAxis = panels.map((_, i) => ({
+    type: 'category', gridIndex: i,
+    axisLine: { lineStyle: { color: theme.lineStrong } },
+    axisTick: { show: false },
+    axisLabel: i === panels.length - 1 ? axisLabelStyle(theme, { hideOverlap: true }) : { show: false },
+    axisPointer: { show: true },
+  }));
+  option.yAxis = panels.map((_, i) => ({
+    type: 'value', gridIndex: i, splitNumber: 2, scale: false,
+    splitLine: { lineStyle: { color: theme.line, type: 'dashed' } },
+    axisLabel: axisLabelStyle(theme, { formatter: (v: unknown) => formatAxisTick(v) }),
+  }));
+  option.dataset = { dimensions: [xKey, ...(spec.series ?? []).map((s) => s.key)], source: spec.data };
+  option.axisPointer = { link: [{ xAxisIndex: 'all' }] };
+  option.series = panels.flatMap((panel, i) =>
+    (spec.series ?? []).filter((s) => panel.series.includes(s.key)).map((s) => {
+      const mark = opts.mark ?? panel.mark ?? 'line';
+      const palette = (spec.series ?? []).findIndex((x) => x.key === s.key);
+      return {
+        type: mark, name: s.name ?? s.key, xAxisIndex: i, yAxisIndex: i,
+        encode: { x: xKey, y: s.key },
+        itemStyle: { color: PALETTE[palette % PALETTE.length], borderRadius: mark === 'bar' ? [3, 3, 0, 0] : 0 },
+        lineStyle: mark === 'line' ? { width: 2 } : undefined,
+        areaStyle: spec.chart_type === 'area' ? { opacity: 0.12 } : undefined,
+        barMaxWidth: 28, symbolSize: 5, smooth: false, connectNulls: false,
+      };
+    }),
+  );
+  if ((spec.data?.length ?? 0) > 8) option.dataZoom = [{ type: 'inside', xAxisIndex: 'all', filterMode: 'filter' }];
+  return option;
+}
+
+/** A ranking: names on the y axis (never rotated or clipped), largest first, value labels at the bar ends. */
+function renderHorizontalBar(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
+  const option = baseOption(spec, theme, opts);
+  const series = spec.series ?? [];
+  option.legend = series.length > 1 ? option.legend : { show: false };
+  option.grid = { left: 12, right: 56, top: 40, bottom: series.length > 1 ? 34 : 12, containLabel: true };
+  option.xAxis = {
+    type: 'value',
+    splitLine: { lineStyle: { color: theme.line, type: 'dashed' } },
+    axisLabel: axisLabelStyle(theme, { formatter: (v: unknown) => formatAxisTick(v) }),
+  };
+  option.yAxis = {
+    type: 'category', inverse: true,
+    axisLine: { lineStyle: { color: theme.lineStrong } },
+    axisTick: { show: false },
+    axisLabel: axisLabelStyle(theme, { width: 250, overflow: 'truncate', interval: 0 }),
+  };
+  option.dataset = { dimensions: ['name', ...series.map((s) => s.key)], source: spec.data };
+  option.series = series.map((s) => ({
+    type: 'bar', name: s.name ?? s.key, encode: { x: s.key, y: 'name' },
+    itemStyle: { borderRadius: [0, 3, 3, 0] }, barMaxWidth: 22,
+    label: {
+      show: series.length === 1, position: 'right', color: theme.dim, fontSize: 11, fontFamily: 'inherit',
+      formatter: (p: { value?: Record<string, unknown> }) => formatChartValue(p.value?.[s.key]),
+    },
+  }));
+  option.tooltip = { ...(option.tooltip as Record<string, unknown>), trigger: 'axis' };
+  return option;
+}
+
+/** Bars for the volume and a line for the rate, each axis tinted like its series. */
+function renderCombo(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
+  const option = renderCartesian(spec, theme, { ...opts, mark: undefined });
+  const series = spec.series ?? [];
+  option.series = series.map((s, i) => ({
+    type: s.type === 'line' ? 'line' : 'bar', name: s.name ?? s.key, yAxisIndex: s.yAxisIndex ?? 0,
+    encode: { x: spec.xAxis?.key, y: s.key },
+    itemStyle: { color: PALETTE[i % PALETTE.length], borderRadius: s.type === 'line' ? 0 : [3, 3, 0, 0] },
+    lineStyle: { width: 2.5 }, symbolSize: 6, smooth: false, connectNulls: false, barMaxWidth: 36,
+    z: s.type === 'line' ? 3 : 2,
+  }));
+  const axes = option.yAxis as Array<Record<string, unknown>>;
+  axes.forEach((axis, index) => {
+    const owner = series.findIndex((s) => (s.yAxisIndex ?? 0) === index);
+    const color = PALETTE[Math.max(owner, 0) % PALETTE.length];
+    axis.axisLabel = { ...(axis.axisLabel as Record<string, unknown>), color };
+    axis.nameTextStyle = { color, fontSize: 11, fontFamily: 'inherit' };
+    if (index > 0) axis.splitLine = { show: false };
+  });
+  return option;
+}
+
+const WATERFALL_UP = '#30D158';
+const WATERFALL_DOWN = '#FF453A';
+
+/** Signed steps from zero to a closing total (or from a start total to an end total for a bridge). */
+function renderWaterfall(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
+  const option = baseOption(spec, theme, opts);
+  const rows = Array.isArray(spec.data) ? spec.data : [];
+  let running = 0;
+  const bars = rows.map((row, i) => {
+    const value = Number(row.value) || 0;
+    const kind = String(row.kind ?? 'delta');
+    const from = kind === 'delta' ? running : 0;
+    const to = kind === 'delta' ? running + value : value;
+    if (kind !== 'total') running = kind === 'delta' ? to : value;
+    const color = kind === 'delta' ? (value >= 0 ? WATERFALL_UP : WATERFALL_DOWN) : theme.accent;
+    return { value: [i, Math.min(from, to), Math.max(from, to), value, kind], itemStyle: { color } };
+  });
+  option.legend = { show: false };
+  const crowded = rows.length > 6;  // many steps: tilt the names instead of letting them run into each other
+  option.grid = { left: '3%', right: '4%', top: 44, bottom: crowded ? 24 : 40, containLabel: true };
+  option.xAxis = {
+    type: 'category', data: rows.map((r) => String(r.name ?? '')),
+    axisLine: { lineStyle: { color: theme.lineStrong } }, axisTick: { show: false },
+    axisLabel: axisLabelStyle(theme, crowded
+      ? { hideOverlap: false, interval: 0, rotate: 30, width: 140, overflow: 'truncate' }
+      : { hideOverlap: false, interval: 0, width: 110, overflow: 'break' }),
+  };
+  option.yAxis = {
+    type: 'value', name: spec.yAxis?.[0]?.name as string | undefined,
+    nameTextStyle: { color: theme.faint, fontSize: 11, fontFamily: 'inherit' },
+    splitLine: { lineStyle: { color: theme.line, type: 'dashed' } },
+    axisLabel: axisLabelStyle(theme, { formatter: (v: unknown) => formatAxisTick(v) }),
+  };
+  option.tooltip = {
+    ...(option.tooltip as Record<string, unknown>), trigger: 'item',
+    formatter: (p: { name?: string; value?: unknown[] }) =>
+      `${p.name ?? ''}<br/><b>${formatChartValue(Array.isArray(p.value) ? p.value[3] : '')}</b>`,
+  };
+  option.series = [{
+    type: 'custom', name: spec.series?.[0]?.name ?? 'Value', data: bars,
+    encode: { x: 0, y: [1, 2] },
+    renderItem: (_params: unknown, api: Record<string, (...a: any[]) => any>) => {
+      const x = api.value(0), low = api.value(1), high = api.value(2), signed = api.value(3);
+      const top = api.coord([x, high]), bottom = api.coord([x, low]);
+      const width = Math.min(56, api.size([1, 0])[0] * 0.6);
+      const label = formatChartValue(signed);
+      return {
+        type: 'group',
+        children: [
+          { type: 'rect', shape: { x: top[0] - width / 2, y: top[1], width, height: Math.max(bottom[1] - top[1], 1) }, style: api.style() },
+          { type: 'text', style: { text: label, x: top[0], y: top[1] - 6, textAlign: 'center', textVerticalAlign: 'bottom', fill: theme.dim, fontSize: 11, fontFamily: 'inherit' } },
+        ],
+      };
+    },
+  }];
+  return option;
+}
+
+/** Many shares of a whole: area proportional to value (a pie past a handful of slices stops being readable). */
+function renderTreemap(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
+  const option = baseOption(spec, theme, opts);
+  (option.tooltip as Record<string, unknown>).trigger = 'item';
+  (option.tooltip as Record<string, unknown>).valueFormatter = (value: unknown) => formatChartValue(value);
+  option.legend = { show: false };
+  option.series = [{
+    type: 'treemap', name: spec.series?.[0]?.name ?? 'Value', roam: false, nodeClick: false, breadcrumb: { show: false },
+    top: 36, left: 0, right: 0, bottom: 4,
+    data: (spec.data ?? []).map((row, i) => ({ name: row.name, value: row.value, itemStyle: { color: PALETTE[i % PALETTE.length] } })),
+    label: { show: true, color: '#ffffff', fontSize: 11, fontFamily: 'inherit', overflow: 'truncate', formatter: (p: { name?: string; value?: unknown }) => `${p.name ?? ''}\n${formatChartValue(p.value)}` },
+    itemStyle: { borderColor: theme.panel, borderWidth: 2, gapWidth: 2 },
+  }];
   return option;
 }
 
@@ -676,8 +878,12 @@ const RENDERERS: Record<ChartType, Renderer> = {
   line: renderCartesian,
   area: renderCartesian,
   bar: renderCartesian,
+  horizontal_bar: renderHorizontalBar,
   stacked_bar: renderCartesian,
   grouped_bar: renderCartesian,
+  combo: renderCombo,
+  waterfall: renderWaterfall,
+  treemap: renderTreemap,
   scatter: renderScatter,
   pie: (spec, theme, opts) => renderSlices(spec, 'pie', theme, opts),
   donut: (spec, theme, opts) => renderSlices(spec, 'donut', theme, opts),
@@ -790,7 +996,12 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
     () => (Array.isArray(spec.data) ? spec.data.filter((r) => r && typeof r === 'object') : []),
     [spec.data],
   );
-  const dataColumns = useMemo(() => Array.from(new Set(rows.flatMap((row) => Object.keys(row)))), [rows]);
+  // Stored rows lose key order: lead with the x axis, then the series in the order the spec lists them.
+  const dataColumns = useMemo(() => {
+    const present = new Set(rows.flatMap((row) => Object.keys(row)));
+    const preferred = [spec.xAxis?.key, ...(spec.series ?? []).map((x) => x.key)].filter((c): c is string => !!c && present.has(c));
+    return [...new Set([...preferred, ...present])];
+  }, [rows, spec.xAxis?.key, spec.series]);
   const dimensionCol = spec.xAxis?.key && dataColumns.includes(spec.xAxis.key) ? spec.xAxis.key : dataColumns[0];
 
   const chartType = useMemo(() => normalizeChartType(spec?.chart_type), [spec?.chart_type]);
@@ -875,8 +1086,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
     return (
       <p className="empty-note" role="alert">
         This chart uses an unsupported form{unsupported ? ` (${unsupported})` : ''}.
-        Supported forms: line, area, bar, stacked_bar, grouped_bar, pie, donut, funnel, scatter,
-        radar, heatmap, causal_graph.
+        Supported forms: {CHART_TYPES.join(', ')}.
       </p>
     );
   }
@@ -946,7 +1156,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
         <p className="chart-hint" role="status">{(spec.warnings ?? []).join(' ')}</p>
       )}
       {view === 'chart' ? (
-        <div style={{ width: '100%', height: '300px' }}>
+        <div style={{ width: '100%', height: `${chartHeightPx(spec)}px` }}>
           <ReactECharts
             option={options ?? {}}
             style={{ height: '100%', width: '100%' }}
@@ -1042,7 +1252,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
             </>
           }
         >
-          <div style={{ width: '100%', height: '56vh', minHeight: 320 }}>
+          <div style={{ width: '100%', height: chartHeightPx(spec) > 300 ? `${chartHeightPx(spec)}px` : '56vh', minHeight: 320 }}>
             <ReactECharts
               option={expandedOptions ?? {}}
               style={{ height: '100%', width: '100%' }}

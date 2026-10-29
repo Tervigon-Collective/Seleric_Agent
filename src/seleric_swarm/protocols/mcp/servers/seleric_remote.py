@@ -54,6 +54,7 @@ TOOLS = (
     "metrics_query",
     "metrics_drilldown",
     "insights_explain",
+    "build_dataset_query",
     "semantic_sql",
     # Meta/Google ad-platform tools are not listed: they are third-party APIs
     # outside the certified Cube serve views and the gateway no longer exposes

@@ -4,6 +4,7 @@ import { useShellStore } from "../stores/shell";
 import { useConversationStore } from "../stores/conversation";
 import { SafeContent } from "./SafeContent";
 import { ApprovalCard } from "./ApprovalCard";
+import { EmailPreviewCard } from "./EmailPreviewCard";
 import { ChartRenderer, SelectionInsight } from "./charts/ChartRenderer";
 import { useChartVocabularyDrift } from "../api/chartContract";
 import { buildFollowUp, buildPointContext } from "../api/drillContext";
@@ -15,10 +16,12 @@ const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
 /** Numeric-looking cells (digits, currency, %, separators) right-align. Values are never reformatted. */
-const NUMERIC = /^[+-]?[$€£¥]?\s*\d[\d\s,._]*\s?[%‰]?$/;
+const NUMERIC = /^[+\-−]?[$€£¥₹]?\s*\d[\d\s,._]*\s?[%‰]?$/;
+/** A cell with no data (the backend writes a dash): never read as zero, never decides a column's type. */
+const BLANK = "—";
 
 function isNumericColumn(values: string[]): boolean {
-  const sample = values.filter((v) => v.trim() !== "").slice(0, 20);
+  const sample = values.filter((v) => v.trim() !== "" && v.trim() !== BLANK).slice(0, 20);
   if (sample.length < 2) return false;
   return sample.every((v) => NUMERIC.test(v.trim()));
 }
@@ -34,9 +37,17 @@ function Table({ content }: { content: unknown }) {
     () => rows.filter((row) => row && typeof row === "object").map(record),
     [rows],
   );
-  const columns = useMemo(() => [...new Set(safeRows.flatMap((row) => Object.keys(row)))], [safeRows]);
-  const [sortKey, setSortKey] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<1 | -1>(1);
+  // The backend sends the column order (entity, then measures as the question listed them). Stored rows lose their key
+  // order (JSONB sorts keys), so rows only supply columns the order does not name.
+  const columns = useMemo(() => {
+    const given = Array.isArray(record(content).columns) ? (record(content).columns as unknown[]).map(String) : [];
+    const present = new Set(safeRows.flatMap((row) => Object.keys(row)));
+    return [...given.filter((c) => present.has(c)), ...[...present].filter((c) => !given.includes(c))];
+  }, [content, safeRows]);
+  // The order the rows arrive in is the ranking the query asked for; show it as the active sort.
+  const initialSort = record(record(content).sort);
+  const [sortKey, setSortKey] = useState<string | null>(typeof initialSort.column === "string" ? initialSort.column : null);
+  const [sortDir, setSortDir] = useState<1 | -1>(initialSort.direction === "asc" ? 1 : -1);
   const [selected, setSelected] = useState<number | null>(null);
   const submit = useConversationStore((s) => s.submit);
 
@@ -59,6 +70,7 @@ function Table({ content }: { content: unknown }) {
     return [...safeRows].sort((a, b) => {
       const left = text(a[sortKey]);
       const right = text(b[sortKey]);
+      if ((left === BLANK) !== (right === BLANK)) return left === BLANK ? 1 : -1;  // no data sorts last either way
       const numLeft = Number(left.replace(/[^0-9.\-+eE]/g, ""));
       const numRight = Number(right.replace(/[^0-9.\-+eE]/g, ""));
       if (Number.isFinite(numLeft) && Number.isFinite(numRight) && left.trim() !== "" && right.trim() !== "") {
@@ -91,6 +103,7 @@ function Table({ content }: { content: unknown }) {
     URL.revokeObjectURL(url);
   };
 
+  const caption = typeof record(content).caption === "string" ? String(record(content).caption) : "";
   return (
     <figure style={{ margin: 0 }}>
       <div className="table-toolbar">
@@ -149,6 +162,7 @@ function Table({ content }: { content: unknown }) {
           </tbody>
         </table>
       </div>
+      {caption && <figcaption className="chart-hint">{caption}</figcaption>}
       {selected !== null && visible[selected] && (
         <SelectionInsight
           columns={columns}
@@ -199,7 +213,7 @@ export function MessagePartRenderer({ part }: { part: MessagePart }) {
     case "KPI_GRID":
       return <KpiGrid content={value} />;
     case "AGENT_STATUS": return <p className="part-status" aria-live="polite">{text(part.content)}</p>;
-    case "APPROVAL": return <ApprovalCard value={value} />;
+    case "APPROVAL": return value.action === "send_email" ? <EmailPreviewCard value={value} /> : <ApprovalCard value={value} />;
     case "WARNING": return <aside className="part-card warning" role="alert">{text(part.content)}</aside>;
     default: return null;
   }

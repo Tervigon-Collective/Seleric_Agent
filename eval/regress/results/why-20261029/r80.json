@@ -1,0 +1,73 @@
+{
+ "n": 80,
+ "aspect": "why_causal",
+ "q": "If it is causal, how many extra orders would another ten thousand rupees of spend buy?",
+ "thread": "thread_acedace30c0c48bd890cd02be71f7436",
+ "mission": "MS3-eae40a7c89",
+ "run_status": "COMPLETED",
+ "status": "partial",
+ "wall_s": 113,
+ "elapsed_s": 108.598,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 11,
+ "llm_calls": 8,
+ "grounding": {
+  "derived": [],
+  "numbers": 30,
+  "measured": 10,
+  "misbound": [],
+  "problems": [
+   "figures in no tool result and not one arithmetic step from them: 4.43, 10,000, 10,000, 4.4299, 4.43, 10,000, 1,00,000, 44.30, 100,000, 44.299"
+  ],
+  "unmatched": [
+   "4.43",
+   "10,000",
+   "10,000",
+   "4.4299",
+   "4.43",
+   "10,000",
+   "1,00,000",
+   "44.30",
+   "1,00,000",
+   "44.299",
+   "4.43",
+   "10,000",
+   "10,000",
+   "4.4299",
+   "4.43",
+   "10,000",
+   "1,00,000",
+   "44.30",
+   "1,00,000",
+   "44.299"
+  ],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "run_python",
+  "insights_explain",
+  "insights_explain",
+  "insights_explain",
+  "run_python",
+  "insights_explain",
+  "insights_explain",
+  "run_python",
+  "insights_explain",
+  "insights_explain",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "If the movement were causal, the last 30 days imply 4.43 additional orders per additional \u20b910,000 of spend.\n\n- How it was derived: orders rose by 91 (930 \u2192 1,021) while ad spend rose by \u20b92,05,512.47 (\u20b912,33,912.90 \u2192 \u20b914,39,425.37) over 2026-09-29..2026-10-28; 91 \u00f7 \u20b92,05,512.4726 \u00d7 \u20b910,000 = 4.4299 \u2192 4.43 orders per \u20b910,000.\n- What it means: scaling that linear estimate, an additional \u20b91,00,000 would be associated with ~44.30 extra orders (91 \u00f7 \u20b92,05,512.4726 \u00d7 \u20b91,00,000 = 44.299).\n- Important caveat: this is a simple marginal estimate from aggregate changes and does not prove causality \u2014 earlier diagnosis found correlation but did not identify ad spend as a supported cause. Treat these figures as back-of-envelope planning or to size an A/B / incrementality test.\n\nWorth checking: break this estimate down by ad platform and campaign to find where incremental spend actually bought orders.\n\nPeriod: 2026-09-29..2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break this down by ad platform and campaign.\n\n\u26a0 Not verified against the data: figures in no tool result and not one arithmetic step from them: 4.43, 10,000, 10,000, 4.4299, 4.43, 10,000, 1,00,000, 44.30, 1,00,000, 44.299"
+}

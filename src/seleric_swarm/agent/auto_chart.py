@@ -2,7 +2,7 @@
 
 The main result is the fetched query whose rows the answer actually quotes (the most figures matched verbatim), with
 enough rows to plot. The form comes from the evidence shape (``analytics/visualization``: a time axis draws a line, a
-breakdown draws bars); this module only picks which result and whether a chart is wanted at all.
+breakdown draws a ranking); this module only builds the chart of the result ``present`` picked.
 """
 
 from __future__ import annotations
@@ -69,18 +69,22 @@ def _title(deps: SelericDeps, payload: dict[str, Any]) -> str:
     return ", ".join(names) or "Result"
 
 
-async def auto_chart(deps: SelericDeps, state: TurnState, answer: str) -> str | None:
-    """Build the chart artifact for the main result; returns its artifact id, or None when no chart is wanted."""
+async def auto_chart(
+    deps: SelericDeps, state: TurnState, answer: str, picked: tuple[str, list[str], dict[str, Any]] | None = None,
+    chart_type: str | None = None,
+) -> str | None:
+    """Build the chart artifact for the main result (``picked``, else the one the answer quotes most); returns its
+    artifact id, or None when no chart is wanted."""
     if not answer.strip() or has_transcript_chart(deps):
         return None
-    picked = main_result(answer, state)
+    picked = picked or main_result(answer, state)
     if picked is None:
         return None
     qid, evidence_ids, payload = picked
     ctx = cast(RunContext[SelericDeps], SimpleNamespace(deps=deps))  # the chart tool reads only ``ctx.deps``
     try:
         result = await analytics.generate_visualization(
-            ctx, evidence_ids, "the main result of this answer", _title(deps, payload)
+            ctx, evidence_ids, "the main result of this answer", _title(deps, payload), chart_type
         )
     except Exception:
         _log.warning("auto_chart_failed query_id=%s", qid, exc_info=True)

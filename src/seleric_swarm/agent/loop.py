@@ -34,8 +34,12 @@ from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import RunUsage, UsageLimits
 
-from seleric_swarm.agent.answer_text import replace_metric_ids, round_long_decimals
-from seleric_swarm.agent.auto_chart import auto_chart
+from seleric_swarm.agent import present
+from seleric_swarm.agent.answer_text import (
+    indian_digit_grouping,
+    replace_metric_ids,
+    round_long_decimals,
+)
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.grounding import (
     correction_message,
@@ -200,9 +204,23 @@ class _Budget:
                 or time.perf_counter() - self.started > TURN_BUDGET_S)
 
 
-def _instructions(system_prompt: str, memories: list[str], prior_queries: list[str], budget: _Budget) -> list[Any]:
+def _instructions(
+    system_prompt: str,
+    memories: list[str],
+    prior_queries: list[str],
+    budget: _Budget,
+    *,
+    thread_summary: str = "",
+    workspace_notes: str = "",
+) -> list[Any]:
     def memory_block(_: RunContext[SelericDeps]) -> str:
         return ("What the user asked you to remember:\n- " + "\n- ".join(memories)) if memories else ""
+
+    def summary_block(_: RunContext[SelericDeps]) -> str:
+        return ("Earlier in this conversation (compressed):\n" + thread_summary) if thread_summary else ""
+
+    def config_block(_: RunContext[SelericDeps]) -> str:
+        return ("Workspace settings for this turn:\n" + workspace_notes) if workspace_notes else ""
 
     def prior_block(_: RunContext[SelericDeps]) -> str:
         return ("Queries already run in this conversation (use as parent_query_id when drilling down):\n"
@@ -211,7 +229,7 @@ def _instructions(system_prompt: str, memories: list[str], prior_queries: list[s
     def budget_block(_: RunContext[SelericDeps]) -> str:
         return BUDGET_NOTICE if budget.forced else ""
 
-    return [system_prompt, memory_block, prior_block, budget_block]
+    return [system_prompt, summary_block, memory_block, config_block, prior_block, budget_block]
 
 
 async def run_turn(
@@ -226,13 +244,15 @@ async def run_turn(
     memories: list[str] | None = None,
     prior_queries: list[str] | None = None,
     prior_payloads: list[Any] | None = None,
+    thread_summary: str = "",
+    workspace_notes: str = "",
     is_cancelled: Callable[[], bool] = lambda: False,
     snapshot_loader: Any = None,
     on_stream: Callable[[str, str], None] | None = None,
 ) -> LoopResult:
     begin_loop_effort()
     started = time.perf_counter()
-    state = TurnState(today=datetime.now(deps.as_of.tzinfo or UTC).date())
+    state = TurnState(today=datetime.now(deps.as_of.tzinfo or UTC).date(), prior_queries=list(prior_queries or []))
     budget = _Budget(state, is_cancelled=is_cancelled, started=started)
     usage = RunUsage()
     mission_id = deps.mission_id
@@ -247,13 +267,25 @@ async def run_turn(
             return []
         return slim_defs(defs)
 
-    tools = [*build_mcp_tools(gateway, tool_defs, state), *build_local_tools(state, snapshot_loader=snapshot_loader)]
+    def email_figures() -> list[Any]:  # what an email may quote: the same pool the final answer is checked against
+        quoted = quoted_figures(_conversation_texts(question, history))
+        return [*(prior_payloads or []), *state.payloads, *([quoted] if quoted else [])]
+
+    tools = [*build_mcp_tools(gateway, tool_defs, state),
+             *build_local_tools(state, snapshot_loader=snapshot_loader, is_cancelled=is_cancelled, figures=email_figures)]
     llm_calls: list[dict[str, Any]] = []
     agent: Agent[SelericDeps, str] = Agent(
         model=_TimedModel(model, llm_calls, turn_started=started, timing=timing),
         deps_type=SelericDeps,
         output_type=str,
-        instructions=_instructions(system_prompt, memories or [], prior_queries or [], budget),
+        instructions=_instructions(
+            system_prompt,
+            memories or [],
+            prior_queries or [],
+            budget,
+            thread_summary=thread_summary,
+            workspace_notes=workspace_notes,
+        ),
         name="seleric_agent",
         tools=tools,
         capabilities=[PrepareTools(prepare)],
@@ -345,10 +377,11 @@ async def run_turn(
         answer += unverified_note(issues)
         limitations.append("UNVERIFIED_FIGURES")
     # Internal metric ids that slipped into the prose are written as their catalogue names (a known fix, not a model pass).
-    answer = round_long_decimals(replace_metric_ids(answer, {m.id: m.label for m in deps.catalogue.metrics if m.label}))
+    answer = indian_digit_grouping(
+        round_long_decimals(replace_metric_ids(answer, {m.id: m.label for m in deps.catalogue.metrics if m.label})))
     final = grounding(answer, figure_pool())
     if state.payloads and not limitations:
-        await auto_chart(deps, state, answer)
+        await present.attach(deps, state, answer)  # deterministic: KPI cards / table / chart by result shape, no model call
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     # First token = first model output of the turn; Answer starts = last model
     # output (the call that produced / revised the final prose). Falls back to

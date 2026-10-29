@@ -1,0 +1,48 @@
+{
+ "n": 74,
+ "aspect": "why_rootcause",
+ "q": "Why did we get fewer orders in the week of 19 October than the week before?",
+ "thread": "thread_438825654c3141809b0f6d489bc38b78",
+ "mission": "MS3-fcc6c29f84",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 50,
+ "elapsed_s": 46.245,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [
+   "17.0%"
+  ],
+  "numbers": 18,
+  "measured": 17,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": true,
+   "what": "any of ['traffic', 'sessions', 'visitors']"
+  }
+ ],
+ "answer": "We had fewer orders in 2026-10-19\u21922026-10-25: orders fell from 210 to 184 (\u221212.4% vs the previous week), driven mainly by fewer customers rather than worse conversion or less ad spend. That means less volume of buyers, not a collapse in funnel performance.\n\nWhat changed (ordered by impact)\n- Customers (by order date): 201 \u2192 167 customers (\u221217.0%); the diagnosis flags this drop as a supported cause \u2014 the fall in customers explains most of the orders shortfall.  \n- Orders and value: Orders 210 \u2192 184 (\u221212.4%); Total sales \u20b95,27,337 \u2192 \u20b94,39,982 (\u221216.6%).  \n- AOV / basket: AOV fell slightly \u20b92,511 \u2192 \u20b92,391 (\u22124.8%), so lower basket size amplified the sales drop but was a smaller contributor to the order count decline.  \n- Ad spend: \u20b92,98,777 \u2192 \u20b93,00,853 (+0.7%) \u2014 ad delivery did not fall (it edged up) and is ruled out as the cause.  \n- Sessions / traffic: Sessions per day were lower (diagnosis shows a drop) but the engine ranks customers falling as the supported cause; sessions moved together with ads and cannot be isolated as a cause from the available data.\n\nWorth checking:\n- Which channels/campaigns lost new or returning customers (the engine flagged a few campaign-level drops as notable) \u2014 this will show whether the customer loss is concentrated or broad.\n- PDP / product-level availability or listing changes (PDP page views were not available for this scope) \u2014 missing PDP data means we can't confirm product-page issues.\n\nPeriod: 2026-10-19..2026-10-25 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28\nNext: Break this down by channel and campaign (orders \u00b7 customers \u00b7 sessions \u00b7 ad spend)"
+}

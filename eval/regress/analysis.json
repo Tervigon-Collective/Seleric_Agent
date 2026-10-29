@@ -1,0 +1,76 @@
+[
+ {
+  "q": "Analysis of the Meta ads performance for 2026-10-16 to 2026-10-17: which campaigns work, which waste money, and what should I do?",
+  "aspect": "analysis",
+  "tool_checks": "analysis",
+  "checks": [
+   {
+    "contains_any": [
+     "Verdict"
+    ]
+   },
+   {
+    "contains_any": [
+     "Where money is leaking",
+     "leaking"
+    ]
+   },
+   {
+    "contains_any": [
+     "What I would do",
+     "would do"
+    ]
+   },
+   {
+    "max_revisions": 1
+   },
+   {
+    "not_contains": "has paused"
+   },
+   {
+    "not_contains": "were paused"
+   }
+  ]
+ },
+ {
+  "q": "Which Meta campaigns are wasting money in the last 7 days? Rank them and tell me what to do about them.",
+  "aspect": "analysis",
+  "tool_checks": "analysis",
+  "checks": [
+   {
+    "contains_any": [
+     "no orders",
+     "no order"
+    ]
+   },
+   {
+    "max_revisions": 1
+   },
+   {
+    "not_contains": "has paused"
+   },
+   {
+    "not_contains": "were paused"
+   }
+  ]
+ },
+ {
+  "q": "Give me a campaign-wise breakdown of impressions, hook rate, hold rate, link clicks, CTR, CPM, amount spent, orders and gross ROAS for 2026-10-16 to 2026-10-17.",
+  "aspect": "analysis",
+  "checks": [
+   {
+    "max_revisions": 1
+   }
+  ]
+ },
+ {
+  "q": "Which products are working and which are leaking money across ads in the last 14 days?",
+  "aspect": "analysis",
+  "tool_checks": "analysis",
+  "checks": [
+   {
+    "max_revisions": 1
+   }
+  ]
+ }
+]

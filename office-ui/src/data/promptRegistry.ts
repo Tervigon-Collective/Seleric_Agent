@@ -203,6 +203,94 @@ export const PROMPT_REGISTRY: RegistryPrompt[] = [
     tags: ["golden", "successful"],
   },
 
+  // ── Persona UAT 2026-10-29 (eval/regress/regression.json 31-47): only answers that held up on manual review ──
+  {
+    id: "uat-founder-week-vs-last",
+    text: "How are we doing this week compared to last week? Give me the one-minute version.",
+    domain: "operations",
+    level: "L5",
+    tags: ["golden", "successful"],
+  },
+  {
+    id: "uat-founder-making-money",
+    text: "Are we actually making money, or just buying revenue? Be honest.",
+    domain: "cross",
+    level: "L5",
+    tags: ["golden", "successful"],
+  },
+  {
+    id: "uat-ads-scale-or-kill",
+    text: "Which Meta campaigns should I scale and which should I kill this week?",
+    domain: "marketing",
+    level: "L5",
+    tags: ["golden", "successful"],
+  },
+  {
+    id: "uat-web-buying-sources",
+    text: "Which traffic sources bring people who actually buy, not just visit, and what are we paying for them?",
+    domain: "marketing",
+    level: "L6",
+    tags: ["golden", "successful"],
+  },
+  {
+    id: "uat-strategy-push-or-stop-products",
+    text: "Which products should we push harder in ads and which should we stop advertising?",
+    domain: "products",
+    level: "L5",
+    tags: ["golden", "successful"],
+  },
+  {
+    id: "uat-strategy-month-read",
+    text: "Give me a read on September: what worked, what didn't, and what should we change for November?",
+    domain: "cross",
+    level: "L6",
+    tags: ["golden", "successful"],
+  },
+
+  // BI + causal round 2026-10-29 (regression.json 48-82): numbers or root cause checked against ClickHouse
+  {
+    id: "uat-bi-sept-walkthrough",
+    text: "Walk me through September: how much did we sell, what did it cost us to get those sales, and what was left at the end?",
+    domain: "cross",
+    level: "L5",
+    tags: ["golden", "successful"],
+  },
+  {
+    id: "uat-bi-best-worst-day",
+    text: "In October so far, what was our best day and our worst day for profit, and what was different about them?",
+    domain: "operations",
+    level: "L6",
+    tags: ["golden", "successful"],
+  },
+  {
+    id: "uat-bi-whatif-meta-cut",
+    text: "If we cut Meta spend by 30% next month, what would happen to our profit?",
+    domain: "marketing",
+    level: "L6",
+    tags: ["golden", "successful"],
+  },
+  {
+    id: "uat-bi-scope",
+    text: "What kinds of questions can you answer for me, and what can't you answer?",
+    domain: "operations",
+    level: "L2",
+    tags: ["successful"],
+  },
+  {
+    id: "uat-why-oct9-sales-drop",
+    text: "Why did sales drop on 9 October?",
+    domain: "sales",
+    level: "L7",
+    tags: ["golden", "diagnosis", "successful"],
+  },
+  {
+    id: "uat-why-ads-cause-orders",
+    text: "Do our ads actually cause more orders, or do the two just move together?",
+    domain: "marketing",
+    level: "L7",
+    tags: ["golden", "diagnosis", "successful"],
+  },
+
   // ── Extra diagnosis / domain starters (stress + UI chips) ───────────────
   {
     id: "diag-roas-decline",

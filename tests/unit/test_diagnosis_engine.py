@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import yaml
 
 from seleric_swarm.causal.diagnosis import (
     DiagnosisInput,
@@ -353,11 +354,12 @@ def test_shapley_is_exact_and_symmetric():
 
 def test_engine_source_hardcodes_no_catalogue_names():
     root = Path(__file__).resolve().parents[2]
-    registry = (root / "config" / "metric_registry.yaml").read_text(encoding="utf-8")
-    ids = set(re.findall(r"^\s*-?\s*(?:id|catalogue_metric):\s*['\"]?([A-Za-z0-9_.]+)", registry, re.MULTILINE))
-    ids |= {i.split(".", 1)[1] for i in ids if "." in i}
+    profiles = yaml.safe_load((root / "config" / "domain_health_profiles.yaml").read_text(encoding="utf-8"))["domains"]
+    ids = {
+        entry.get("catalogue_metric") or entry["metric_id"] for domain in profiles.values() for entry in domain["metrics"]
+    }
     ids = {i for i in ids if len(i) > 3}
-    assert ids, "registry parse found no metric ids"
+    assert ids, "the domain health profiles name no catalogue metric ids"
     for rel in ("src/seleric_swarm/causal/diagnosis.py", "src/seleric_swarm/toolsets/diagnosis.py"):
         path = root / rel
         if not path.exists():

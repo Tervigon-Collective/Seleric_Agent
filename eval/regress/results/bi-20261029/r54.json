@@ -1,0 +1,41 @@
+{
+ "n": 54,
+ "aspect": "bi_hypothesis",
+ "q": "I think cash on delivery is the reason we're losing money. Is that true?",
+ "thread": "thread_a98c342023424c68af6977bc01d1065f",
+ "mission": "MS3-5367c1ed2a",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 38,
+ "elapsed_s": 37.005,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 14,
+  "measured": 14,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "Net profit is down slightly vs yesterday but Cash-on-Delivery (COD) is not the reason the business lost money: net profit moved from \u20b93,875 on 2026-10-27 to \u20b93,331 on 2026-10-28 (\u221214.1%), and the statistical diagnosis finds no supported causal role for COD \u2014 COD volumes rose a little while COD handling fees actually fell and the change is explained by ad spend and contribution swings instead.\n\nWhat\u2019s behind it\n- Net profit: \u20b93,875 \u2192 \u20b93,331 (\u221214.1%). The day\u2019s swing is an ordinary fluctuation within the metric\u2019s recent range and the diagnosis found no single measured cause.\n- Ad spend (P&L basis) rose sharply and dominated the bridge: \u20b943,452 \u2192 \u20b960,101 (+38.3%). This increase produced a negative effect on net profit larger than the net-profit change.\n- Product contribution margin also rose: \u20b947,327 \u2192 \u20b963,432 (+34.0%), which offset some of the ad-spend hit. The net effect reconciles arithmetically to the profit change.\n- COD activity: Cod orders 10 \u2192 12 (+20.0%, within its normal range); cod handling fee \u20b9191 \u2192 \u20b90 (fell outside its usual range). The diagnosis tests COD and reports it is ruled out as a supported cause \u2014 the raw association disappears after calendar and competing-driver adjustments.\n\nWorth checking: why ad spend jumped (which campaigns and cost lines increased) \u2014 that is the largest actionable lever shown by the data.\n\nPeriod: 2026-10-27..2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29\nNext: Break this down by ad platform and campaign (showing ad spend, net sales and net profit by payment method)."
+}

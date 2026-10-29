@@ -1,0 +1,616 @@
+Check,Window,Metric,Default value,With date_axis=event_date,|Delta|,Status,What Core says it applied
+aov (placement_only): value must not change with date_axis,yesterday,default,1805.3793103448277,1813.4666666666667,8.087356321839025,FAIL,Core says: event_date (identical on both axes: booked at placement)
+aov (placement_only): value must not change with date_axis,last7,default,2391.2065217391305,2484.262948207171,93.05642646804063,FAIL,Core says: event_date (identical on both axes: booked at placement)
+aov (placement_only): value must not change with date_axis,last30,default,2443.5636182902585,2528.038535645472,84.47491735521362,FAIL,Core says: event_date (identical on both axes: booked at placement)
+cod_orders (placement_only): value must not change with date_axis,last7,default,50.0,78.0,28.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+cod_orders (placement_only): value must not change with date_axis,last30,default,295.0,620.0,325.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+discounts_incl_tax (placement_only): value must not change with date_axis,last7,default,12895.800000000001,20676.600000000002,7780.800000000001,FAIL,Core says: event_date (identical on both axes: booked at placement)
+discounts_incl_tax (placement_only): value must not change with date_axis,last30,default,89854.29999999999,135312.89999999997,45458.59999999998,FAIL,Core says: event_date (identical on both axes: booked at placement)
+new_customers (placement_only): value must not change with date_axis,last7,default,127.0,180.0,53.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+new_customers (placement_only): value must not change with date_axis,last30,default,744.0,1203.0,459.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+order_value_incl_tax (placement_only): value must not change with date_axis,yesterday,default,51042.0,53090.0,2048.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+order_value_incl_tax (placement_only): value must not change with date_axis,last7,default,427086.2,602873.4,175787.2,FAIL,Core says: event_date (identical on both axes: booked at placement)
+order_value_incl_tax (placement_only): value must not change with date_axis,last30,default,2368370.7,3800843.1000000006,1432472.4000000004,FAIL,Core says: event_date (identical on both axes: booked at placement)
+orders (placement_only): value must not change with date_axis,last7,default,184.0,251.0,67.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+orders (placement_only): value must not change with date_axis,last30,default,1006.0,1557.0,551.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+paid_sales (placement_only): value must not change with date_axis,yesterday,default,51042.0,53090.0,2048.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+paid_sales (placement_only): value must not change with date_axis,last7,default,427086.2,602873.4,175787.2,FAIL,Core says: event_date (identical on both axes: booked at placement)
+paid_sales (placement_only): value must not change with date_axis,last30,default,2368370.7,3800843.1000000015,1432472.4000000013,FAIL,Core says: event_date (identical on both axes: booked at placement)
+payment_orders (placement_only): value must not change with date_axis,last7,default,183.0,250.0,67.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+payment_orders (placement_only): value must not change with date_axis,last30,default,996.0,1539.0,543.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+prepaid_orders (placement_only): value must not change with date_axis,last7,default,133.0,172.0,39.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+prepaid_orders (placement_only): value must not change with date_axis,last30,default,700.0,904.0,204.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+total_sales (placement_only): value must not change with date_axis,yesterday,default,52356.0,54404.0,2048.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+total_sales (placement_only): value must not change with date_axis,last7,default,439982.0,623550.0,183568.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+total_sales (placement_only): value must not change with date_axis,last30,default,2458225.0,3936156.0,1477931.0,FAIL,Core says: event_date (identical on both axes: booked at placement)
+ad_spend (native): value must not change with date_axis,yesterday,default,43109.445595000005,43109.445595000005,0.0,PASS,Core says: native (own clock; date_axis ignored)
+ad_spend (native): value must not change with date_axis,last7,default,300854.148887,300854.148887,0.0,PASS,Core says: native (own clock; date_axis ignored)
+ad_spend (native): value must not change with date_axis,last30,default,1425999.664025,1425999.664025,0.0,PASS,Core says: native (own clock; date_axis ignored)
+add_to_cart_events (native): value must not change with date_axis,yesterday,default,88.0,88.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+add_to_cart_events (native): value must not change with date_axis,last7,default,724.0,724.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+add_to_cart_events (native): value must not change with date_axis,last30,default,4445.0,4445.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+add_to_cart_rate (native): value must not change with date_axis,yesterday,default,0.03401727861771058,0.03401727861771058,0.0,PASS,Core says: native (own clock; date_axis ignored)
+add_to_cart_rate (native): value must not change with date_axis,last7,default,0.026996151996151997,0.026996151996151997,0.0,PASS,Core says: native (own clock; date_axis ignored)
+add_to_cart_rate (native): value must not change with date_axis,last30,default,0.031209698220273408,0.031209698220273408,0.0,PASS,Core says: native (own clock; date_axis ignored)
+add_to_cart_to_checkout_rate (native): value must not change with date_axis,yesterday,default,0.746031746031746,0.746031746031746,0.0,PASS,Core says: native (own clock; date_axis ignored)
+add_to_cart_to_checkout_rate (native): value must not change with date_axis,last7,default,0.6993318485523385,0.6993318485523385,0.0,PASS,Core says: native (own clock; date_axis ignored)
+add_to_cart_to_checkout_rate (native): value must not change with date_axis,last30,default,0.5396005509641874,0.5396005509641874,0.0,PASS,Core says: native (own clock; date_axis ignored)
+add_to_carts (native): value must not change with date_axis,yesterday,default,87.0,87.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+add_to_carts (native): value must not change with date_axis,last7,default,723.0,723.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+add_to_carts (native): value must not change with date_axis,last30,default,4429.0,4429.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+available_units (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+available_units (native): value must not change with date_axis,last7,default,5257.0,5257.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+available_units (native): value must not change with date_axis,last30,default,8806.0,8806.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_actual_lead_days (native) with date_axis=event_date,yesterday,avg_actual_lead_days,,,,PASS,refused: stale_data
+avg_actual_lead_days (native) with date_axis=event_date,last7,avg_actual_lead_days,,,,PASS,refused: stale_data
+avg_actual_lead_days (native) with date_axis=event_date,last30,avg_actual_lead_days,,,,PASS,refused: stale_data
+avg_hours_to_resolve (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_hours_to_resolve (native): value must not change with date_axis,last7,default,10.947368421052632,10.947368421052632,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_hours_to_resolve (native): value must not change with date_axis,last30,default,66.77319587628865,66.77319587628865,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_page_depth (native): value must not change with date_axis,yesterday,default,2.31317494600432,2.31317494600432,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_page_depth (native): value must not change with date_axis,last7,default,1.9712602212602213,1.9712602212602213,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_page_depth (native): value must not change with date_axis,last30,default,1.7278716361447854,1.7278716361447854,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_planned_lead_days (native) with date_axis=event_date,yesterday,avg_planned_lead_days,,,,PASS,refused: stale_data
+avg_planned_lead_days (native) with date_axis=event_date,last7,avg_planned_lead_days,,,,PASS,refused: stale_data
+avg_planned_lead_days (native) with date_axis=event_date,last30,avg_planned_lead_days,,,,PASS,refused: stale_data
+avg_sampling_cogs (native): value must not change with date_axis,yesterday,default,0.0,0.0,0,PASS,Core says: native (own clock; date_axis ignored)
+avg_sampling_cogs (native): value must not change with date_axis,last7,default,528.7656896551724,528.7656896551724,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_sampling_cogs (native): value must not change with date_axis,last30,default,662.1709375,662.1709375,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_sampling_margin_pct (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_sampling_margin_pct (native): value must not change with date_axis,last7,default,0.6942482309477052,0.6942482309477052,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_sampling_margin_pct (native): value must not change with date_axis,last30,default,0.6474010076645365,0.6474010076645365,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_sampling_mrp (native): value must not change with date_axis,yesterday,default,0.0,0.0,0,PASS,Core says: native (own clock; date_axis ignored)
+avg_sampling_mrp (native): value must not change with date_axis,last7,default,1721.4137931034484,1721.4137931034484,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_sampling_mrp (native): value must not change with date_axis,last30,default,1906.2916666666667,1906.2916666666667,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_seconds_to_add_to_cart (native): value must not change with date_axis,yesterday,default,262.36507936507934,262.36507936507934,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_seconds_to_add_to_cart (native): value must not change with date_axis,last7,default,207.41202672605792,207.41202672605792,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_seconds_to_add_to_cart (native): value must not change with date_axis,last30,default,1040.8646694214876,1040.8646694214876,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_seconds_to_checkout (native) with date_axis=event_date,yesterday,avg_seconds_to_checkout,,,,PASS,refused: Metric 'avg_seconds_to_checkout' cannot be answered: Not populated: Shopify's checkout_started pixel is server-side (no 
+avg_seconds_to_checkout (native) with date_axis=event_date,last7,avg_seconds_to_checkout,,,,PASS,refused: Metric 'avg_seconds_to_checkout' cannot be answered: Not populated: Shopify's checkout_started pixel is server-side (no 
+avg_seconds_to_checkout (native) with date_axis=event_date,last30,avg_seconds_to_checkout,,,,PASS,refused: Metric 'avg_seconds_to_checkout' cannot be answered: Not populated: Shopify's checkout_started pixel is server-side (no 
+avg_seconds_to_purchase (native) with date_axis=event_date,yesterday,avg_seconds_to_purchase,,,,PASS,refused: Metric 'avg_seconds_to_purchase' cannot be answered: Not populated: Shopify's checkout_started pixel is server-side (no 
+avg_seconds_to_purchase (native) with date_axis=event_date,last7,avg_seconds_to_purchase,,,,PASS,refused: Metric 'avg_seconds_to_purchase' cannot be answered: Not populated: Shopify's checkout_started pixel is server-side (no 
+avg_seconds_to_purchase (native) with date_axis=event_date,last30,avg_seconds_to_purchase,,,,PASS,refused: Metric 'avg_seconds_to_purchase' cannot be answered: Not populated: Shopify's checkout_started pixel is server-side (no 
+avg_touch_count (native): value must not change with date_axis,yesterday,default,1.8076923076923077,1.8076923076923077,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_touch_count (native): value must not change with date_axis,last7,default,2.0828402366863905,2.0828402366863905,0.0,PASS,Core says: native (own clock; date_axis ignored)
+avg_touch_count (native): value must not change with date_axis,last30,default,1.798918918918919,1.798918918918919,0.0,PASS,Core says: native (own clock; date_axis ignored)
+bid_strategy_changes (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+bid_strategy_changes (native): value must not change with date_axis,last7,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+bid_strategy_changes (native): value must not change with date_axis,last30,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+bounce_rate (native): value must not change with date_axis,yesterday,default,0.3347732181425486,0.3347732181425486,0.0,PASS,Core says: native (own clock; date_axis ignored)
+bounce_rate (native): value must not change with date_axis,last7,default,0.2748316498316498,0.2748316498316498,0.0,PASS,Core says: native (own clock; date_axis ignored)
+bounce_rate (native): value must not change with date_axis,last30,default,0.30049006964147534,0.30049006964147534,0.0,PASS,Core says: native (own clock; date_axis ignored)
+budget_changes (native): value must not change with date_axis,yesterday,default,10.0,10.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+budget_changes (native): value must not change with date_axis,last7,default,90.0,90.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+budget_changes (native): value must not change with date_axis,last30,default,541.0,541.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+channel_cac (placement_only): value must not change with date_axis,yesterday,default,2052.7642572857144,2052.8307426190477,0.06648533333327578,PASS,Core says: event_date (identical on both axes: booked at placement)
+channel_cac (placement_only): value must not change with date_axis,last7,default,2368.919312559055,2368.930306196851,0.010993637795763789,PASS,Core says: event_date (identical on both axes: booked at placement)
+channel_cac (placement_only): value must not change with date_axis,last30,default,1916.664338485215,1916.6662150873656,0.0018766021505598474,PASS,Core says: event_date (identical on both axes: booked at placement)
+channel_new_customers (placement_only): value must not change with date_axis,yesterday,default,21.0,21.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+channel_new_customers (placement_only): value must not change with date_axis,last7,default,127.0,127.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+channel_new_customers (placement_only): value must not change with date_axis,last30,default,744.0,744.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+channel_orders (placement_only): value must not change with date_axis,yesterday,default,29.0,29.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+channel_orders (placement_only): value must not change with date_axis,last7,default,184.0,184.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+channel_orders (placement_only): value must not change with date_axis,last30,default,1006.0,1006.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+checkout_fee (placement_only): value must not change with date_axis,yesterday,default,79.28799999999998,79.28799999999998,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+checkout_fee (placement_only): value must not change with date_axis,last7,default,637.1860999999999,637.1861000000001,2.2737367544323206e-13,PASS,Core says: event_date (identical on both axes: booked at placement)
+checkout_fee (placement_only): value must not change with date_axis,last30,default,4549.386600000002,4549.386600000002,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+checkout_rate (native): value must not change with date_axis,yesterday,default,0.025377969762419007,0.025377969762419007,0.0,PASS,Core says: native (own clock; date_axis ignored)
+checkout_rate (native): value must not change with date_axis,last7,default,0.018879268879268878,0.018879268879268878,0.0,PASS,Core says: native (own clock; date_axis ignored)
+checkout_rate (native): value must not change with date_axis,last30,default,0.016840770355085546,0.016840770355085546,0.0,PASS,Core says: native (own clock; date_axis ignored)
+checkout_steps (native) with date_axis=event_date,yesterday,checkout_steps,,,,PASS,refused: Metric 'checkout_steps' cannot be answered: Not populated: Shopify's checkout_started pixel is server-side (no web-sessi
+checkout_steps (native) with date_axis=event_date,last7,checkout_steps,,,,PASS,refused: Metric 'checkout_steps' cannot be answered: Not populated: Shopify's checkout_started pixel is server-side (no web-sessi
+checkout_steps (native) with date_axis=event_date,last30,checkout_steps,,,,PASS,refused: Metric 'checkout_steps' cannot be answered: Not populated: Shopify's checkout_started pixel is server-side (no web-sessi
+checkout_to_purchase_rate (native): value must not change with date_axis,yesterday,default,0.6595744680851063,0.6595744680851063,0.0,PASS,Core says: native (own clock; date_axis ignored)
+checkout_to_purchase_rate (native): value must not change with date_axis,last7,default,0.5700636942675159,0.5700636942675159,0.0,PASS,Core says: native (own clock; date_axis ignored)
+checkout_to_purchase_rate (native): value must not change with date_axis,last30,default,0.6190172303765157,0.6190172303765157,0.0,PASS,Core says: native (own clock; date_axis ignored)
+clicks (native): value must not change with date_axis,yesterday,default,2025.0,2025.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+clicks (native): value must not change with date_axis,last7,default,18449.0,18449.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+clicks (native): value must not change with date_axis,last30,default,105497.0,105497.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+cod_handling_fee (placement_only): value must not change with date_axis,yesterday,default,353.94000000000005,353.94000000000005,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+cod_handling_fee (placement_only): value must not change with date_axis,last7,default,1666.8000000000002,1666.8,2.2737367544323206e-13,PASS,Core says: event_date (identical on both axes: booked at placement)
+cod_handling_fee (placement_only): value must not change with date_axis,last30,default,11090.800000000001,11090.800000000001,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+cod_orders (placement_only): value must not change with date_axis,yesterday,default,13.0,14.0,1.0,WARN,Core says: event_date (identical on both axes: booked at placement)
+collection_view_events (native): value must not change with date_axis,yesterday,default,1547.0,1547.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+collection_view_events (native): value must not change with date_axis,last7,default,9467.0,9467.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+collection_view_events (native): value must not change with date_axis,last30,default,45215.0,45215.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+conversion_rate (native): value must not change with date_axis,yesterday,default,0.01673866090712743,0.01673866090712743,0.0,PASS,Core says: native (own clock; date_axis ignored)
+conversion_rate (native): value must not change with date_axis,last7,default,0.010762385762385763,0.010762385762385763,0.0,PASS,Core says: native (own clock; date_axis ignored)
+conversion_rate (native): value must not change with date_axis,last30,default,0.010424727022611985,0.010424727022611985,0.0,PASS,Core says: native (own clock; date_axis ignored)
+cost_per_landing_page_view (native): value must not change with date_axis,yesterday,default,27.215559087752528,27.215559087752528,0.0,PASS,Core says: native (own clock; date_axis ignored)
+cost_per_landing_page_view (native): value must not change with date_axis,last7,default,22.522394736262914,22.522394736262914,0.0,PASS,Core says: native (own clock; date_axis ignored)
+cost_per_landing_page_view (native): value must not change with date_axis,last30,default,20.447957555780206,20.447957555780206,0.0,PASS,Core says: native (own clock; date_axis ignored)
+cost_per_link_click (native): value must not change with date_axis,yesterday,default,57.94280321908603,57.94280321908603,0.0,PASS,Core says: native (own clock; date_axis ignored)
+cost_per_link_click (native): value must not change with date_axis,last7,default,38.59083490084659,38.59083490084659,0.0,PASS,Core says: native (own clock; date_axis ignored)
+cost_per_link_click (native): value must not change with date_axis,last30,default,33.88460374548522,33.884603745485215,7.105427357601002e-15,PASS,Core says: native (own clock; date_axis ignored)
+cost_per_order (placement_only): value must not change with date_axis,yesterday,default,1486.484462172414,1486.532606724138,0.048144551724135454,PASS,Core says: event_date (identical on both axes: booked at placement)
+cost_per_order (placement_only): value must not change with date_axis,last7,default,1635.069308125,1635.0768961250003,0.007588000000396278,PASS,Core says: event_date (identical on both axes: booked at placement)
+cost_per_order (placement_only): value must not change with date_axis,last30,default,1417.4933079850896,1417.4946958499006,0.0013878648110221548,PASS,Core says: event_date (identical on both axes: booked at placement)
+cpc (native): value must not change with date_axis,yesterday,default,21.288615108641977,21.288615108641977,0.0,PASS,Core says: native (own clock; date_axis ignored)
+cpc (native): value must not change with date_axis,last7,default,16.307341801019025,16.307341801019025,0.0,PASS,Core says: native (own clock; date_axis ignored)
+cpc (native): value must not change with date_axis,last30,default,13.516968861910765,13.516968861910765,0.0,PASS,Core says: native (own clock; date_axis ignored)
+cpm (native): value must not change with date_axis,yesterday,default,422.97751739126176,422.97751739126176,0.0,PASS,Core says: native (own clock; date_axis ignored)
+cpm (native): value must not change with date_axis,last7,default,346.502770356541,346.502770356541,0.0,PASS,Core says: native (own clock; date_axis ignored)
+cpm (native): value must not change with date_axis,last30,default,299.7521188181104,299.7521188181104,0.0,PASS,Core says: native (own clock; date_axis ignored)
+ctr (native): value must not change with date_axis,yesterday,default,0.01986871927707297,0.01986871927707297,0.0,PASS,Core says: native (own clock; date_axis ignored)
+ctr (native): value must not change with date_axis,last7,default,0.021248268085905242,0.021248268085905242,0.0,PASS,Core says: native (own clock; date_axis ignored)
+ctr (native): value must not change with date_axis,last30,default,0.02217599114784933,0.022175986486347297,4.6615020315998734e-09,PASS,Core says: native (own clock; date_axis ignored)
+customers (native): value must not change with date_axis,yesterday,default,23.0,23.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+customers (native): value must not change with date_axis,last7,default,171.0,171.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+customers (native): value must not change with date_axis,last30,default,951.0,951.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+discounts (placement_only): value must not change with date_axis,yesterday,default,1113.5609,1113.5609,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+discounts (placement_only): value must not change with date_axis,last7,default,10928.5697,10928.569699999998,1.8189894035458565e-12,PASS,Core says: event_date (identical on both axes: booked at placement)
+discounts (placement_only): value must not change with date_axis,last30,default,76147.6606,76147.6606,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+discounts_incl_tax (placement_only): value must not change with date_axis,yesterday,default,1314.0,1314.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+event_add_to_carts (native): value must not change with date_axis,yesterday,default,88.0,88.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_add_to_carts (native): value must not change with date_axis,last7,default,722.0,722.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_add_to_carts (native): value must not change with date_axis,last30,default,4425.0,4425.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_collection_views (native): value must not change with date_axis,yesterday,default,1547.0,1547.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_collection_views (native): value must not change with date_axis,last7,default,9467.0,9467.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_collection_views (native): value must not change with date_axis,last30,default,45215.0,45215.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_count (native): value must not change with date_axis,yesterday,default,12221.0,12221.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_count (native): value must not change with date_axis,last7,default,101263.0,101263.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_count (native): value must not change with date_axis,last30,default,516019.0,516019.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_page_views (native): value must not change with date_axis,yesterday,default,4864.0,4864.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_page_views (native): value must not change with date_axis,last7,default,36485.0,36485.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_page_views (native): value must not change with date_axis,last30,default,176797.0,176797.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_product_views (native): value must not change with date_axis,yesterday,default,2312.0,2312.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_product_views (native): value must not change with date_axis,last7,default,19625.0,19625.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_product_views (native): value must not change with date_axis,last30,default,96761.0,96761.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_site_searches (native): value must not change with date_axis,yesterday,default,59.0,59.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_site_searches (native): value must not change with date_axis,last7,default,390.0,390.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+event_site_searches (native): value must not change with date_axis,last30,default,1573.0,1573.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+events_per_session (native): value must not change with date_axis,yesterday,default,6.5457953936797,6.5457953936797,0.0,PASS,Core says: native (own clock; date_axis ignored)
+events_per_session (native): value must not change with date_axis,last7,default,6.0654687032045524,6.0654687032045524,0.0,PASS,Core says: native (own clock; date_axis ignored)
+events_per_session (native): value must not change with date_axis,last30,default,5.531758198171157,5.531758198171157,0.0,PASS,Core says: native (own clock; date_axis ignored)
+exchange_credit_amount (native): value must not change with date_axis,yesterday,default,0.0,0.0,0,PASS,Core says: native (own clock; date_axis ignored)
+exchange_credit_amount (native): value must not change with date_axis,last7,default,67619.9,67619.9,0.0,PASS,Core says: native (own clock; date_axis ignored)
+exchange_credit_amount (native): value must not change with date_axis,last30,default,304738.80000000005,304738.80000000005,0.0,PASS,Core says: native (own clock; date_axis ignored)
+exchange_refund_count (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+exchange_refund_count (native): value must not change with date_axis,last7,default,4.0,4.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+exchange_refund_count (native): value must not change with date_axis,last30,default,152.0,152.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+funnel_order_purchases (native): value must not change with date_axis,yesterday,default,29.0,29.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+funnel_order_purchases (native): value must not change with date_axis,last7,default,184.0,184.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+funnel_order_purchases (native): value must not change with date_axis,last30,default,1004.0,1004.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+funnel_order_revenue (native): value must not change with date_axis,yesterday,default,41129.119286173795,41129.119286173795,0.0,PASS,Core says: native (own clock; date_axis ignored)
+funnel_order_revenue (native): value must not change with date_axis,last7,default,352128.35005240643,352128.35005240643,0.0,PASS,Core says: native (own clock; date_axis ignored)
+funnel_order_revenue (native): value must not change with date_axis,last30,default,1886022.1060939287,1886022.1060939287,0.0,PASS,Core says: native (own clock; date_axis ignored)
+funnel_purchases (native): value must not change with date_axis,yesterday,default,29.0,29.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+funnel_purchases (native): value must not change with date_axis,last7,default,184.0,184.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+funnel_purchases (native): value must not change with date_axis,last30,default,1005.0,1005.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+funnel_revenue (native): value must not change with date_axis,yesterday,default,41129.1193,41129.1193,0.0,PASS,Core says: native (own clock; date_axis ignored)
+funnel_revenue (native): value must not change with date_axis,last7,default,352128.3501,352128.3501,0.0,PASS,Core says: native (own clock; date_axis ignored)
+funnel_revenue (native): value must not change with date_axis,last30,default,1886022.1061,1886022.1061,0.0,PASS,Core says: native (own clock; date_axis ignored)
+gross_cogs (placement_only): value must not change with date_axis,yesterday,default,16671.05,16671.05,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+gross_cogs (placement_only): value must not change with date_axis,last7,default,117020.91999999998,117020.92000000001,2.9103830456733704e-11,PASS,Core says: event_date (identical on both axes: booked at placement)
+gross_cogs (placement_only): value must not change with date_axis,last30,default,643877.4200000002,643877.4200000002,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+gross_profit (placement_only): value must not change with date_axis,yesterday,default,-17735.829403,-17737.225595,1.3961920000001555,PASS,Core says: event_date (identical on both axes: booked at placement)
+gross_profit (placement_only): value must not change with date_axis,last7,default,-63858.922694999994,-63860.31888699998,1.3961919999856036,PASS,Core says: event_date (identical on both axes: booked at placement)
+gross_profit (placement_only): value must not change with date_axis,last30,default,-101776.08783299994,-101777.48402499993,1.3961919999856036,PASS,Core says: event_date (identical on both axes: booked at placement)
+gross_roas (placement_only): value must not change with date_axis,yesterday,default,0.9752997545065006,0.9752681673288868,3.1587177613867645e-05,PASS,Core says: event_date (identical on both axes: booked at placement)
+gross_roas (placement_only): value must not change with date_axis,last7,default,1.176704373913091,1.1766989131101095,5.460802981360757e-06,PASS,Core says: event_date (identical on both axes: booked at placement)
+gross_roas (placement_only): value must not change with date_axis,last30,default,1.3801556736746938,1.3801543223684074,1.351306286423437e-06,PASS,Core says: event_date (identical on both axes: booked at placement)
+gross_sales (placement_only): value must not change with date_axis,yesterday,default,42043.270000000004,42043.270000000004,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+gross_sales (placement_only): value must not change with date_axis,last7,default,354014.75,354014.75,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+gross_sales (placement_only): value must not change with date_axis,last30,default,1968099.6,1968099.6000000006,4.656612873077393e-10,PASS,Core says: event_date (identical on both axes: booked at placement)
+hold_rate_15s (native): value must not change with date_axis,yesterday,default,0.27678823862029966,0.27678823862029966,0.0,PASS,Core says: native (own clock; date_axis ignored)
+hold_rate_15s (native): value must not change with date_axis,last7,default,0.265011023213591,0.265011023213591,0.0,PASS,Core says: native (own clock; date_axis ignored)
+hold_rate_15s (native): value must not change with date_axis,last30,default,0.24624926968823502,0.24624926968823502,0.0,PASS,Core says: native (own clock; date_axis ignored)
+hook_rate (native): value must not change with date_axis,yesterday,default,0.08564994188299109,0.08564994188299109,0.0,PASS,Core says: native (own clock; date_axis ignored)
+hook_rate (native): value must not change with date_axis,last7,default,0.13283319193285129,0.13283319193285129,0.0,PASS,Core says: native (own clock; date_axis ignored)
+hook_rate (native): value must not change with date_axis,last30,default,0.15841161823402106,0.15841161823402106,0.0,PASS,Core says: native (own clock; date_axis ignored)
+impressions (native): value must not change with date_axis,yesterday,default,101919.0,101919.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+impressions (native): value must not change with date_axis,last7,default,868259.0,868259.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+impressions (native): value must not change with date_axis,last30,default,4757263.0,4757263.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+inventory_sync_errors (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+inventory_sync_errors (native): value must not change with date_axis,last7,default,58.0,58.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+inventory_sync_errors (native): value must not change with date_axis,last30,default,213.0,213.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+items_with_layer_gap (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+items_with_layer_gap (native): value must not change with date_axis,last7,default,99.0,99.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+items_with_layer_gap (native): value must not change with date_axis,last30,default,332.0,332.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+landing_page_views (native): value must not change with date_axis,yesterday,default,1584.0,1584.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+landing_page_views (native): value must not change with date_axis,last7,default,13358.0,13358.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+landing_page_views (native): value must not change with date_axis,last30,default,69738.0,69738.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+layered_units (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+layered_units (native): value must not change with date_axis,last7,default,798.0,798.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+layered_units (native): value must not change with date_axis,last30,default,1835.0,1835.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+line_fill_rate (native) with date_axis=event_date,yesterday,line_fill_rate,,,,PASS,refused: stale_data
+line_fill_rate (native) with date_axis=event_date,last7,line_fill_rate,,,,PASS,refused: stale_data
+line_fill_rate (native) with date_axis=event_date,last30,line_fill_rate,,,,PASS,refused: stale_data
+line_ordered_units (native) with date_axis=event_date,yesterday,line_ordered_units,,,,PASS,refused: stale_data
+line_ordered_units (native) with date_axis=event_date,last7,line_ordered_units,,,,PASS,refused: stale_data
+line_ordered_units (native) with date_axis=event_date,last30,line_ordered_units,,,,PASS,refused: stale_data
+line_received_units (native) with date_axis=event_date,yesterday,line_received_units,,,,PASS,refused: stale_data
+line_received_units (native) with date_axis=event_date,last7,line_received_units,,,,PASS,refused: stale_data
+line_received_units (native) with date_axis=event_date,last30,line_received_units,,,,PASS,refused: stale_data
+line_value (native) with date_axis=event_date,yesterday,line_value,,,,PASS,refused: stale_data
+line_value (native) with date_axis=event_date,last7,line_value,,,,PASS,refused: stale_data
+line_value (native) with date_axis=event_date,last30,line_value,,,,PASS,refused: stale_data
+link_clicks (native): value must not change with date_axis,yesterday,default,744.0,744.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+link_clicks (native): value must not change with date_axis,last7,default,7796.0,7796.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+link_clicks (native): value must not change with date_axis,last30,default,42084.0,42084.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+ltv (cohort_only) with date_axis=event_date,yesterday,ltv,1339.2989963490288,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; this measure has no event-date meaning
+ltv (cohort_only) with date_axis=event_date,last7,ltv,1813.9459783271914,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; this measure has no event-date meaning
+ltv (cohort_only) with date_axis=event_date,last30,ltv,1802.1495873093836,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; this measure has no event-date meaning
+ltv_cac_ratio (cohort_only) with date_axis=event_date,yesterday,ltv_cac_ratio,0.6524368259022245,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; this measure has no event-date meaning
+ltv_cac_ratio (cohort_only) with date_axis=event_date,last7,ltv_cac_ratio,0.7657272110157494,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; this measure has no event-date meaning
+ltv_cac_ratio (cohort_only) with date_axis=event_date,last30,ltv_cac_ratio,0.9402531007248066,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; this measure has no event-date meaning
+movement_value (native): value must not change with date_axis,yesterday,default,0.0,0.0,0,PASS,Core says: native (own clock; date_axis ignored)
+movement_value (native): value must not change with date_axis,last7,default,74280.2,74280.2,0.0,PASS,Core says: native (own clock; date_axis ignored)
+movement_value (native): value must not change with date_axis,last30,default,387023.28,387023.28,0.0,PASS,Core says: native (own clock; date_axis ignored)
+net_aov (cohort_only) with date_axis=event_date,yesterday,net_aov,1431.7374063663692,,,PASS,refused: cohort-defined measure (D-31): use date_axis=order_date; no event-date meaning
+net_aov (cohort_only) with date_axis=event_date,last7,net_aov,1905.3744177751882,,,PASS,refused: cohort-defined measure (D-31): use date_axis=order_date; no event-date meaning
+net_aov (cohort_only) with date_axis=event_date,last30,net_aov,1838.7452692432375,,,PASS,refused: cohort-defined measure (D-31): use date_axis=order_date; no event-date meaning
+net_stock_change (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+net_stock_change (native): value must not change with date_axis,last7,default,17.0,17.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+net_stock_change (native): value must not change with date_axis,last30,default,-598.0,-598.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+new_customer_ltv (cohort_only) with date_axis=event_date,yesterday,new_customer_ltv,1339.2989963490288,,,PASS,refused: cohort-defined measure (D-31): use date_axis=order_date; no event-date meaning
+new_customer_ltv (cohort_only) with date_axis=event_date,last7,new_customer_ltv,1813.9459783271911,,,PASS,refused: cohort-defined measure (D-31): use date_axis=order_date; no event-date meaning
+new_customer_ltv (cohort_only) with date_axis=event_date,last30,new_customer_ltv,1802.1495873093838,,,PASS,refused: cohort-defined measure (D-31): use date_axis=order_date; no event-date meaning
+new_customer_net_sales (cohort_only) with date_axis=event_date,yesterday,new_customer_net_sales,28125.278923329606,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; this measure has no event-date meaning
+new_customer_net_sales (cohort_only) with date_axis=event_date,last7,new_customer_net_sales,230371.1392475533,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; this measure has no event-date meaning
+new_customer_net_sales (cohort_only) with date_axis=event_date,last30,new_customer_net_sales,1340799.2929581814,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; this measure has no event-date meaning
+new_customers (placement_only): value must not change with date_axis,yesterday,default,21.0,21.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+on_hand_units (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+on_hand_units (native): value must not change with date_axis,last7,default,5257.0,5257.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+on_hand_units (native): value must not change with date_axis,last30,default,8806.0,8806.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+open_inventory_sync_errors (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+open_inventory_sync_errors (native): value must not change with date_axis,last7,default,39.0,39.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+open_inventory_sync_errors (native): value must not change with date_axis,last30,default,116.0,116.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+open_purchase_orders (native) with date_axis=event_date,yesterday,open_purchase_orders,,,,PASS,refused: stale_data
+open_purchase_orders (native) with date_axis=event_date,last7,open_purchase_orders,,,,PASS,refused: stale_data
+open_purchase_orders (native) with date_axis=event_date,last30,open_purchase_orders,,,,PASS,refused: stale_data
+order_pnl_ad_spend (native): value must not change with date_axis,yesterday,default,43108.049403000005,43109.445595000005,1.3961920000001555,PASS,Core says: native (own clock; date_axis ignored)
+order_pnl_ad_spend (native): value must not change with date_axis,last7,default,300852.752695,300854.148887,1.3961920000147074,PASS,Core says: native (own clock; date_axis ignored)
+order_pnl_ad_spend (native): value must not change with date_axis,last30,default,1425998.267833,1425999.664025,1.3961920000147074,PASS,Core says: native (own clock; date_axis ignored)
+order_pnl_discounts (placement_only): value must not change with date_axis,yesterday,default,1113.5609,1113.5609,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+order_pnl_discounts (placement_only): value must not change with date_axis,last7,default,10928.5697,10928.5697,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+order_pnl_discounts (placement_only): value must not change with date_axis,last30,default,76147.6606,76147.66060000002,1.4551915228366852e-11,PASS,Core says: event_date (identical on both axes: booked at placement)
+order_pnl_gross_sales (placement_only): value must not change with date_axis,yesterday,default,42043.270000000004,42043.270000000004,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+order_pnl_gross_sales (placement_only): value must not change with date_axis,last7,default,354014.74999999994,354014.75000000006,1.1641532182693481e-10,PASS,Core says: event_date (identical on both axes: booked at placement)
+order_pnl_gross_sales (placement_only): value must not change with date_axis,last30,default,1968099.6000000006,1968099.6000000006,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+orders (placement_only): value must not change with date_axis,yesterday,default,29.0,30.0,1.0,WARN,Core says: event_date (identical on both axes: booked at placement)
+orders_with_touchpoints (native): value must not change with date_axis,yesterday,default,27.0,27.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+orders_with_touchpoints (native): value must not change with date_axis,last7,default,170.0,170.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+orders_with_touchpoints (native): value must not change with date_axis,last30,default,926.0,926.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+out_of_stock_items (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+out_of_stock_items (native): value must not change with date_axis,last7,default,10.0,10.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+out_of_stock_items (native): value must not change with date_axis,last30,default,232.0,232.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+overdue_purchase_orders (native) with date_axis=event_date,yesterday,overdue_purchase_orders,,,,PASS,refused: stale_data
+overdue_purchase_orders (native) with date_axis=event_date,last7,overdue_purchase_orders,,,,PASS,refused: stale_data
+overdue_purchase_orders (native) with date_axis=event_date,last30,overdue_purchase_orders,,,,PASS,refused: stale_data
+packaging_cost (placement_only): value must not change with date_axis,yesterday,default,380.0,380.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+packaging_cost (placement_only): value must not change with date_axis,last7,default,2300.0,2300.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+packaging_cost (placement_only): value must not change with date_axis,last30,default,16140.0,16140.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+page_views (native): value must not change with date_axis,yesterday,default,4864.0,4864.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+page_views (native): value must not change with date_axis,last7,default,36486.0,36486.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+page_views (native): value must not change with date_axis,last30,default,176798.0,176798.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+payment_amount (native): value must not change with date_axis,yesterday,default,34252.450000000004,34252.450000000004,0.0,PASS,Core says: native (own clock; date_axis ignored)
+payment_amount (native): value must not change with date_axis,last7,default,395509.60000000003,395509.60000000003,0.0,PASS,Core says: native (own clock; date_axis ignored)
+payment_amount (native): value must not change with date_axis,last30,default,1411721.4899999998,1411721.4899999998,0.0,PASS,Core says: native (own clock; date_axis ignored)
+payment_gateway_fees (placement_only): value must not change with date_axis,yesterday,default,146.891,146.891,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+payment_gateway_fees (placement_only): value must not change with date_axis,last7,default,1593.073,1593.073,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+payment_gateway_fees (placement_only): value must not change with date_axis,last30,default,10663.389000000001,10663.389000000001,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+payment_orders (placement_only): value must not change with date_axis,yesterday,default,29.0,30.0,1.0,WARN,Core says: event_date (identical on both axes: booked at placement)
+platform_reported_landing_page_views (native): value must not change with date_axis,yesterday,default,682.0,682.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+platform_reported_landing_page_views (native): value must not change with date_axis,last7,default,6975.0,6975.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+platform_reported_landing_page_views (native): value must not change with date_axis,last30,default,37536.0,37536.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+po_count (native) with date_axis=event_date,yesterday,po_count,,,,PASS,refused: stale_data
+po_count (native) with date_axis=event_date,last7,po_count,,,,PASS,refused: stale_data
+po_count (native) with date_axis=event_date,last30,po_count,,,,PASS,refused: stale_data
+po_fill_rate (native) with date_axis=event_date,yesterday,po_fill_rate,,,,PASS,refused: stale_data
+po_fill_rate (native) with date_axis=event_date,last7,po_fill_rate,,,,PASS,refused: stale_data
+po_fill_rate (native) with date_axis=event_date,last30,po_fill_rate,,,,PASS,refused: stale_data
+po_lines (native) with date_axis=event_date,yesterday,po_lines,,,,PASS,refused: stale_data
+po_lines (native) with date_axis=event_date,last7,po_lines,,,,PASS,refused: stale_data
+po_lines (native) with date_axis=event_date,last30,po_lines,,,,PASS,refused: stale_data
+po_ordered_units (native) with date_axis=event_date,yesterday,po_ordered_units,,,,PASS,refused: stale_data
+po_ordered_units (native) with date_axis=event_date,last7,po_ordered_units,,,,PASS,refused: stale_data
+po_ordered_units (native) with date_axis=event_date,last30,po_ordered_units,,,,PASS,refused: stale_data
+po_received_units (native) with date_axis=event_date,yesterday,po_received_units,,,,PASS,refused: stale_data
+po_received_units (native) with date_axis=event_date,last7,po_received_units,,,,PASS,refused: stale_data
+po_received_units (native) with date_axis=event_date,last30,po_received_units,,,,PASS,refused: stale_data
+po_value (native) with date_axis=event_date,yesterday,po_value,,,,PASS,refused: stale_data
+po_value (native) with date_axis=event_date,last7,po_value,,,,PASS,refused: stale_data
+po_value (native) with date_axis=event_date,last30,po_value,,,,PASS,refused: stale_data
+prepaid_orders (placement_only): value must not change with date_axis,yesterday,default,16.0,16.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_ad_spend (cohort_only) with date_axis=event_date,yesterday,product_ad_spend,43108.049403000005,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_ad_spend (cohort_only) with date_axis=event_date,last7,product_ad_spend,300852.75269500003,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_ad_spend (cohort_only) with date_axis=event_date,last30,product_ad_spend,1425998.2678330003,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_attributed_contribution (cohort_only) with date_axis=event_date,yesterday,product_attributed_contribution,22052.187384624718,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_attributed_contribution (cohort_only) with date_axis=event_date,last7,product_attributed_contribution,210746.55457063465,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_attributed_contribution (cohort_only) with date_axis=event_date,last30,product_attributed_contribution,1086129.2832586968,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_attributed_net_sales (cohort_only) with date_axis=event_date,yesterday,product_attributed_net_sales,41520.38478462472,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_attributed_net_sales (cohort_only) with date_axis=event_date,last7,product_attributed_net_sales,350588.8928706346,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_attributed_net_sales (cohort_only) with date_axis=event_date,last30,product_attributed_net_sales,1849777.740858697,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_attributed_revenue (cohort_only) with date_axis=event_date,yesterday,product_attributed_revenue,42043.270000000004,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_attributed_revenue (cohort_only) with date_axis=event_date,last7,product_attributed_revenue,354014.75000000006,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_attributed_revenue (cohort_only) with date_axis=event_date,last30,product_attributed_revenue,1968099.6000000003,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_be_roas (cohort_only) with date_axis=event_date,yesterday,product_be_roas,1.8828238695982453,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_be_roas (cohort_only) with date_axis=event_date,last7,product_be_roas,1.6635569373122532,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_be_roas (cohort_only) with date_axis=event_date,last30,product_be_roas,1.7030916755221237,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cac (cohort_only) with date_axis=event_date,yesterday,product_cac,2052.7642572857144,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cac (cohort_only) with date_axis=event_date,last7,product_cac,2368.9193125590555,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cac (cohort_only) with date_axis=event_date,last30,product_cac,1916.6643384852155,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_clicks (cohort_only) with date_axis=event_date,yesterday,product_clicks,2025.0,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_clicks (cohort_only) with date_axis=event_date,last7,product_clicks,18449.0,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_clicks (cohort_only) with date_axis=event_date,last30,product_clicks,105497.00000000001,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cost_per_landing_page_view (cohort_only) with date_axis=event_date,yesterday,product_cost_per_landing_page_view,28.34191282248521,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cost_per_landing_page_view (cohort_only) with date_axis=event_date,last7,product_cost_per_landing_page_view,24.091347909593214,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cost_per_landing_page_view (cohort_only) with date_axis=event_date,last30,product_cost_per_landing_page_view,22.352471437597973,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cost_per_link_click (cohort_only) with date_axis=event_date,yesterday,product_cost_per_link_click,57.94092661693549,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cost_per_link_click (cohort_only) with date_axis=event_date,last7,product_cost_per_link_click,38.59065581003078,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cost_per_link_click (cohort_only) with date_axis=event_date,last30,product_cost_per_link_click,33.88457056917119,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cost_per_order (cohort_only) with date_axis=event_date,yesterday,product_cost_per_order,1486.484462172414,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cost_per_order (cohort_only) with date_axis=event_date,last7,product_cost_per_order,1635.0693081250001,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cost_per_order (cohort_only) with date_axis=event_date,last30,product_cost_per_order,1417.4933079850898,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cpc (cohort_only) with date_axis=event_date,yesterday,product_cpc,21.287925631111115,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cpc (cohort_only) with date_axis=event_date,last7,product_cpc,16.30726612255407,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cpc (cohort_only) with date_axis=event_date,last30,product_cpc,13.516955627487038,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cpm (cohort_only) with date_axis=event_date,yesterday,product_cpm,422.9679683961616,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cpm (cohort_only) with date_axis=event_date,last7,product_cpm,346.5015613964974,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_cpm (cohort_only) with date_axis=event_date,last30,product_cpm,299.7518883410247,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_ctr (cohort_only) with date_axis=event_date,yesterday,product_ctr,0.0198689142251614,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_ctr (cohort_only) with date_axis=event_date,last7,product_ctr,0.021248292558202743,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_ctr (cohort_only) with date_axis=event_date,last30,product_ctr,0.02217599114784933,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_gross_cogs (placement_only): value must not change with date_axis,yesterday,default,16671.05,16671.05,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_gross_cogs (placement_only): value must not change with date_axis,last7,default,117020.91999999998,117020.92000000001,2.9103830456733704e-11,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_gross_cogs (placement_only): value must not change with date_axis,last30,default,643877.4200000003,643877.4200000002,1.1641532182693481e-10,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_gross_roas (cohort_only) with date_axis=event_date,yesterday,product_gross_roas,0.9752681673288868,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_gross_roas (cohort_only) with date_axis=event_date,last7,product_gross_roas,1.1766989131101095,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_gross_roas (cohort_only) with date_axis=event_date,last30,product_gross_roas,1.380154322368407,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_hold_rate_15s (cohort_only) with date_axis=event_date,yesterday,product_hold_rate_15s,0.27678823862029966,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_hold_rate_15s (cohort_only) with date_axis=event_date,last7,product_hold_rate_15s,0.26501102321359093,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_hold_rate_15s (cohort_only) with date_axis=event_date,last30,product_hold_rate_15s,0.24624926968823505,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_hook_rate (cohort_only) with date_axis=event_date,yesterday,product_hook_rate,0.034704029670620785,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_hook_rate (cohort_only) with date_axis=event_date,last7,product_hook_rate,0.07104792463999797,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_hook_rate (cohort_only) with date_axis=event_date,last30,product_hook_rate,0.09750207209481583,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_impressions (cohort_only) with date_axis=event_date,yesterday,product_impressions,101919.00000000001,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_impressions (cohort_only) with date_axis=event_date,last7,product_impressions,868259.0000000001,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_impressions (cohort_only) with date_axis=event_date,last30,product_impressions,4757263.000000001,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_landing_page_views (cohort_only) with date_axis=event_date,yesterday,product_landing_page_views,1521.0,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_landing_page_views (cohort_only) with date_axis=event_date,last7,product_landing_page_views,12487.999999999998,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_landing_page_views (cohort_only) with date_axis=event_date,last30,product_landing_page_views,63796.0,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_link_clicks (cohort_only) with date_axis=event_date,yesterday,product_link_clicks,744.0,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_link_clicks (cohort_only) with date_axis=event_date,last7,product_link_clicks,7796.000000000001,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_link_clicks (cohort_only) with date_axis=event_date,last30,product_link_clicks,42084.0,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_ltv_cac_ratio (cohort_only) with date_axis=event_date,yesterday,product_ltv_cac_ratio,0.6524156953341029,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_ltv_cac_ratio (cohort_only) with date_axis=event_date,last7,product_ltv_cac_ratio,0.7657236574592831,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_ltv_cac_ratio (cohort_only) with date_axis=event_date,last30,product_ltv_cac_ratio,0.9402521801258117,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_mer (cohort_only) with date_axis=event_date,yesterday,product_mer,0.9631389179693003,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_mer (cohort_only) with date_axis=event_date,last7,product_mer,1.1653118102829116,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_mer (cohort_only) with date_axis=event_date,last30,product_mer,1.2971796470397114,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_net_margin_pct (cohort_only) with date_axis=event_date,yesterday,product_net_margin_pct,-0.5071546980983886,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_net_margin_pct (cohort_only) with date_axis=event_date,last7,product_net_margin_pct,-0.25701782386361743,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_net_margin_pct (cohort_only) with date_axis=event_date,last30,product_net_margin_pct,-0.18373579336538556,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_net_profit (cohort_only) with date_axis=event_date,yesterday,product_net_profit,-21057.25821037528,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_net_profit (cohort_only) with date_axis=event_date,last7,product_net_profit,-90107.5943163654,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_net_profit (cohort_only) with date_axis=event_date,last30,product_net_profit,-339870.3807663033,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_net_roas (cohort_only) with date_axis=event_date,yesterday,product_net_roas,0.5115395728304707,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_net_roas (cohort_only) with date_axis=event_date,last7,product_net_roas,0.7004940943985135,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_net_roas (cohort_only) with date_axis=event_date,last30,product_net_roas,0.7616616684137276,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_new_customers (placement_only): value must not change with date_axis,yesterday,default,21.0,21.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_new_customers (placement_only): value must not change with date_axis,last7,default,127.0,127.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_new_customers (placement_only): value must not change with date_axis,last30,default,744.0,744.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_ad_spend (cohort_only) with date_axis=event_date,yesterday,product_order_ad_spend,43109.445595000005,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_order_ad_spend (cohort_only) with date_axis=event_date,last7,product_order_ad_spend,300854.14888700005,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_order_ad_spend (cohort_only) with date_axis=event_date,last30,product_order_ad_spend,1425999.6640250003,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_order_checkout_fee (placement_only): value must not change with date_axis,yesterday,default,79.288,79.288,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_checkout_fee (placement_only): value must not change with date_axis,last7,default,637.1861,637.1860999999999,1.1368683772161603e-13,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_checkout_fee (placement_only): value must not change with date_axis,last30,default,4549.386600000002,4549.386600000001,9.094947017729282e-13,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_cod_handling_fee (placement_only): value must not change with date_axis,yesterday,default,353.94,353.94,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_cod_handling_fee (placement_only): value must not change with date_axis,last7,default,1666.8,1666.8000000000002,2.2737367544323206e-13,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_cod_handling_fee (placement_only): value must not change with date_axis,last30,default,11090.8,11090.8,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_discounts (placement_only): value must not change with date_axis,yesterday,default,1113.5609,1113.5609,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_discounts (placement_only): value must not change with date_axis,last7,default,10928.5697,10928.5697,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_discounts (placement_only): value must not change with date_axis,last30,default,76147.6606,76147.66059999999,1.4551915228366852e-11,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_gross_sales (placement_only): value must not change with date_axis,yesterday,default,42043.270000000004,42043.26999999999,1.4551915228366852e-11,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_gross_sales (placement_only): value must not change with date_axis,last7,default,354014.75,354014.74999999994,5.820766091346741e-11,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_gross_sales (placement_only): value must not change with date_axis,last30,default,1968099.6000000006,1968099.600000001,4.656612873077393e-10,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_provisional_ops_cost (placement_only): value must not change with date_axis,yesterday,default,1261.5984000000003,1261.5984,2.2737367544323206e-13,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_provisional_ops_cost (placement_only): value must not change with date_axis,last7,default,9111.544,9111.544,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_provisional_ops_cost (placement_only): value must not change with date_axis,last30,default,25200.0136,25200.0136,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_shipping_revenue (placement_only): value must not change with date_axis,yesterday,default,1212.7102623635906,1212.7102623635903,2.2737367544323206e-13,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_shipping_revenue (placement_only): value must not change with date_axis,last7,default,7922.877352076298,7922.877352076298,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_shipping_revenue (placement_only): value must not change with date_axis,last30,default,39638.97487809043,39638.97487809044,1.4551915228366852e-11,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_weight_discrepancy_cost (placement_only): value must not change with date_axis,yesterday,default,0.0,0.0,0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_weight_discrepancy_cost (placement_only): value must not change with date_axis,last7,default,0.0,0.0,0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_order_weight_discrepancy_cost (placement_only): value must not change with date_axis,last30,default,0.0,0.0,0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_orders (placement_only): value must not change with date_axis,yesterday,default,29.0,29.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_orders (placement_only): value must not change with date_axis,last7,default,184.0,184.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_orders (placement_only): value must not change with date_axis,last30,default,1006.0,1006.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_packaging_cost (placement_only): value must not change with date_axis,yesterday,default,380.0,380.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_packaging_cost (placement_only): value must not change with date_axis,last7,default,2300.0,2300.0000000000005,4.547473508864641e-13,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_packaging_cost (placement_only): value must not change with date_axis,last30,default,16140.0,16140.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_payment_gateway_fees (placement_only): value must not change with date_axis,yesterday,default,146.89100000000002,146.89100000000002,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_payment_gateway_fees (placement_only): value must not change with date_axis,last7,default,1593.0729999999999,1593.073,2.2737367544323206e-13,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_payment_gateway_fees (placement_only): value must not change with date_axis,last30,default,10663.389000000001,10663.389000000001,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_refunded_amount_excl_tax (native): value must not change with date_axis,yesterday,default,0.0,0.0,0,PASS,Core says: native (own clock; date_axis ignored)
+product_refunded_amount_excl_tax (native): value must not change with date_axis,last7,default,21471.93,21471.93,0.0,PASS,Core says: native (own clock; date_axis ignored)
+product_refunded_amount_excl_tax (native): value must not change with date_axis,last30,default,1018261.3093,1018261.3093,0.0,PASS,Core says: native (own clock; date_axis ignored)
+product_return_rate (cohort_only) with date_axis=event_date,yesterday,product_return_rate,0.0,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; no event-date meaning
+product_return_rate (cohort_only) with date_axis=event_date,last7,product_return_rate,0.016304347826086956,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; no event-date meaning
+product_return_rate (cohort_only) with date_axis=event_date,last30,product_return_rate,0.02186878727634195,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; no event-date meaning
+product_returns_excl_tax (native): value must not change with date_axis,yesterday,default,0.0,0.0,0,PASS,Core says: native (own clock; date_axis ignored)
+product_returns_excl_tax (native): value must not change with date_axis,last7,default,20328.305,20328.305,0.0,PASS,Core says: native (own clock; date_axis ignored)
+product_returns_excl_tax (native): value must not change with date_axis,last30,default,1013442.372,1013442.372,0.0,PASS,Core says: native (own clock; date_axis ignored)
+product_shipping_cost (placement_only): value must not change with date_axis,yesterday,default,1362.9299999999998,1362.9299999999998,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_shipping_cost (placement_only): value must not change with date_axis,last7,default,10014.02,10014.019999999999,1.8189894035458565e-12,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_shipping_cost (placement_only): value must not change with date_axis,last30,default,74530.85,74530.85,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+product_thruplays (cohort_only) with date_axis=event_date,yesterday,product_thruplays,979.0,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_thruplays (cohort_only) with date_axis=event_date,last7,product_thruplays,16347.999999999998,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_thruplays (cohort_only) with date_axis=event_date,last30,product_thruplays,114221.0,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_video_completion_rate (cohort_only) with date_axis=event_date,yesterday,product_video_completion_rate,0.09245122985581,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_video_completion_rate (cohort_only) with date_axis=event_date,last7,product_video_completion_rate,0.09288678511217739,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_video_completion_rate (cohort_only) with date_axis=event_date,last30,product_video_completion_rate,0.11792998924204957,,,PASS,"refused: allocated product-ad family (D-19o, D-27, D-34): use date_axis=order_date; ad spend is not an event of an order"
+product_view_events (native): value must not change with date_axis,yesterday,default,2312.0,2312.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+product_view_events (native): value must not change with date_axis,last7,default,19625.0,19625.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+product_view_events (native): value must not change with date_axis,last30,default,96761.0,96761.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+product_view_rate (native): value must not change with date_axis,yesterday,default,0.6652267818574514,0.6652267818574514,0.0,PASS,Core says: native (own clock; date_axis ignored)
+product_view_rate (native): value must not change with date_axis,last7,default,0.7251683501683501,0.7251683501683501,0.0,PASS,Core says: native (own clock; date_axis ignored)
+product_view_rate (native): value must not change with date_axis,last30,default,0.6995099303585246,0.6995099303585246,0.0,PASS,Core says: native (own clock; date_axis ignored)
+provisional_ops_cost (placement_only): value must not change with date_axis,yesterday,default,1261.5984,1261.5984,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+provisional_ops_cost (placement_only): value must not change with date_axis,last7,default,9111.544000000002,9111.544000000002,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+provisional_ops_cost (placement_only): value must not change with date_axis,last30,default,25200.013600000002,25200.013600000006,3.637978807091713e-12,PASS,Core says: event_date (identical on both axes: booked at placement)
+qc_actual_units (native) with date_axis=event_date,yesterday,qc_actual_units,,,,PASS,refused: stale_data
+qc_actual_units (native) with date_axis=event_date,last7,qc_actual_units,,,,PASS,refused: stale_data
+qc_actual_units (native) with date_axis=event_date,last30,qc_actual_units,,,,PASS,refused: stale_data
+qc_count (native) with date_axis=event_date,yesterday,qc_count,,,,PASS,refused: stale_data
+qc_count (native) with date_axis=event_date,last7,qc_count,,,,PASS,refused: stale_data
+qc_count (native) with date_axis=event_date,last30,qc_count,,,,PASS,refused: stale_data
+qc_damage_rate (native) with date_axis=event_date,yesterday,qc_damage_rate,,,,PASS,refused: stale_data
+qc_damage_rate (native) with date_axis=event_date,last7,qc_damage_rate,,,,PASS,refused: stale_data
+qc_damage_rate (native) with date_axis=event_date,last30,qc_damage_rate,,,,PASS,refused: stale_data
+qc_damage_units (native) with date_axis=event_date,yesterday,qc_damage_units,,,,PASS,refused: stale_data
+qc_damage_units (native) with date_axis=event_date,last7,qc_damage_units,,,,PASS,refused: stale_data
+qc_damage_units (native) with date_axis=event_date,last30,qc_damage_units,,,,PASS,refused: stale_data
+qc_damage_value (native) with date_axis=event_date,yesterday,qc_damage_value,,,,PASS,refused: stale_data
+qc_damage_value (native) with date_axis=event_date,last7,qc_damage_value,,,,PASS,refused: stale_data
+qc_damage_value (native) with date_axis=event_date,last30,qc_damage_value,,,,PASS,refused: stale_data
+qc_invoice_units (native) with date_axis=event_date,yesterday,qc_invoice_units,,,,PASS,refused: stale_data
+qc_invoice_units (native) with date_axis=event_date,last7,qc_invoice_units,,,,PASS,refused: stale_data
+qc_invoice_units (native) with date_axis=event_date,last30,qc_invoice_units,,,,PASS,refused: stale_data
+qc_shortfall_rate (native) with date_axis=event_date,yesterday,qc_shortfall_rate,,,,PASS,refused: stale_data
+qc_shortfall_rate (native) with date_axis=event_date,last7,qc_shortfall_rate,,,,PASS,refused: stale_data
+qc_shortfall_rate (native) with date_axis=event_date,last30,qc_shortfall_rate,,,,PASS,refused: stale_data
+qc_shortfall_units (native) with date_axis=event_date,yesterday,qc_shortfall_units,,,,PASS,refused: stale_data
+qc_shortfall_units (native) with date_axis=event_date,last7,qc_shortfall_units,,,,PASS,refused: stale_data
+qc_shortfall_units (native) with date_axis=event_date,last30,qc_shortfall_units,,,,PASS,refused: stale_data
+receipt_layers (native) with date_axis=event_date,yesterday,receipt_layers,,,,PASS,refused: stale_data
+receipt_layers (native) with date_axis=event_date,last7,receipt_layers,,,,PASS,refused: stale_data
+receipt_layers (native) with date_axis=event_date,last30,receipt_layers,,,,PASS,refused: stale_data
+received_units (native) with date_axis=event_date,yesterday,received_units,,,,PASS,refused: stale_data
+received_units (native) with date_axis=event_date,last7,received_units,,,,PASS,refused: stale_data
+received_units (native) with date_axis=event_date,last30,received_units,,,,PASS,refused: stale_data
+received_value (native) with date_axis=event_date,yesterday,received_value,,,,PASS,refused: stale_data
+received_value (native) with date_axis=event_date,last7,received_value,,,,PASS,refused: stale_data
+received_value (native) with date_axis=event_date,last30,received_value,,,,PASS,refused: stale_data
+refund_amount (cohort_only) with date_axis=event_date,yesterday,refund_amount,30663.5,,,PASS,refused: cohort-defined measure (D-31): use date_axis=order_date; no event-date meaning
+refund_amount (cohort_only) with date_axis=event_date,last7,refund_amount,131169.5,,,PASS,refused: cohort-defined measure (D-31): use date_axis=order_date; no event-date meaning
+refund_amount (cohort_only) with date_axis=event_date,last30,refund_amount,528293.3,,,PASS,refused: cohort-defined measure (D-31): use date_axis=order_date; no event-date meaning
+refund_count (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+refund_count (native): value must not change with date_axis,last7,default,15.0,15.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+refund_count (native): value must not change with date_axis,last30,default,487.0,487.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+refund_lines (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+refund_lines (native): value must not change with date_axis,last7,default,13.0,13.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+refund_lines (native): value must not change with date_axis,last30,default,582.0,582.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+refunded_amount_excl_tax (native): value must not change with date_axis,yesterday,default,0.0,0.0,0,PASS,Core says: native (own clock; date_axis ignored)
+refunded_amount_excl_tax (native): value must not change with date_axis,last7,default,20684.95,20684.95,0.0,PASS,Core says: native (own clock; date_axis ignored)
+refunded_amount_excl_tax (native): value must not change with date_axis,last30,default,1033630.2799,1033630.2799,0.0,PASS,Core says: native (own clock; date_axis ignored)
+rejected_quality_checks (native) with date_axis=event_date,yesterday,rejected_quality_checks,,,,PASS,refused: stale_data
+rejected_quality_checks (native) with date_axis=event_date,last7,rejected_quality_checks,,,,PASS,refused: stale_data
+rejected_quality_checks (native) with date_axis=event_date,last30,rejected_quality_checks,,,,PASS,refused: stale_data
+remaining_units (native) with date_axis=event_date,yesterday,remaining_units,,,,PASS,refused: stale_data
+remaining_units (native) with date_axis=event_date,last7,remaining_units,,,,PASS,refused: stale_data
+remaining_units (native) with date_axis=event_date,last30,remaining_units,,,,PASS,refused: stale_data
+remaining_value (native) with date_axis=event_date,yesterday,remaining_value,,,,PASS,refused: stale_data
+remaining_value (native) with date_axis=event_date,last7,remaining_value,,,,PASS,refused: stale_data
+remaining_value (native) with date_axis=event_date,last30,remaining_value,,,,PASS,refused: stale_data
+remove_from_carts (native): value must not change with date_axis,yesterday,default,28.0,28.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+remove_from_carts (native): value must not change with date_axis,last7,default,122.0,122.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+remove_from_carts (native): value must not change with date_axis,last30,default,713.0,713.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+repeat_customers (native): value must not change with date_axis,yesterday,default,7.0,7.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+repeat_customers (native): value must not change with date_axis,last7,default,51.0,51.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+repeat_customers (native): value must not change with date_axis,last30,default,235.0,235.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+repeat_rate (cohort_only) with date_axis=event_date,yesterday,repeat_rate,0.30434782608695654,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; no event-date meaning
+repeat_rate (cohort_only) with date_axis=event_date,last7,repeat_rate,0.2982456140350877,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; no event-date meaning
+repeat_rate (cohort_only) with date_axis=event_date,last30,repeat_rate,0.24710830704521555,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; no event-date meaning
+reserved_units (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+reserved_units (native): value must not change with date_axis,last7,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+reserved_units (native): value must not change with date_axis,last30,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+return_rate (cohort_only) with date_axis=event_date,yesterday,return_rate,0.0,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; this measure has no event-date meaning
+return_rate (cohort_only) with date_axis=event_date,last7,return_rate,0.016304347826086956,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; this measure has no event-date meaning
+return_rate (cohort_only) with date_axis=event_date,last30,return_rate,0.020874751491053677,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; this measure has no event-date meaning
+return_recovered_cogs (native): value must not change with date_axis,yesterday,default,0.0,0.0,0,PASS,Core says: native (own clock; date_axis ignored)
+return_recovered_cogs (native): value must not change with date_axis,last7,default,1194.95,1194.95,0.0,PASS,Core says: native (own clock; date_axis ignored)
+return_recovered_cogs (native): value must not change with date_axis,last30,default,358810.39,358810.39,0.0,PASS,Core says: native (own clock; date_axis ignored)
+returns_excl_tax (native): value must not change with date_axis,yesterday,default,0.0,0.0,0,PASS,Core says: native (own clock; date_axis ignored)
+returns_excl_tax (native): value must not change with date_axis,last7,default,18046.1017,18046.1017,0.0,PASS,Core says: native (own clock; date_axis ignored)
+returns_excl_tax (native): value must not change with date_axis,last30,default,1023989.8295,1023989.8295,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sample_units (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sample_units (native): value must not change with date_axis,last7,default,48.0,48.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sample_units (native): value must not change with date_axis,last30,default,84.0,84.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sample_units_in_inventory (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sample_units_in_inventory (native): value must not change with date_axis,last7,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sample_units_in_inventory (native): value must not change with date_axis,last30,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sampling_products (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sampling_products (native): value must not change with date_axis,last7,default,9.0,9.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sampling_products (native): value must not change with date_axis,last30,default,36.0,36.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sampling_variant_count (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sampling_variant_count (native): value must not change with date_axis,last7,default,58.0,58.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sampling_variant_count (native): value must not change with date_axis,last30,default,96.0,96.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+session_bounce_rate (native): value must not change with date_axis,yesterday,default,0.3347732181425486,0.3347732181425486,0.0,PASS,Core says: native (own clock; date_axis ignored)
+session_bounce_rate (native): value must not change with date_axis,last7,default,0.2748316498316498,0.2748316498316498,0.0,PASS,Core says: native (own clock; date_axis ignored)
+session_bounce_rate (native): value must not change with date_axis,last30,default,0.30049006964147534,0.30049006964147534,0.0,PASS,Core says: native (own clock; date_axis ignored)
+session_collection_views (native): value must not change with date_axis,yesterday,default,1541.0,1541.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+session_collection_views (native): value must not change with date_axis,last7,default,9442.0,9442.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+session_collection_views (native): value must not change with date_axis,last30,default,45143.0,45143.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+session_page_views (native): value must not change with date_axis,yesterday,default,4857.0,4857.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+session_page_views (native): value must not change with date_axis,last7,default,36449.0,36449.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+session_page_views (native): value must not change with date_axis,last30,default,176683.0,176683.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+session_product_views (native): value must not change with date_axis,yesterday,default,2306.0,2306.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+session_product_views (native): value must not change with date_axis,last7,default,19596.0,19596.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+session_product_views (native): value must not change with date_axis,last30,default,96649.0,96649.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sessions (native): value must not change with date_axis,yesterday,default,1852.0,1852.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sessions (native): value must not change with date_axis,last7,default,16632.0,16632.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+sessions (native): value must not change with date_axis,last30,default,93048.0,93048.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+shipping_cost (placement_only): value must not change with date_axis,yesterday,default,1362.93,1362.93,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+shipping_cost (placement_only): value must not change with date_axis,last7,default,10014.019999999999,10014.019999999999,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+shipping_cost (placement_only): value must not change with date_axis,last30,default,74530.84999999999,74530.85,1.4551915228366852e-11,PASS,Core says: event_date (identical on both axes: booked at placement)
+shipping_revenue (placement_only): value must not change with date_axis,yesterday,default,1212.7102623635906,1212.7102623635906,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+shipping_revenue (placement_only): value must not change with date_axis,last7,default,7922.877352076299,7922.877352076299,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+shipping_revenue (placement_only): value must not change with date_axis,last30,default,39638.974878090434,39638.974878090434,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+site_search_events (native): value must not change with date_axis,yesterday,default,59.0,59.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+site_search_events (native): value must not change with date_axis,last7,default,390.0,390.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+site_search_events (native): value must not change with date_axis,last30,default,1573.0,1573.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+site_searches (native): value must not change with date_axis,yesterday,default,59.0,59.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+site_searches (native): value must not change with date_axis,last7,default,390.0,390.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+site_searches (native): value must not change with date_axis,last30,default,1573.0,1573.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+status_changes (native): value must not change with date_axis,yesterday,default,10.0,10.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+status_changes (native): value must not change with date_axis,last7,default,72.0,72.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+status_changes (native): value must not change with date_axis,last30,default,651.0,651.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+stock_movements (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+stock_movements (native): value must not change with date_axis,last7,default,303.0,303.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+stock_movements (native): value must not change with date_axis,last30,default,2726.0,2726.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+stock_value_fifo (native): value must not change with date_axis,yesterday,default,0.0,0.0,0,PASS,Core says: native (own clock; date_axis ignored)
+stock_value_fifo (native): value must not change with date_axis,last7,default,307826.625404,307826.625404,0.0,PASS,Core says: native (own clock; date_axis ignored)
+stock_value_fifo (native): value must not change with date_axis,last30,default,598313.475271,598313.475271,0.0,PASS,Core says: native (own clock; date_axis ignored)
+stocked_items (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+stocked_items (native): value must not change with date_axis,last7,default,138.0,138.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+stocked_items (native): value must not change with date_axis,last30,default,619.0,619.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+thruplays (native): value must not change with date_axis,yesterday,default,979.0,979.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+thruplays (native): value must not change with date_axis,last7,default,16348.0,16348.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+thruplays (native): value must not change with date_axis,last30,default,114221.0,114221.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+touches (native): value must not change with date_axis,yesterday,default,48.0,48.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+touches (native): value must not change with date_axis,last7,default,392.0,392.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+touches (native): value must not change with date_axis,last30,default,1790.0,1790.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+transactions (native): value must not change with date_axis,yesterday,default,39.0,39.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+transactions (native): value must not change with date_axis,last7,default,309.0,309.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+transactions (native): value must not change with date_axis,last30,default,2036.0,2036.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+unit_return_rate (cohort_only) with date_axis=event_date,yesterday,unit_return_rate,0.0,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; no event-date meaning
+unit_return_rate (cohort_only) with date_axis=event_date,last7,unit_return_rate,0.011583011583011582,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; no event-date meaning
+unit_return_rate (cohort_only) with date_axis=event_date,last30,unit_return_rate,0.01729106628242075,,,PASS,refused: cohort-defined rate (D-31): use date_axis=order_date; no event-date meaning
+units_in (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+units_in (native): value must not change with date_axis,last7,default,293.0,293.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+units_in (native): value must not change with date_axis,last30,default,2507.0,2507.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+units_ordered (placement_only): value must not change with date_axis,yesterday,default,36.0,36.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+units_ordered (placement_only): value must not change with date_axis,last7,default,259.0,259.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+units_ordered (placement_only): value must not change with date_axis,last30,default,1388.0,1388.0,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+units_out (native): value must not change with date_axis,yesterday,default,0.0,0.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+units_out (native): value must not change with date_axis,last7,default,276.0,276.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+units_out (native): value must not change with date_axis,last30,default,3105.0,3105.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+units_per_order (placement_only): value must not change with date_axis,yesterday,default,1.2413793103448276,1.2413793103448276,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+units_per_order (placement_only): value must not change with date_axis,last7,default,1.4076086956521738,1.4076086956521738,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+units_per_order (placement_only): value must not change with date_axis,last30,default,1.3797216699801194,1.3797216699801194,0.0,PASS,Core says: event_date (identical on both axes: booked at placement)
+vendor_count (native) with date_axis=event_date,yesterday,vendor_count,,,,PASS,refused: stale_data
+vendor_count (native) with date_axis=event_date,last7,vendor_count,,,,PASS,refused: stale_data
+vendor_count (native) with date_axis=event_date,last30,vendor_count,,,,PASS,refused: stale_data
+video_completion_rate (native): value must not change with date_axis,yesterday,default,0.09245122985581,0.09245122985581,0.0,PASS,Core says: native (own clock; date_axis ignored)
+video_completion_rate (native): value must not change with date_axis,last7,default,0.0928867851121774,0.0928867851121774,0.0,PASS,Core says: native (own clock; date_axis ignored)
+video_completion_rate (native): value must not change with date_axis,last30,default,0.11792998924204957,0.11792998924204957,0.0,PASS,Core says: native (own clock; date_axis ignored)
+web_events (native): value must not change with date_axis,yesterday,default,12221.0,12221.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+web_events (native): value must not change with date_axis,last7,default,101266.0,101266.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+web_events (native): value must not change with date_axis,last30,default,516040.0,516040.0,0.0,PASS,Core says: native (own clock; date_axis ignored)
+weight_discrepancy_cost (placement_only): value must not change with date_axis,yesterday,default,0.0,0.0,0,PASS,Core says: event_date (identical on both axes: booked at placement)
+weight_discrepancy_cost (placement_only): value must not change with date_axis,last7,default,0.0,0.0,0,PASS,Core says: event_date (identical on both axes: booked at placement)
+weight_discrepancy_cost (placement_only): value must not change with date_axis,last30,default,0.0,0.0,0,PASS,Core says: event_date (identical on both axes: booked at placement)

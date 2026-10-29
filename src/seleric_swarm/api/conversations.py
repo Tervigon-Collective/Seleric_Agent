@@ -81,6 +81,7 @@ from seleric_swarm.recovery import (
     RunWorkQueue,
 )
 from seleric_swarm.runtime import SwarmRuntime
+from seleric_swarm.services.mcp_query import scope_date_axis
 
 _log = logging.getLogger("seleric.api.conversations")
 
@@ -700,14 +701,18 @@ class MetricDefinitionView(BaseModel):
 
 
 @router.get("/metrics/definitions")
-def list_metric_definitions(request: Request) -> list[MetricDefinitionView]:
+async def list_metric_definitions(request: Request) -> list[MetricDefinitionView]:
     _authenticated_principal(request)
-    registry = getattr(_runtime(request), "metrics", None)
+    runtime = _runtime(request)
+    registry = getattr(runtime, "metrics", None)
+    bootstrap = getattr(runtime, "bootstrap", None)
+    if registry is not None and bootstrap is not None:
+        await bootstrap.refresh_if_stale()
     if registry is None:
         raise HTTPException(status_code=503, detail="metric registry is not configured")
     views: list[MetricDefinitionView] = []
     for definition in registry.all():
-        key = definition.catalogue_metric or definition.id.removeprefix("metric.")
+        key = definition.id
         views.append(
             MetricDefinitionView(
                 id=definition.id,
@@ -719,7 +724,7 @@ def list_metric_definitions(request: Request) -> list[MetricDefinitionView]:
                 grain=definition.grain,
                 domain=definition.domain,
                 version=definition.version,
-                aliases=sorted({*definition.aliases, key.replace("_", " ")}),
+                aliases=[key.replace("_", " ")],
             )
         )
     return views
@@ -1225,13 +1230,47 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
     the Chart widget already exposes the same rows on its Table tab, so keeping
     both rendered the series twice (live 2026-10-08 stacked-bar thread).
     """
-    from seleric_swarm.agent.answer_text import strip_markdown_tables
+    from seleric_swarm.agent.answer_text import (
+        drop_enumerations,
+        numeric_tokens,
+        strip_markdown_tables,
+        with_roundings,
+    )
 
     text = final_response
     raw_charts = raw.get("charts")
-    if isinstance(raw_charts, list) and any(isinstance(c, dict) for c in raw_charts):
+    stored_parts: list[Any] = raw["parts"] if isinstance(raw.get("parts"), list) else []
+    attached = [p for p in stored_parts if isinstance(p, dict) and isinstance(p.get("content"), dict)]
+    # A P&L walk keeps its Markdown table: the waterfall draws the steps, the table carries the subtotals.
+    drawn = [c for c in raw_charts if isinstance(c, dict) and c.get("chart_type") != "waterfall"] if isinstance(raw_charts, list) else []
+    cells: set[str] = set()
+    for part in attached:
+        if str(part.get("type")).upper() == "TABLE":
+            content = part["content"]
+            cells |= numeric_tokens(" ".join(
+                str(v) for row in content.get("rows") or [] if isinstance(row, dict) for v in row.values()))
+    for chart in drawn:  # a chart holds its rows too: the figures as drawn, rounded the way the answer writes them
+        spec: dict[str, Any] = chart["data"] if isinstance(chart.get("data"), dict) else chart
+        for row in spec.get("data") or []:
+            for value in row.values() if isinstance(row, dict) else ():
+                if isinstance(value, bool):
+                    continue
+                if isinstance(value, (int, float)):
+                    cells |= numeric_tokens(f"{round(value)} {value:.1f} {value:.2f}")
+                elif isinstance(value, str):
+                    cells |= numeric_tokens(value)
+    if drawn:
         text = strip_markdown_tables(final_response)
-    parts = [MessagePart(type=MessagePartType.TEXT, content=text)]
+    elif cells:  # a table of figures is attached: drop only the answer's tables that table already holds
+        text = strip_markdown_tables(final_response, covered=lambda lines: numeric_tokens(" ".join(lines)) <= cells)
+    if cells:  # a row-by-row list of figures the visuals already show is dropped; the findings stay
+        text = drop_enumerations(text, with_roundings(cells))
+    # Headline numbers lead the message, ahead of the prose that explains them.
+    parts = [
+        MessagePart(type=MessagePartType.KPI_GRID, content=p["content"])
+        for p in attached if str(p.get("type")).upper() == "KPI_GRID"
+    ]
+    parts.append(MessagePart(type=MessagePartType.TEXT, content=text))
     raw_evidence = raw.get("evidence")
     evidence: list[Any]
     if isinstance(raw_evidence, list):
@@ -1317,10 +1356,12 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
                 continue
             ptype = str(part.get("type") or "").upper()
             content = part.get("content")
-            if ptype == "KPI_GRID" and isinstance(content, dict):
-                parts.append(MessagePart(type=MessagePartType.KPI_GRID, content=content))
+            if ptype == "KPI_GRID":
+                continue  # placed ahead of the text above
             elif ptype == "TABLE" and isinstance(content, dict):
                 parts.append(MessagePart(type=MessagePartType.TABLE, content=content))
+            elif ptype == "APPROVAL" and isinstance(content, dict) and content.get("approval_id"):  # the email preview card
+                parts.append(MessagePart(type=MessagePartType.APPROVAL, content=content))
             elif ptype == "CHART" and isinstance(content, dict) and not raw_charts:
                 # Prefer explicit charts list when present; otherwise accept assembler charts.
                 chart_type = str(content.get("chart_type") or "bar")
@@ -1430,6 +1471,7 @@ async def _execute_submission(
     as_of: str | None,
     request_id: str,
     execution_mode: str,
+    date_axis: str | None = None,
     assistant_message_id: str,
     full_diagnostic: bool = True,
     full_prediction: bool = True,
@@ -1550,6 +1592,7 @@ async def _execute_submission(
             query=query,
             timezone=timezone,
             as_of=as_of,
+            date_axis=date_axis,
             session_id=run.thread_id,
             request_id=request_id,
             full_diagnostic=full_diagnostic,
@@ -1916,6 +1959,7 @@ class SubmissionRunExecutor:
             ),
             request_id=str(submission.get("request_id") or run.id),
             execution_mode=str(submission.get("execution_mode") or "development"),
+            date_axis=submission.get("date_axis") or None,
             assistant_message_id=assistant_message_id,
             full_diagnostic=bool(submission.get("full_diagnostic", True)),
             full_prediction=bool(submission.get("full_prediction", True)),
@@ -2005,6 +2049,10 @@ async def submit_message(
             raise HTTPException(status_code=409, detail="attachment is already associated")
         attachments.append(attachment)
 
+    try:
+        date_axis = scope_date_axis(body.scope)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     context_bundle = ContextBuilder(repositories).build(
         thread,
         query=query,
@@ -2098,6 +2146,7 @@ async def submit_message(
                         "metadata": {
                             **run.metadata,
                             "context_bundle": bundle_data,
+                            "context_composition": bundle_data.get("composition") or {},
                             "submission": {
                                 "query": query,
                                 "timezone": str(
@@ -2105,6 +2154,7 @@ async def submit_message(
                                 ),
                                 "as_of": body.scope.get("as_of")
                                 or body.scope.get("asOf"),
+                                "date_axis": date_axis,
                                 "request_id": request_id,
                                 "execution_mode": body.execution_mode,
                                 "assistant_message_id": assistant_message.id,

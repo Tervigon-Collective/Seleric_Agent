@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.domain.models import SeriesPoint
 from seleric_swarm.services.mcp_query import row_date
-from seleric_swarm.services.measure import module_args
 from seleric_swarm.services.time_range import resolve_time_range
 from seleric_swarm.toolsets._data import raw_query_metric
 
@@ -24,6 +23,8 @@ async def fetch_series(
     brand_id: str,
     grain: str = "day",
     max_lookback_days: int = 90,
+    filters: dict[str, str] | None = None,
+    date_axis: str | None = None,
 ) -> tuple[list[SeriesPoint], dict[str, Any]]:
     """Fetch a normalized ascending ``{ts, value}`` series for one catalogue metric.
 
@@ -44,11 +45,7 @@ async def fetch_series(
     # catalogue_metric field directly, no resolve_measure() keyword-search
     # fallback. A stale/missing id now surfaces as a live Cube error below,
     # not a silent substitution.
-    measure = definition.catalogue_metric or None
-    if measure is None:
-        return [], {"error": "catalogue measure not found"}
-
-    extra = module_args(definition)
+    measure = definition.id
     result = await raw_query_metric(
         runtime.mcp,
         agent_id=agent_id,
@@ -60,10 +57,10 @@ async def fetch_series(
             {"dimension": "brand_id", "operator": "equals", "values": [brand_id]},
             *[
                 {"dimension": k, "operator": "equals", "values": [v]}
-                for k, v in (getattr(definition, "catalogue_filters", None) or {}).items()
+                for k, v in (filters or {}).items()
             ],
         ],
-        module=extra["module"] if extra else ...,
+        date_axis=date_axis,
     )
     provenance = dict(result.get("provenance") or {})
     if result.get("error"):

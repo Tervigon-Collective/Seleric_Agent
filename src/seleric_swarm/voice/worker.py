@@ -41,6 +41,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from seleric_swarm.config.settings import Settings, get_settings
+from seleric_swarm.voice.speech import SpeechQueue
 
 logger = logging.getLogger("seleric.voice.worker")
 
@@ -163,9 +164,10 @@ def _build_tts(settings: Settings) -> Any:
 VOICE_INSTRUCTIONS = """\
 You are Seleric Voice, a warm, concise voice assistant for business analytics.
 
-Style: reply in English by default. Switch language only when the user's latest message is \
-clearly in another language (e.g. Hindi in Devanagari script), and go back to English as soon as \
-they do. Judge only the latest message, never earlier turns. \
+Style: always reply in English, even if the user speaks or writes another language or the \
+transcript looks garbled. Switch language only when the user explicitly asks you to speak in \
+one (e.g. "reply in Hindi"), and go back to English when they ask for it or start a new \
+conversation. \
 Keep every reply to one or two short sentences. No markdown, lists, emojis or symbols.
 
 You have NO business data of your own. For any question about metrics, sales, performance, \
@@ -174,12 +176,29 @@ in their own words, resolving references from this conversation (e.g. "and last 
 the full question), then say one brief sentence that you are looking into it. Never state, \
 estimate or guess a number or business fact yourself. The answer is spoken automatically when \
 it is ready, in full, so do not repeat or invent it and never tell the user to check a thread. \
-If the user asks whether a slow question has finished, call check_seleric. If the question is missing a metric or a time \
-period, ask one short clarifying question first.
+If the user asks whether a slow question has finished, call check_seleric. Never ask which metric or period \
+they mean: a broad question ("how are we doing", "overall business state") goes to ask_seleric exactly as asked, \
+because Seleric picks the headline metrics and the period itself. Ask one short question only when the words are \
+unintelligible, and if the user has already answered a question of yours, call ask_seleric at once. \
+Never speak brand or company names, internal field, table or tool names, or ids; the answer is already plain, \
+so stay out of its way.
 
 Greetings, small talk and clarifying questions you may answer directly. If the user says \
-stop, cancel or never mind, call cancel_seleric. You cannot change or write any data by \
-voice; if asked, tell the user to use the typed interface.\
+stop, cancel or never mind, call cancel_seleric: it ends every question in progress and stops \
+the voice. The user may ask a new question while an answer is being read out: call ask_seleric for it \
+at once. Seleric works on more than one question at a time and reads the answers out one at a time, \
+in the order they finish; never repeat or summarise an answer yourself.
+
+Emailing: you CAN email by voice; never say you cannot or tell the user to type it. When the user asks to email, send or share anything from this conversation, or asks whether you can, call \
+ask_seleric with their request in their own words; Seleric drafts it and reads the recipients \
+and attachments back, and asks whether to send. After a draft is waiting, if the user says \
+confirm, send, yes, go ahead, approved or similar: do not call ask_seleric yet — first ask one \
+short question confirming they want it sent (name the recipients if you know them). Only when \
+they then clearly affirm, call ask_seleric with that approval in their words so Seleric can send. \
+If they ask to change the draft or not to send, call ask_seleric with exactly what they said. \
+Never say an email was sent yourself.
+
+You cannot change business data by voice; if asked, tell the user to use the typed interface.\
 """
 
 
@@ -292,29 +311,43 @@ class LatencyLog:
             )
 
 
-def build_voice_agent(runner: VoiceTurnRunner) -> Any:
-    """The conversational agent: chats directly, delegates data questions to Seleric."""
+def build_voice_agent(runner: VoiceTurnRunner, projection: Any | None = None) -> Any:
+    """The conversational agent: chats directly, delegates data questions to Seleric.
+
+    ``projection`` is an optional ``VoiceProjection`` seeded from the durable
+    thread so follow-ups work after the mic turns on. It must stay small —
+    never pass tool payloads or the full ContextBundle into LiveKit.
+    """
 
     from livekit.agents import Agent
     from livekit.agents.llm import function_tool
 
     async def ask_seleric(question: str) -> str:
         """Ask Seleric a business-data question. Pass the user's full question."""
-        runner.submit(question)
-        return "Started. Tell the user in one short sentence that you are looking into it."
+        others = runner.active_count() > 0
+        return ask_reply(runner.submit(question), others_running=others)
 
     async def cancel_seleric() -> str:
-        """Stop the question Seleric is currently working on."""
+        """Stop every question Seleric is working on and stop speaking."""
         return "Cancelled." if runner.cancel() else "Nothing was running."
 
     async def check_seleric() -> str:
         """Check on a Seleric question that took too long; reads the answer out if ready."""
         return runner.check()
 
-    return Agent(
-        instructions=VOICE_INSTRUCTIONS,
-        tools=[function_tool(ask_seleric), function_tool(cancel_seleric), function_tool(check_seleric)],
-    )
+    instructions = VOICE_INSTRUCTIONS
+    chat_ctx = None
+    if projection is not None and not getattr(projection, "empty", True):
+        instructions = projection.augment_instructions(VOICE_INSTRUCTIONS)
+        chat_ctx = projection.build_chat_ctx()
+
+    kwargs: dict[str, Any] = {
+        "instructions": instructions,
+        "tools": [function_tool(ask_seleric), function_tool(cancel_seleric), function_tool(check_seleric)],
+    }
+    if chat_ctx is not None:
+        kwargs["chat_ctx"] = chat_ctx
+    return Agent(**kwargs)
 
 
 _ORDINAL_WORDS = {
@@ -526,6 +559,21 @@ SUBMIT_FAILED_LINE = "Sorry, I couldn't send that to Seleric. Please try again."
 ERROR_LINE = "Sorry, something went wrong on my side. Please try again."
 
 _TERMINAL_EVENTS = frozenset({"run.completed", "run.failed", "run.cancelled"})
+
+MAX_CONCURRENT_RUNS = 3  # questions answered in the background at once (the recovery worker allows run_max_concurrency)
+
+
+def ask_reply(status: str, *, others_running: bool) -> str:
+    """What ``ask_seleric`` tells the voice model about what happened to the question."""
+    if status == "duplicate":
+        return "Already working on that exact question. Tell the user in one short sentence that you are already on it."
+    if status == "busy":
+        return ("Too many questions are in progress already. Tell the user in one short sentence to wait for an answer "
+                "first, then ask again.")
+    if others_running:
+        return ("Started in the background; the earlier answer will be finished first. Tell the user in one short "
+                "sentence that you are looking into this as well.")
+    return "Started. Tell the user in one short sentence that you are looking into it."
 _MAX_NARRATION_CHARS = 120
 
 
@@ -605,12 +653,33 @@ async def iter_run_events(
         await asyncio.sleep(0.5)
 
 
-class VoiceTurnRunner:
-    """Owns the one in-flight Seleric mission for a voice session.
+@dataclass(eq=False)
+class _Turn:
+    """One question and the Seleric run answering it."""
 
-    A new user question supersedes the running one: the old run is cancelled
-    through the existing cancel route and its narrator stopped, instead of the
-    new question being silently dropped.
+    query: str
+    key: str
+    task: asyncio.Task[Any] | None = None
+    run_id: str | None = None
+    overlapped: bool = False  # another question was in flight at the same time: say which one this answers
+
+    @property
+    def active(self) -> bool:
+        return self.task is not None and not self.task.done()
+
+    def lead_in(self) -> str:
+        if not self.overlapped:
+            return ""
+        words = self.query.strip().rstrip("?.! ").split()[:8]
+        return f"On your question about {' '.join(words)}: "
+
+
+class VoiceTurnRunner:
+    """Runs the Seleric missions of a voice session, several at once, and speaks their results one at a time.
+
+    A new question does not cancel the one in flight: it runs in the background, and every spoken line goes through one
+    ``SpeechQueue``, so a second answer waits until the first has been read out and nothing overlaps. Answers that
+    overlapped in time name the question they answer. "Never mind" cancels every run and silences the speech.
     """
 
     def __init__(
@@ -624,9 +693,9 @@ class VoiceTurnRunner:
         self._principal = principal
         self._settings = settings
         self._ctx = ctx
-        self._task: asyncio.Task[Any] | None = None
-        self._run_id: str | None = None
-        self._pending_run_id: str | None = None  # timed out unfinished; check() can still fetch it
+        self._turns: list[_Turn] = []
+        self._pending: dict[str, _Turn] = {}  # run id -> turn that timed out unfinished; check() can still fetch it
+        self._speech = SpeechQueue(session, on_start=self._broadcast)
 
         api_url = str(getattr(settings, "seleric_api_url", "http://127.0.0.1:8000")).rstrip("/")
         self._api_url = api_url.replace("localhost", "127.0.0.1")
@@ -656,49 +725,73 @@ class VoiceTurnRunner:
         except Exception as err:
             logger.warning(f"Failed to publish transcript data message: {err}")
 
-    def _say(self, text: str, broadcast: bool = True) -> None:
-        try:
-            self._session.say(text)
-        except Exception as err:
-            if "closing" in str(err).lower() or "closed" in str(err).lower():
-                return
-            logger.warning(f"session.say error: {err}")
-        if broadcast:
-            self._broadcast(text)
+    def _announce(self, turn: _Turn, line: str) -> None:
+        """Speak a result line for ``turn`` (queued behind anything already being said)."""
+        text = turn.lead_in() + line
+        self._speech.speak([text], broadcast=text)
 
     # -- lifecycle ------------------------------------------------------
 
-    def submit(self, query: str) -> None:
-        """Start a turn for ``query``, superseding any run still in flight."""
-        previous, previous_run = self._task, self._run_id
-        if previous is not None and not previous.done():
-            previous.cancel()
-            if previous_run:
-                _track_task(self._cancel_run(previous_run))
-        self._run_id = None
-        self._pending_run_id = None
-        self._task = _track_task(self._run(query))
+    def active_count(self) -> int:
+        return sum(1 for t in self._turns if t.active)
+
+    def run_ids(self) -> list[str]:
+        return [t.run_id for t in self._turns if t.active and t.run_id]
+
+    def submit(self, query: str) -> str:
+        """Start a turn for ``query`` in the background: "started", "duplicate" (already running) or "busy" (too many)."""
+        self._turns = [t for t in self._turns if t.active]
+        key = " ".join(query.lower().strip().rstrip("?.! ").split())
+        if any(t.key == key for t in self._turns):
+            return "duplicate"
+        if len(self._turns) >= MAX_CONCURRENT_RUNS:
+            return "busy"
+        turn = _Turn(query=query, key=key)
+        if self._turns:  # both this one and the earlier ones now say which question they answer
+            for other in (*self._turns, turn):
+                other.overlapped = True
+        turn.task = _track_task(self._run(turn))
+        self._turns.append(turn)
+        return "started"
 
     def cancel(self) -> bool:
-        """Stop the in-flight run (user said "never mind"); False if none."""
-        task, run_id = self._task, self._run_id
-        if task is None or task.done():
+        """Stop every in-flight run and whatever is being said (user said "never mind"); False if nothing was going on."""
+        active = [t for t in self._turns if t.active]
+        if not active and not self._speech.busy:
             return False
-        task.cancel()
-        if run_id:
-            _track_task(self._cancel_run(run_id))
-        self._run_id = None
+        for turn in active:
+            assert turn.task is not None
+            turn.task.cancel()
+            if turn.run_id:
+                _track_task(self._cancel_run(turn.run_id))
+        self._speech.stop()
         return True
 
+    async def cancel_all(self) -> None:
+        self.cancel()
+        await asyncio.gather(*(t.task for t in self._turns if t.task is not None), return_exceptions=True)
+        await self._speech.wait_idle()
+
+    async def wait_idle(self) -> None:
+        """Until every run has finished and everything queued has been spoken (tests and shutdown)."""
+        while True:
+            tasks = [t.task for t in self._turns if t.task is not None and not t.task.done()]
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+                continue
+            await self._speech.wait_idle()
+            if not self._speech.busy:
+                return
+
     def check(self) -> str:
-        """Result for the ``check_seleric`` tool: read out a timed-out run's answer if ready."""
-        if self._task is not None and not self._task.done():
+        """Result for the ``check_seleric`` tool: read out timed-out runs' answers if ready."""
+        if self._pending:
+            for run_id, turn in list(self._pending.items()):
+                _track_task(self._speak_answer(turn, run_id, fallback=TIMEOUT_LINE))
+            return "Checking now. Say nothing more; the result will be spoken."
+        if self.active_count():
             return "Still running. Tell the user in one short sentence that it is still in progress."
-        run_id = self._pending_run_id
-        if not run_id:
-            return "Nothing to check."
-        _track_task(self._speak_answer(run_id, fallback=TIMEOUT_LINE))
-        return "Checking now. Say nothing more; the result will be spoken."
+        return "Nothing to check."
 
     async def _cancel_run(self, run_id: str) -> None:
         try:
@@ -710,45 +803,41 @@ class VoiceTurnRunner:
         except Exception as err:
             logger.warning(f"run cancel failed for {run_id}: {err}")
 
-    async def _run(self, query: str) -> None:
-        self._broadcast(f"Submitting query to Seleric: {query}", speaker="Status")
-        run_id: str | None = None
+    async def _run(self, turn: _Turn) -> None:
+        self._broadcast(f"Submitting query to Seleric: {turn.query}", speaker="Status")
         try:
-            run_id = await self._submit(query)
+            run_id = await self._submit(turn)
             if run_id is None:
                 return
-            self._run_id = run_id
-            await self._follow(run_id)
+            turn.run_id = run_id
+            await self._follow(turn, run_id)
         except asyncio.CancelledError:
-            raise  # superseded by a newer question; its run is cancelled in submit()
+            raise  # "never mind": its run is cancelled in cancel()
         except Exception:
             logger.exception("Error executing voice turn against Seleric API")
-            self._say(ERROR_LINE)
-        finally:
-            if run_id is not None and self._run_id == run_id:
-                self._run_id = None
+            self._announce(turn, ERROR_LINE)
 
-    async def _submit(self, query: str) -> str | None:
+    async def _submit(self, turn: _Turn) -> str | None:
         res = await _get_voice_client().post(
             f"{self._api_url}/v1/threads/{self._principal.thread_id}/messages",
             headers=self._headers,
             json={
                 "execution_mode": "development",
-                "parts": [{"type": "TEXT", "content": query}],
+                "parts": [{"type": "TEXT", "content": turn.query}],
             },
         )
         if not res.is_success:
             logger.error(f"failed to submit voice message: {res.status_code} {res.text}")
-            self._say(GONE_LINE if res.status_code == 404 else SUBMIT_FAILED_LINE)
+            self._announce(turn, GONE_LINE if res.status_code == 404 else SUBMIT_FAILED_LINE)
             return None
         run_id = res.json().get("run_id")
         if not run_id:
             logger.error("voice message accepted without a run_id")
-            self._say(SUBMIT_FAILED_LINE)
+            self._announce(turn, SUBMIT_FAILED_LINE)
             return None
         return str(run_id)
 
-    async def _follow(self, run_id: str) -> None:
+    async def _follow(self, turn: _Turn, run_id: str) -> None:
         """Narrate a run from its event stream, then speak how it ended."""
         settings = self._settings
         timeout_s = float(getattr(settings, "voice_mission_timeout_s", 180.0))
@@ -777,37 +866,37 @@ class VoiceTurnRunner:
                 terminal = event_type
                 break
             now = time.monotonic()
-            if not narrate:
+            if not narrate or turn.overlapped:  # a background run stays quiet until its answer
                 continue
             line = narration_line(event_type, str(event.get("summary") or ""))
             if line and now - last_spoken >= min_gap_s:
                 last_spoken = now
-                self._say(line)
+                self._speech.speak([line], narration=True, broadcast=line)
             elif (
                 event_type == "_tick"
                 and idle_spoken < len(IDLE_LINES)
                 and now - last_spoken >= idle_hold_s
             ):
                 last_spoken = now
-                self._say(IDLE_LINES[idle_spoken])
+                self._speech.speak([IDLE_LINES[idle_spoken]], narration=True, broadcast=IDLE_LINES[idle_spoken])
                 idle_spoken += 1
 
         if terminal == "run.completed":
-            await self._speak_answer(run_id)
+            await self._speak_answer(turn, run_id)
         elif terminal == "run.failed":
-            self._say(REFUSAL_LINE)
+            self._announce(turn, REFUSAL_LINE)
         elif terminal == "run.cancelled":
             return
         elif errored:
-            self._say(ERROR_LINE)
+            self._announce(turn, ERROR_LINE)
         else:
             # Out of time. The run may have finished just now; otherwise keep
             # its id so the user can ask again.
-            self._pending_run_id = run_id
-            await self._speak_answer(run_id, fallback=TIMEOUT_LINE)
+            self._pending[run_id] = turn
+            await self._speak_answer(turn, run_id, fallback=TIMEOUT_LINE)
 
-    async def _speak_answer(self, run_id: str, fallback: str = ERROR_LINE) -> None:
-        """Speak the validated final answer of a *completed* run."""
+    async def _speak_answer(self, turn: _Turn, run_id: str, fallback: str = ERROR_LINE) -> None:
+        """Queue the validated final answer of a *completed* run."""
         client = _get_voice_client()
         url = f"{self._api_url}/v1/threads/{self._principal.thread_id}/messages"
         for attempt in range(3):
@@ -827,15 +916,16 @@ class VoiceTurnRunner:
                 for part in msg.get("parts", []):
                     content = str(part.get("content") or "").strip()
                     if str(part.get("type") or "").upper() == "TEXT" and content and content != "Working…":
-                        if self._pending_run_id == run_id:
-                            self._pending_run_id = None
+                        self._pending.pop(run_id, None)
                         spoken = format_spoken_summary(content)
-                        self._broadcast(spoken)
-                        for chunk in split_spoken_chunks(spoken):
-                            self._say(chunk, broadcast=False)
+                        lead = turn.lead_in()
+                        chunks = split_spoken_chunks(spoken)
+                        if lead and chunks:
+                            chunks[0] = lead + chunks[0]
+                        self._speech.speak(chunks, broadcast=lead + spoken)
                         return
         logger.error(f"run {run_id} had no readable answer message")
-        self._say(fallback)
+        self._announce(turn, fallback)
 
 
 def _import_plugins() -> None:
@@ -929,8 +1019,27 @@ async def _voice_entrypoint(ctx: Any) -> None:
                 "user_id": principal.user_id,
             },
         )
-    await session.start(agent=build_voice_agent(runner), room=ctx.room)
-    session.say("Seleric Voice is ready. Ask any business question.")
+
+    from seleric_swarm.voice.projection import fetch_voice_projection
+
+    projection = await fetch_voice_projection(
+        _get_voice_client(),
+        api_url=runner._api_url,
+        headers=runner._headers,
+        thread_id=principal.thread_id,
+    )
+    logger.info(
+        "voice projection loaded",
+        extra={
+            "thread_id": principal.thread_id,
+            "turn_count": projection.composition.get("turn_count", 0),
+            "durable_count": projection.composition.get("durable_count", 0),
+        },
+    )
+
+    await session.start(agent=build_voice_agent(runner, projection), room=ctx.room)
+    if projection.empty:
+        session.say("Seleric Voice is ready. Ask any business question.")
 
 
 def build_server() -> Any:
@@ -942,7 +1051,9 @@ def build_server() -> Any:
     from livekit.agents import AgentServer
 
     _import_plugins()
-    server = AgentServer()
+    # SDK default is one warm process per visible CPU (80 in this container).
+    # Each idle process loads Silero; that set filled the 8G swap file.
+    server = AgentServer(num_idle_processes=4)
     server.setup_fnc = _prewarm
     server.rtc_session()(_voice_entrypoint)
     return server

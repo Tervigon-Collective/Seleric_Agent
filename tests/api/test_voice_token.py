@@ -92,7 +92,7 @@ def test_mints_token_and_creates_thread(client: TestClient) -> None:
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["url"] == _Settings.livekit_url
-    assert body["room"] == room_name_for_thread(body["thread_id"])
+    assert body["room"].startswith(room_name_for_thread(body["thread_id"]) + "-")
     assert body["token"]
     assert body["expires_in_s"] == 900
 
@@ -193,7 +193,8 @@ def test_reuses_an_owned_thread(client: TestClient) -> None:
     ).json()
 
     assert second["thread_id"] == first["thread_id"]
-    assert second["room"] == first["room"]
+    # Same thread, new room: a rejoin must trigger a fresh agent dispatch.
+    assert second["room"] != first["room"]
 
 
 def test_route_is_404_when_voice_is_disabled(runtime: _Runtime) -> None:

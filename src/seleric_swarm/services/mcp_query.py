@@ -14,6 +14,66 @@ _GRANULARITY_DATE_KEY = re.compile(
     r"\.(?:second|minute|hour|day|week|month|quarter|year)$"
 )
 
+DATE_AXES: tuple[str, ...] = ("order_date", "event_date")  # Core's request-level ``date_axis`` (semantic v3, D-28)
+
+
+def scope_date_axis(scope: dict[str, Any]) -> str | None:
+    """``scope.date_axis`` (``dateAxis``) as one of ``DATE_AXES``; None when the request does not choose. Raises ValueError."""
+    axis = scope.get("date_axis") or scope.get("dateAxis")
+    if axis in (None, "", "string"):  # "string" is the Swagger placeholder
+        return None
+    if axis not in DATE_AXES:
+        raise ValueError(f"scope.date_axis must be one of {list(DATE_AXES)}, got {axis!r}")
+    return str(axis)
+
+
+def with_date_axis(arguments: dict[str, Any], axis: str | None, catalogue: Any = None) -> dict[str, Any]:
+    """``arguments`` on the run's date axis. An axis already in the arguments (the user's own wording asked for it) wins.
+    Measures the catalogue marks as not switchable do not get it: on event_date Core counts older orders that merely had a
+    cancel / RTO / return that day (45 "orders" for 26 placed on 2026-10-24).
+    shortcut: a call mixing switchable and non-switchable measures still sends the axis, until Core ignores it per measure."""
+    if not axis or "date_axis" in arguments:
+        return arguments
+    measures = [m for m in (arguments.get("measures") or arguments.get("metrics") or []) if isinstance(m, str)]
+    if catalogue is not None and measures and all(catalogue.ignores_date_axis(m) for m in measures):
+        return arguments
+    return {**arguments, "date_axis": axis}
+
+
+UNDATED_NOTE = (
+    "Undated = cancelled / RTO / returned amounts with no outcome date, summed over ALL history. They are NOT part of the dated "
+    "window returned here and did not move this period's figures; dated + Undated does not reconcile to the order-date total for one period."
+)
+
+
+def relabel_undated(result: Any) -> Any:
+    """Core's own undated note ('dated + Undated reconcile to the order_date total') only holds over all history; say what it is instead."""
+    undated = result.get("undated") if isinstance(result, dict) else None
+    if isinstance(undated, dict):
+        undated["note"] = UNDATED_NOTE
+    return result
+
+
+def applied_axes(result: dict[str, Any]) -> dict[str, str]:
+    """metric -> what Core says it applied (``date_axis_applied``), from the result and from each part of a composed one."""
+    out: dict[str, str] = {}
+    for holder in (result, *[p for p in result.get("parts") or [] if isinstance(p, dict)]):
+        applied = holder.get("date_axis_applied")
+        if isinstance(applied, dict):
+            out.update({str(k): str(v) for k, v in applied.items()})
+    return out
+
+
+def axis_statement(applied: dict[str, str]) -> str | None:
+    """'order_date' / 'event_date', plus the metrics that run on their own clock; None when Core reported no axis."""
+    axes = sorted({v.split(" ", 1)[0] for v in applied.values() if v.split(" ", 1)[0] in DATE_AXES})
+    if not axes:
+        return None
+    native = sorted(k for k, v in applied.items() if v.startswith("native"))
+    text = " and ".join(axes)
+    return text + (f" ({', '.join(native)} run on their own clock and ignore it)" if native else "")
+
+
 def _scope_keys() -> frozenset[str]:
     from seleric_swarm.exploration.space import configured_scope_ids
 
@@ -74,11 +134,14 @@ def build_metrics_query_args(
     compare_period: str | None = None,
     module: Any = ...,
     inject_default_brand: bool = True,
+    date_axis: str | None = None,
 ) -> dict[str, Any]:
     arguments: dict[str, Any] = {
         "measures": [measure],
         "time_range": {"start": start, "end": end},
     }
+    if date_axis:
+        arguments["date_axis"] = date_axis
     if grain:
         arguments["granularity"] = grain
     if dimensions:
@@ -120,4 +183,4 @@ async def call_metrics_query(
         return {"error": f"{type(exc).__name__}: {exc}", "rows": [], "provenance": {}}
     if not isinstance(result, dict):
         return {"error": "invalid metrics_query payload", "rows": [], "provenance": {}}
-    return result
+    return relabel_undated(result)

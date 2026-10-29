@@ -34,9 +34,9 @@ async def test_resolve_commerce_snapshot_live(runtime, tmp_path):
     # net_sales and orders both request period_delta_pct -- real 7d history
     # should resolve it, not go sparse.
     by_metric = {m.metric_id: m for m in snapshot.metrics}
-    assert isinstance(by_metric["metric.net_sales"].value, float)
-    assert isinstance(by_metric["metric.net_sales"].period_delta_pct, float)
-    assert isinstance(by_metric["metric.orders"].period_delta_pct, float)
+    assert isinstance(by_metric["net_sales"].value, float)
+    assert isinstance(by_metric["net_sales"].period_delta_pct, float)
+    assert isinstance(by_metric["orders"].period_delta_pct, float)
     assert snapshot.provenance["mcp_query_ids"], "expected real query ids from live MCP calls"
     # headline_signals is deterministic from real numbers -- just assert it's
     # a list of strings, not fabricated by an LLM.

@@ -33,6 +33,9 @@ function Base({ size = 16, className, ariaHidden = true, children }: IconProps &
 export const MenuIcon = (p: IconProps) => (
   <Base {...p}><line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="18" x2="20" y2="18" /></Base>
 );
+export const MoreIcon = (p: IconProps) => (
+  <Base {...p}><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></Base>
+);
 export const PanelRightIcon = (p: IconProps) => (
   <Base {...p}><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="15" y1="4" x2="15" y2="20" /></Base>
 );
@@ -60,7 +63,10 @@ export const ArchiveIcon = (p: IconProps) => (
 export const MicIcon = (p: IconProps) => (
   <Base {...p}><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0" /><line x1="12" y1="17" x2="12" y2="22" /></Base>
 );
-export const SparklesIcon = (p: IconProps) => (
+export const MicOffIcon = (p: IconProps) => (
+  <Base {...p}><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0" /><line x1="12" y1="17" x2="12" y2="22" /><line x1="3" y1="3" x2="21" y2="21" /></Base>
+);
+export const SparklesIcon =(p: IconProps) => (
   <Base {...p}>
     <path d="M12 3v3" /><path d="M12 18v3" /><path d="M3 12h3" /><path d="M18 12h3" />
     <path d="m5.6 5.6 2.1 2.1" /><path d="m16.3 16.3 2.1 2.1" />
@@ -82,6 +88,9 @@ export const ChevronDownIcon = (p: IconProps) => (
 );
 export const ArrowDownIcon = (p: IconProps) => (
   <Base {...p}><line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" /></Base>
+);
+export const ArrowRightIcon = (p: IconProps) => (
+  <Base {...p}><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></Base>
 );
 export const ActivityIcon = (p: IconProps) => (
   <Base {...p}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></Base>

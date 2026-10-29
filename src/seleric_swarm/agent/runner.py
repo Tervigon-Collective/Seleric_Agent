@@ -240,32 +240,96 @@ def _memories(bundle: ContextBundle) -> list[str]:
     return out
 
 
-def _thread_memory(store: Any, workspace_id: str, thread_id: str) -> tuple[list[str], list[Any]]:
-    """(queries run earlier in the thread as 'query_id: tool args', the thread's recent tool payloads)."""
+def _thread_summary(bundle: ContextBundle) -> str:
+    summary = bundle.latest_summary
+    if summary is None:
+        return ""
+    text = (summary.summary if isinstance(summary.summary, str) else str(summary.summary)).strip()
+    return text[:2000]
+
+
+def _workspace_notes(bundle: ContextBundle) -> str:
+    config = bundle.workspace_config
+    if not config:
+        return ""
+    try:
+        return json.dumps(config, ensure_ascii=False, sort_keys=True, default=str)[:800]
+    except (TypeError, ValueError):
+        return str(config)[:800]
+
+
+def _shipped_token_count(
+    *,
+    question: str,
+    history: list[tuple[str, str]],
+    memories: list[str],
+    prior_queries: list[str],
+    thread_summary: str,
+    workspace_notes: str,
+) -> int:
+    from seleric_swarm.conversations.context import approximate_token_count
+
+    rendered = "\n".join(
+        [
+            question,
+            thread_summary,
+            workspace_notes,
+            "\n".join(memories),
+            "\n".join(prior_queries),
+            "\n".join(f"{role}: {text}" for role, text in history),
+        ]
+    )
+    return approximate_token_count(rendered)
+
+
+def _payload_ref(payload: dict[str, Any], *, index: int) -> dict[str, Any]:
+    """Short, retrievable handle for a tool payload — not the payload itself."""
+    rows = payload.get("data") if isinstance(payload.get("data"), list) else None
+    return {
+        "index": index,
+        "keys": sorted(str(k) for k in payload.keys())[:16],
+        "row_count": len(rows) if rows is not None else None,
+        "preview": json.dumps(compact_value(payload, max_rows=3, max_chars=400), separators=(",", ":"), default=str)[:400],
+    }
+
+
+def _thread_memory(
+    store: Any, workspace_id: str, thread_id: str
+) -> tuple[list[str], list[Any], list[dict[str, Any]]]:
+    """Prior queries, compact payloads for grounding, and payload refs for the composition audit."""
     queries: list[str] = []
     payloads: list[Any] = []
+    refs: list[dict[str, Any]] = []
     list_fn = getattr(store, "list_for_context", None)
     if not callable(list_fn):
-        return queries, payloads
+        return queries, payloads, refs
     try:
         for artifact in list_fn(workspace_id, thread_id):
             body = getattr(artifact, "payload", None)
             if not isinstance(body, dict):
                 continue
             kind = getattr(artifact, "artifact_type", None)
+            artifact_id = getattr(artifact, "id", None) or getattr(artifact, "artifact_id", None)
             if kind == "turn_record" and len(queries) < 40:
                 queries += [str(q) for q in body.get("queries") or []]
+            elif kind == "turn_payload_refs" and len(refs) < KEEP_PAYLOADS * 2:
+                for ref in body.get("refs") or []:
+                    if isinstance(ref, dict):
+                        refs.append({**ref, "artifact_id": artifact_id})
             elif kind == "turn_payloads" and len(payloads) < KEEP_PAYLOADS:
-                payloads += list(body.get("payloads") or [])
+                # Prefer refs for the prompt audit; keep compact payloads only for figure grounding.
+                for payload in body.get("payloads") or []:
+                    if isinstance(payload, dict):
+                        payloads.append(payload)
     except Exception:
         _log.warning("thread_memory_load_failed", exc_info=True)
-    return queries[:40], payloads[:KEEP_PAYLOADS]
+    return queries[:40], payloads[:KEEP_PAYLOADS], refs[: KEEP_PAYLOADS * 2]
 
 
 def _persist_turn(
     store: Any, *, loop_result: LoopResult, query: str, workspace_id: str, thread_id: str, mission_id: str, as_of_dt: datetime
 ) -> None:
-    """Remember what this turn queried (for drill-downs) and its tool payloads (so follow-ups are grounded). Non-fatal."""
+    """Remember queries, compact payloads (grounding), and payload refs (selection/audit). Non-fatal."""
     try:
         digest = [
             f"{e['query_id']}: {e['tool']} {json.dumps(e['args'], separators=(',', ':'), default=str)}"
@@ -277,13 +341,71 @@ def _persist_turn(
             thread_id=thread_id,
             payload={"query": query, "mission_id": mission_id, "as_of": as_of_dt.date().isoformat(),
                      "evidence_ids": loop_result.state.evidence_ids[:8], "queries": digest}))
-        keep = [compact_value(p) for p in loop_result.state.payloads if isinstance(p, dict)][-KEEP_PAYLOADS:]
+        raw = [p for p in loop_result.state.payloads if isinstance(p, dict)]
+        keep = [compact_value(p) for p in raw][-KEEP_PAYLOADS:]
         if keep:
             store.put(Artifact(
                 workspace_id=workspace_id, artifact_type="turn_payloads", classification="ui", mission_id=mission_id,
                 thread_id=thread_id, payload={"payloads": keep}))
+            store.put(Artifact(
+                workspace_id=workspace_id, artifact_type="turn_payload_refs", classification="ui", mission_id=mission_id,
+                thread_id=thread_id,
+                payload={
+                    "refs": [
+                        {
+                            **_payload_ref(p, index=i),
+                            "evidence_ids": list(loop_result.state.evidence_ids[:8]),
+                            "mission_id": mission_id,
+                        }
+                        for i, p in enumerate(keep)
+                    ]
+                },
+            ))
     except Exception:
         _log.warning("turn_persist_failed", exc_info=True)
+
+
+def _compose_runner_context(
+    *,
+    bundle: ContextBundle,
+    question: str,
+    history: list[tuple[str, str]],
+    memories: list[str],
+    prior_queries: list[str],
+    prior_payloads: list[Any],
+    prior_payload_refs: list[dict[str, Any]],
+    thread_summary: str,
+    workspace_notes: str,
+) -> dict[str, Any]:
+    shipped = _shipped_token_count(
+        question=question,
+        history=history,
+        memories=memories,
+        prior_queries=prior_queries,
+        thread_summary=thread_summary,
+        workspace_notes=workspace_notes,
+    )
+    composition = dict(bundle.composition or {})
+    composition["runner"] = {
+        "shipped_tokens": shipped,
+        "bundle_token_estimate": bundle.token_estimate,
+        "delta_tokens": shipped - int(bundle.token_estimate or 0),
+        "history_turns": len(history),
+        "memories_used": len(memories),
+        "prior_query_count": len(prior_queries),
+        "prior_payload_count": len(prior_payloads),
+        "prior_payload_refs": prior_payload_refs[:16],
+        "thread_summary_chars": len(thread_summary),
+        "workspace_notes_chars": len(workspace_notes),
+    }
+    _log.info(
+        "context_budget mission_bundle_tokens=%s runner_shipped_tokens=%s delta=%s budget=%s",
+        bundle.token_estimate,
+        shipped,
+        shipped - int(bundle.token_estimate or 0),
+        bundle.token_budget,
+    )
+    return composition
 
 
 def _snapshot_loader(runtime: SwarmRuntime) -> Callable[[], Any]:
@@ -310,6 +432,7 @@ async def run_v3_mission(
     query: str,
     timezone: str = "Asia/Kolkata",
     as_of: str | None = None,
+    date_axis: str | None = None,
     session_id: str | None = None,
     request_id: str | None = None,
     mission_id: str | None = None,
@@ -364,7 +487,24 @@ async def run_v3_mission(
             catalogue, defs, guide = await asyncio.gather(
                 _catalogue_snapshot(runtime), _tool_definitions(mcp), _server_guide(mcp)
             )
-            prior_queries, prior_payloads = _thread_memory(artifact_store, workspace_id, thread_id)
+            prior_queries, prior_payloads, prior_payload_refs = _thread_memory(
+                artifact_store, workspace_id, thread_id
+            )
+            history_turns = _history(bundle, query)
+            memory_lines = _memories(bundle)
+            thread_summary = _thread_summary(bundle)
+            workspace_notes = _workspace_notes(bundle)
+            context_composition = _compose_runner_context(
+                bundle=bundle,
+                question=query,
+                history=history_turns,
+                memories=memory_lines,
+                prior_queries=prior_queries,
+                prior_payloads=prior_payloads,
+                prior_payload_refs=prior_payload_refs,
+                thread_summary=thread_summary,
+                workspace_notes=workspace_notes,
+            )
             stages["context_ms"] = round((time.perf_counter() - started) * 1000)
             from seleric_swarm.agent.prompt import system_prompt
 
@@ -378,7 +518,7 @@ async def run_v3_mission(
                     mcp_call_timeout_s=float(getattr(runtime.settings, "mcp_call_timeout_s", 15.0)),
                     agent_retries=int(getattr(runtime.settings, "agent_retries", 2)),
                 ),
-                catalogue=catalogue, metrics=getattr(runtime, "metrics", None),
+                catalogue=catalogue, metrics=getattr(runtime, "metrics", None), date_axis=date_axis,
             )
             loop_result = await asyncio.wait_for(
                 run_turn(
@@ -388,10 +528,12 @@ async def run_v3_mission(
                     tool_defs=defs,
                     system_prompt=system_prompt(catalogue, datetime.now(as_of_dt.tzinfo or UTC), guide),
                     question=query,
-                    history=history_messages(_history(bundle, query)),
-                    memories=_memories(bundle),
+                    history=history_messages(history_turns),
+                    memories=memory_lines,
                     prior_queries=prior_queries,
                     prior_payloads=prior_payloads,
+                    thread_summary=thread_summary,
+                    workspace_notes=workspace_notes,
                     is_cancelled=lambda: is_cancel_requested(mission_id, runtime),
                     snapshot_loader=_snapshot_loader(runtime),
                     on_stream=on_stream,
@@ -413,6 +555,7 @@ async def run_v3_mission(
                     "grounding": {**loop_result.grounding, "problems": loop_result.issues},
                     "forced_final": loop_result.forced_final,
                     "stages_ms": dict(stages),
+                    "context_composition": context_composition,
                 },
             )
         except MissionCancelledError:

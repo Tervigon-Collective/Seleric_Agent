@@ -1,0 +1,50 @@
+{
+ "n": 77,
+ "aspect": "why_rootcause",
+ "q": "Why are we losing money in September when every order has a positive margin?",
+ "thread": "thread_5447c72a875a4da7ad35374883cc77a4",
+ "mission": "MS3-c9c7b23e0b",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 51,
+ "elapsed_s": 41.472,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 10,
+  "measured": 10,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": false,
+   "what": "number 974.0 (live)"
+  },
+  {
+   "ok": false,
+   "what": "number 1282.0 (live)"
+  }
+ ],
+ "answer": "Net profit for September (by order date) was a loss of \u20b9-2,86,297 \u2014 better than August\u2019s loss of \u20b9-7,73,786, but still negative. The simple reason: total ad spend (P&L basis) exceeded the month\u2019s contribution margin, so even though each order is profitable at the product level, the marketing bill pushed the P&L into loss.\n\nWhat\u2019s behind that, in order of impact\n- Ad spend > contribution: Contribution margin was \u20b99,07,025 in Sep while ad spend (P&L) was \u20b911,93,322 \u2014 ad spend exceeded contribution by about \u20b92,86,297, which equals the month loss. (Aug: contribution \u20b914,30,108 vs ad spend \u20b922,03,894 \u2014 larger gap and bigger loss.)\n- Lower topline reduced the cushion: Net sales (P&L basis) fell from \u20b928,35,191 in the prior period to \u20b915,74,765 in Sep (\u221244.5%), which reduced contribution and made covering ad spend harder.\n- Other P&L lines moved smaller amounts: net COGS, shipping and return credit all fell in Sep (reducing cost and return revenue alike), and discounts rose slightly; these change the bridge but do not flip the sign \u2014 the ad spend > contribution gap is the direct arithmetic cause.\n\nWorth checking:\n- Campaigns and platforms that account for most ad spend (Meta / Google) to see if their spend is buying sufficiently high-margin sales. \n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28\nNext: Break this down by ad platform and campaign"
+}

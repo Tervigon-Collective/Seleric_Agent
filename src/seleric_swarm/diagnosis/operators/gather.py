@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from seleric_swarm.diagnosis.domain.config import DiagnosisConfig
@@ -62,6 +62,22 @@ def _requests(
     jobs: Sequence[tuple[str, str | None]], window: Window, scope: Scope
 ) -> list[SeriesRequest]:
     return [SeriesRequest(metric, window, scope, dimension) for metric, dimension in jobs]
+
+
+def _fill_idle_days(series: Series, end: date, partial: frozenset[date]) -> Series:
+    """An additive measure (sales, orders, edits) has no row on a day nothing happened for the scope, which is a 0, not
+    a gap: left out, a 7-day average ran over the 3 days that had a row (₹734/day instead of ₹315 — live 2026-10-21
+    MS3-7100f30301) and a "normal range" skipped every idle day. Filled from the first day with a row to ``end``,
+    complete days only; before its first row the scope may simply not have existed or been loaded."""
+    if not series:
+        return series
+    filled = dict(series)
+    day = min(series)
+    while day <= end:
+        if day not in partial:
+            filled.setdefault(day, 0.0)
+        day += timedelta(days=1)
+    return filled
 
 
 async def gather(
@@ -118,7 +134,10 @@ async def gather(
                 continue
             gathered.notes.append(f"{m} cannot be filtered by {dropped}; used unfiltered")
         if result.values:
-            series[m] = dict(result.values)
+            values = dict(result.values)
+            if plan.lineage.get(m, MetricMeta(m)).additive:
+                values = _fill_idle_days(values, plan.end, plan.partial_days)
+            series[m] = values
             gathered.series_args[m] = result.query_args
             if result.currency:
                 gathered.units[m] = result.currency

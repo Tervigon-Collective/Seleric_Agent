@@ -75,6 +75,9 @@ def test_partial_window_warning():
     q = {"provenance": {"time_range": {"start": "2026-10-01", "end": "2026-10-12"}}}
     flag_partial(q, today)
     assert not q.get("warnings"), q
+    c = {"provenance": {"time_range": {"start": "2026-10-13", "end": "2026-10-13"}, "compare_cutoff": {"to": "2026-10-12T17:30:00.000"}}}
+    flag_partial(c, today)
+    assert not c.get("warnings"), c  # the comparison was already cut at the same time of day
 
 
 def test_pair_scan_is_not_vacuous():
@@ -113,6 +116,18 @@ def test_day_series_and_catalogue_payload():
     assert not fp["misbound"] and not fp["unmatched"], fp
     wrong = grounding("- 2026-10-11: ₹117,855 — Measured", [catalogue, days])
     assert wrong["misbound"] and "2026-10-06" in wrong["misbound"][0], wrong
+
+
+def test_short_day_form_binds_to_iso_row():
+    # live: "13 Oct (₹11,173)" was flagged misbound because only ISO labels were matched
+    days = {"query_id": "q_ret", "columns": ["report_date", "product_returns_value"],
+            "provenance": {"query_id": "q_ret", "metric_ids": ["product_returns_value"]},
+            "rows": [{"report_date": "2026-10-13T00:00:00.000", "product_returns_value": "11173"},
+                     {"report_date": "2026-10-10T00:00:00.000", "product_returns_value": "4024"}]}
+    ok = grounding("Largest return spike: 13 Oct (₹11,173 return posted).", [days])
+    assert not ok["misbound"] and not ok["unmatched"], ok
+    bad = grounding("Largest return spike: 13 Oct (₹4,024 return posted).", [days])
+    assert bad["misbound"] and "2026-10-10" in bad["misbound"][0], bad
 
 
 def test_metric_name_is_not_an_entity():
@@ -199,6 +214,22 @@ def test_a_percentage_must_follow_from_the_figures_beside_it():
     assert not grounding("Orders rose 36.8% (to 26).", [data])["unmatched"]
 
 
+def test_a_relative_change_between_two_rates_follows_from_the_rates_beside_it():
+    # live 2026-10-17 MS3-21bea80c05: correct figures flagged "Not verified" because rate levels were never operands, so the
+    # unverified answer also shipped without its table/cards. Rates in the data are ratios (0.1306); the answer says 13.056%.
+    data = {"query_id": "q", "rows": [{"hook_rate": "0.1305557941757581", "hold_rate_15s": "0.2499013028030004", "ctr": "0.02670", "cpc": "11.07"}],
+            "compare_rows": [{"hook_rate": "0.09175", "hold_rate_15s": "0.26073", "ctr": "0.02854", "cpc": "10.42"}]}
+    answer = (
+        "- Efficiency: CTR 2.670% → 2.854% = −6.4%; CPC ₹11.07 → ₹10.42 = +6.3%.\n"
+        "- Engagement: hook rate 13.056% → 9.175% = +42.3%; hold rate 24.990% → 26.073% = −4.2%."
+    )
+    g = grounding(answer, [data])
+    assert not g["unmatched"], g
+    # the strictness stays: a wrong change next to the same rates is still caught
+    wrong = grounding("Engagement: hook rate 13.056% → 9.175% = +45.0%.", [data])
+    assert "45.0%" in wrong["unmatched"], wrong
+
+
 def test_iso_timestamp_is_a_date_not_numbers():
     # test_agent/test_grounding.py case 17 (sha e1d2087e): the freshness footer must not read as figures
     assert not answer_numbers("data as of 2026-10-13T16:35:25Z and refresh 2026-10-13T16:35:25.274Z")
@@ -226,3 +257,21 @@ def test_explicit_sign_must_match_the_data():
     assert wrong["sign_mismatch"] == ["96,900"] and wrong["measured"] == 0
     assert any("sign" in line for line in problems(wrong))
     assert grounding("- ₹96,900 net profit", p)["sign_mismatch"] == []  # a list bullet is not a sign
+
+
+def test_series_listing_line_is_not_misbound():
+    # live MS3-ad015c8cc1: "lowest on 10-22 ... week 10-20 -> 10-26: a, b, c, ..." flagged every day not named on the line
+    vals = [53791.61, 78857.21, 31734.54, 66875.96, 43650.36, 42043.27, 44812.72]
+    days = {"query_id": "q1", "rows": [{"report_date": f"2026-10-{20 + i}T00:00:00.000", "gross_sales": str(v)} for i, v in enumerate(vals)]}
+    ans = ("Lowest on 2026-10-22 at ₹31,735 (week 2026-10-20 → 2026-10-26: daily gross sales = ₹53,792, ₹78,857, ₹31,735, "
+           "₹66,876, ₹43,650, ₹42,043, ₹44,813).")
+    assert not grounding(ans, [days])["misbound"]
+    assert grounding("- 2026-10-22: ₹78,857", [days])["misbound"]
+
+
+def test_percent_follows_from_a_small_count_beside_it():
+    # live 2026-10-28: "orders 29 -> 42 (+44.8%)" was flagged because a count under 32 was not an operand
+    p = [{"query_id": "q1", "columns": ["orders"], "rows": [{"orders": "42"}], "compare_rows": [{"orders": "29"}],
+          "provenance": {"metric_ids": ["orders"]}}]
+    assert not grounding("Orders rose from 29 to 42 (+44.8%).", p)["unmatched"]
+    assert grounding("Orders rose from 29 to 42 (+50.0%).", p)["unmatched"] == ["50.0%"]

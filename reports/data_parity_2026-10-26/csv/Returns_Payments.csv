@@ -1,0 +1,9 @@
+Domain,Check,Window,Axis,Left,Left value,Right,Right value,|Delta|,Status,Note
+Payments,payment_amount by payment_bucket sums to total,today,-,payment_amount,,,,,INFO,GAP: dimension not supported by this metric/view (Dimension 'payment_bucket' (→ payment_bucket) is not supported by metric 'payment_amount'. Supported: ad_p)
+Payments,payment_amount by payment_bucket sums to total,yesterday,-,payment_amount,,,,,INFO,GAP: dimension not supported by this metric/view (Dimension 'payment_bucket' (→ payment_bucket) is not supported by metric 'payment_amount'. Supported: ad_p)
+Payments,payment_amount by payment_bucket sums to total,last7,-,payment_amount,,,,,INFO,GAP: dimension not supported by this metric/view (Dimension 'payment_bucket' (→ payment_bucket) is not supported by metric 'payment_amount'. Supported: ad_p)
+Payments,payment_amount by payment_bucket sums to total,last30,-,payment_amount,,,,,INFO,GAP: dimension not supported by this metric/view (Dimension 'payment_bucket' (→ payment_bucket) is not supported by metric 'payment_amount'. Supported: ad_p)
+Returns,refund_count: Σ by product_title = total,last30,-,total refund_count,487.0,Σ over 130 product_title groups,574.0,87.0,FAIL,null/unset share of value = 8.00
+Returns,refund_count: Σ by product_title = total,today,-,total refund_count,2.0,Σ over 2 product_title groups,2.0,0.0,PASS,
+Returns,refund_count: Σ by product_title = total,yesterday,-,total refund_count,0.0,Σ over 0 product_title groups,0,0.0,PASS,
+Returns,refund_count: Σ by product_title = total,last7,-,total refund_count,15.0,Σ over 11 product_title groups,15.0,0.0,PASS,null/unset share of value = 2.00

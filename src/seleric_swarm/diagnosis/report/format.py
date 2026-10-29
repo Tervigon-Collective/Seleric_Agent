@@ -10,6 +10,8 @@ from seleric_swarm.diagnosis.domain.lineage import MetricMeta
 from seleric_swarm.diagnosis.domain.numeric import Series, _finite
 from seleric_swarm.diagnosis.ports.formatting import ValueFormatting
 
+MAX_REPORTABLE_PCT_CHANGE = 1000.0  # copy of toolsets/policy_config.MAX_REPORTABLE_PCT_CHANGE (the package imports no toolsets)
+
 
 def _fmt(v: float | None) -> str:
     if v is None or not math.isfinite(v):
@@ -58,6 +60,8 @@ def _chg(new: float | None, old: float | None) -> str:
     if new is None or old is None or not math.isfinite(new) or not math.isfinite(old) or abs(old) < 1e-12:
         return "n/a"
     change = (new / old - 1) * 100
+    if abs(change) > MAX_REPORTABLE_PCT_CHANGE:  # off a near-zero base a percent says nothing; both figures sit beside it
+        return "n/a (near-zero base)"
     return f"{change:+.1f}%" if abs(change) < 100 else f"{change:+.0f}%"  # a whole percent invites the model to recompute
 
 

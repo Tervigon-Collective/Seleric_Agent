@@ -1,0 +1,52 @@
+{
+ "n": 52,
+ "aspect": "bi_decompose",
+ "q": "Net sales fell a lot from August to September. How much of that was fewer orders, how much was smaller baskets, and how much was discounting?",
+ "thread": "thread_bf086f0a21fc430ea6e3b0e0a4c8ed3b",
+ "mission": "MS3-d8f0755f44",
+ "run_status": "COMPLETED",
+ "status": "partial",
+ "wall_s": 55,
+ "elapsed_s": 47.363,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [
+   "12,66,783"
+  ],
+  "numbers": 18,
+  "measured": 16,
+  "misbound": [],
+  "problems": [
+   "sign differs from the data (the same figure appears there with the opposite sign): 1,266,783"
+  ],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": [
+   "12,66,783"
+  ]
+ },
+ "tools": [
+  "escalate",
+  "break_down_metric",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": false,
+   "what": "number 2905147.0 (live)"
+  }
+ ],
+ "answer": "Net sales fell from \u20b928,35,191 in August (2026-08-02..2026-08-31) to \u20b915,74,765 in September (2026-09-01..2026-09-30), a drop of \u20b912,60,426 (\u221244.5%). Most of that fall is explained by far fewer orders: about \u2212\u20b912,66,783; basket size was essentially unchanged (Net AOV moved +\u20b96,356 and slightly offset the fall); discounting rose but is a small part of the gap in comparison.\n\nWhat changed, in order of impact\n- Fewer orders: orders fell 1,681 \u2192 931 (\u221244.6%) and this volume drop reduced Net sales by about \u2212\u20b912,66,783. This is the dominant driver of the month\u2011on\u2011month fall.  \n- Basket size (Net AOV): Net AOV moved \u20b91,687 \u2192 \u20b91,691 (+0.3%), which increased Net sales by about +\u20b96,356 (so AOV did not cause the decline).  \n- Discounting: discounts rose from about \u20b92,468/day \u2192 \u20b93,497/day (+41.7%), so discounting trimmed net sales further but is small relative to the order drop.  \n\nWorth checking: ad delivery \u2014 Meta and Google both saw large order falls (Meta and Google together explain the biggest segment moves), so break the orders drop down by ad platform and campaign to find where to act.\n\nPeriod: 2026-08-02..2026-08-31 vs 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29\nNext: Break this down by ad platform and campaign\n\n\u26a0 Not verified against the data: sign differs from the data (the same figure appears there with the opposite sign): 12,66,783"
+}

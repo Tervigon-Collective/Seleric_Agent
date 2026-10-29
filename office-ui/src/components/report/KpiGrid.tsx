@@ -9,7 +9,7 @@ export interface KpiCardData {
   time_basis?: string;
   provenance?: string;
   evidence_ids?: string[];
-  comparison?: { value?: number; delta?: number } | null;
+  comparison?: { value?: number; previous_display?: string; delta?: number; delta_pct?: number; delta_display?: string; direction?: "up" | "down" | "flat" } | null;
   state?: "ok" | "missing" | "loading" | "error";
   section_id?: string;
 }
@@ -29,10 +29,18 @@ const gridStyle: CSSProperties = {
   width: "100%",
 };
 
-function formatDelta(delta: number | undefined): string | null {
+/** "▲ 12.3%" (the change as a share of the previous value), else the signed absolute change. */
+export function formatDelta(comparison: KpiCardData["comparison"]): { text: string; direction: "up" | "down" | "flat" } | null {
+  if (!comparison) return null;
+  // The server writes the change the way its unit should be read (points for a share, absolute for an average).
+  if (comparison.delta_display) return { text: comparison.delta_display, direction: comparison.direction ?? "flat" };
+  const { delta, delta_pct: pct } = comparison;
   if (delta === undefined || delta === null || Number.isNaN(delta)) return null;
+  const direction = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+  const arrow = direction === "up" ? "▲" : direction === "down" ? "▼" : "–";
+  if (pct !== undefined && pct !== null && Number.isFinite(pct)) return { text: `${arrow} ${Math.abs(pct).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`, direction };
   const sign = delta > 0 ? "+" : "";
-  return `${sign}${delta.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return { text: `${arrow} ${sign}${delta.toLocaleString(undefined, { maximumFractionDigits: 2 })}`, direction };
 }
 
 export function KpiGrid({ content }: { content: KpiGridContent | Record<string, unknown> }) {
@@ -71,7 +79,7 @@ export function KpiGrid({ content }: { content: KpiGridContent | Record<string, 
       {data.title ? <h3 className="kpi-grid__title">{data.title}</h3> : null}
       {cards.map((card, index) => {
         const missing = card.state === "missing" || card.value === null || card.value === undefined;
-        const delta = formatDelta(card.comparison?.delta);
+        const delta = formatDelta(card.comparison);
         return (
           <article
             key={`${card.label}-${index}`}
@@ -85,7 +93,8 @@ export function KpiGrid({ content }: { content: KpiGridContent | Record<string, 
             <footer className="kpi-basis">
               {card.population ? <span>{card.population}</span> : null}
               {card.time_basis ? <span>{card.time_basis}</span> : null}
-              {delta ? <span className="kpi-delta neutral">{delta}</span> : null}
+              {delta ? <span className={`kpi-delta neutral kpi-delta--${delta.direction}`}>{delta.text}</span> : null}
+              {delta && card.comparison?.previous_display ? <span>was {card.comparison.previous_display}</span> : null}
             </footer>
           </article>
         );

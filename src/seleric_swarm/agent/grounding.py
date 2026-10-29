@@ -34,6 +34,7 @@ _HYPHENS = "-‐‑‒–—−"  # hyphen, non-breaking hyphen, dashes, minus: 
 
 # A payload with at most this many numbers may combine freely.
 SMALL_POOL = 40
+SERIES_LINE = 3  # out-of-scope rows on one line that make it a series listing, not a swapped figure
 
 
 # ---- answer numbers -------------------------------------------------------------------------
@@ -136,11 +137,11 @@ def _unit_after(text: str, end: int) -> str:
     return ""
 
 
-def answer_numbers(text: str) -> list[dict[str, Any]]:
+def answer_numbers(text: str, *, small: bool = False) -> list[dict[str, Any]]:
     """Numbers stated in an answer with their rounding tolerance. Skips dates, times, years and small bare integers.
 
     Each: ``{text, value, pct, tol}``. ``value`` is scaled by a lakh/crore/k/m suffix, ``tol`` is one unit of the
-    last digit shown (scaled the same way) and never below 0.01.
+    last digit shown (scaled the same way) and never below 0.01. ``small=True`` keeps the bare integers under 32.
     """
     out: list[dict[str, Any]] = []
     i, n = 0, len(text)
@@ -179,7 +180,7 @@ def answer_numbers(text: str) -> list[dict[str, Any]]:
         unit = _unit_after(text, i)
         if not unit and i < n and text[i].isalpha():  # glued to letters that are no unit: 500ml, 4XL, 26SEP -> part of a name
             continue
-        if not unit and decimals < 0 and not grouped and (value < 32 or 1990 <= value <= 2100):
+        if not unit and decimals < 0 and not grouped and ((value < 32 and not small) or 1990 <= value <= 2100):
             continue
         mult = _UNIT_SCALE.get(unit, 1)
         tol = max(10 ** -max(decimals, 0) * mult, 0.01)
@@ -319,6 +320,37 @@ def _day(s: str) -> str:
     return s[:10] if len(s) > 10 and s[10] == "T" and s[4] == "-" and s[7] == "-" and s[:4].isdigit() else s
 
 
+_MONTH_ALIASES: dict[int, tuple[str, ...]] = {
+    1: ("jan", "january"), 2: ("feb", "february"), 3: ("mar", "march"), 4: ("apr", "april"),
+    5: ("may", "may"), 6: ("jun", "june"), 7: ("jul", "july"), 8: ("aug", "august"),
+    9: ("sep", "sept", "september"), 10: ("oct", "october"), 11: ("nov", "november"), 12: ("dec", "december"),
+}
+
+
+def _day_ordinal(day: int) -> str:
+    if 11 <= day % 100 <= 13:
+        return "th"
+    return {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+
+
+def _day_aliases(iso: str) -> list[str]:
+    """Short forms an answer may use for an ISO day label ('13 Oct', 'Oct 13', '13th Oct')."""
+    if len(iso) < 10 or iso[4] != "-" or iso[7] != "-" or not iso[:4].isdigit():
+        return []
+    try:
+        day, month = int(iso[8:10]), int(iso[5:7])
+    except ValueError:
+        return []
+    names = _MONTH_ALIASES.get(month)
+    if not names or not 1 <= day <= 31:
+        return []
+    d, ord_ = str(day), _day_ordinal(day)
+    out: list[str] = []
+    for mon in names:
+        out.extend((f"{d} {mon}", f"{d}{ord_} {mon}", f"{mon} {d}", f"{mon} {d}{ord_}"))
+    return out
+
+
 def _word_in(line: str, label: str) -> bool:
     """label occurs in line as whole words."""
     i = line.find(label)
@@ -331,8 +363,13 @@ def _word_in(line: str, label: str) -> bool:
 
 
 def _entities(line: str, labels: Any) -> set[str]:
-    """Longest-match labels named on this line."""
+    """Longest-match labels named on this line (ISO days also match '13 Oct' / 'Oct 13')."""
     found = [lab for lab in labels if _word_in(line, lab)]
+    for lab in labels:
+        if lab in found:
+            continue
+        if any(_word_in(line, alias) for alias in _day_aliases(lab)):
+            found.append(lab)
     return {lab for lab in found if not any(lab != o and lab in o for o in found)}
 
 
@@ -400,16 +437,20 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
     scoped: dict[str, set[str]] = {}
     line_operands: dict[str, list[float]] = {}  # figure -> the other non-percent figures on its line
     carry: set[str] = set()
-    for line in answer.split("\n"):
+    line_of: dict[str, int] = {}  # figure -> index of its answer line
+    for li, line in enumerate(answer.split("\n")):
         if not line.strip():
             carry = set()
             continue
         ents = _entities(_norm(line), by_label)
         line_nums = answer_numbers(line)
+        line_all = answer_numbers(line, small=True)  # a count under 32 is not checked itself but is what "28 -> 42 (+50%)" follows from
         for n in line_nums:
+            # The figures a percentage can be a claim about: the other amounts on its line, and the other unsigned percentages
+            # (rate levels: CTR 2.670% -> 2.854% = -6.4%). A signed percentage is itself a change, never an operand.
             line_operands.setdefault(
                 n["text"] + "|" + str(n["value"]),
-                [abs(o["value"]) for o in line_nums if o is not n and not o["pct"]],
+                [abs(o["value"]) for o in line_all if (o["text"], o["value"]) != (n["text"], n["value"]) and (not o["pct"] or not o["sign"])],
             )
         scope = ents or carry
         if ents and not line_nums and max(map(len, ents)) * 2 >= len(_norm(line.strip("#*-|: "))):
@@ -417,6 +458,7 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
         for n in line_nums:
             if scope:
                 scoped.setdefault(n["text"] + "|" + str(n["value"]), scope)
+                line_of.setdefault(n["text"] + "|" + str(n["value"]), li)
 
     def group(scope: set[str]) -> set[float]:
         return set(loose).union(*(by_label[lab] for lab in scope)) if scope else set(loose)
@@ -450,6 +492,7 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
         if len(left) == len(pending):
             break
         pending = left
+    swapped: dict[int, list[str]] = {}  # answer line -> the "wrong row" notes it would raise
     for i, an in enumerate(ans_nums):
         kind = status.get(i)
         if kind == "sign":
@@ -466,9 +509,13 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
         if scope and not classify(an, sorted(group(scope)), [group(scope) | accepted, *small]):
             owners = sorted(lab for lab, ns in by_label.items() if lab not in scope and classify(an, sorted(ns)) == "measured")
             if len(owners) == 1:  # a figure found in several rows is a coincidence, not a swap
-                out["misbound"].append(
+                swapped.setdefault(line_of.get(an["text"] + "|" + str(an["value"]), -1), []).append(
                     f"{an['text']} on the line about {', '.join(sorted(shown[s] for s in scope))} is not in that row; "
                     f"it is in the row for {', '.join(shown[o] for o in owners[:3])}")
+    # shortcut: 3+ out-of-scope rows on one line = a series listing ("week 10-20 -> 10-26: a, b, c, d"), not a swapped figure
+    for notes in swapped.values():
+        if len(notes) < SERIES_LINE:
+            out["misbound"].extend(notes)
     return out
 
 

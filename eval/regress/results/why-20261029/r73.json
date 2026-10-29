@@ -1,0 +1,43 @@
+{
+ "n": 73,
+ "aspect": "why_rootcause",
+ "q": "Is that a problem, or is it just a different mix of campaigns?",
+ "thread": "thread_865d52dbc6da45a19c12142eba866333",
+ "mission": "MS3-e907bcc4e7",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 67,
+ "elapsed_s": 64.463,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 22,
+  "measured": 22,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "audit_entities",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "By Google (platform-native): it\u2019s partly a different mix, but it\u2019s also a problem \u2014 spend shifted into higher\u2011CPC and low/no\u2011converting campaigns, hurting efficiency.\n\n- Big picture: Google spend \u20b992,699; net sales for the 4 campaigns that recorded revenue \u20b91,35,861 (those 4 spent \u20b969,381 and returned 1.96x). Total orders = 65; ad spend per order \u20b91,426.\n- Money that bought nothing: 2 of 6 Google campaign rows recorded zero orders and absorbed \u20b923,318 (25.2% of Google spend). Largest no\u2011order spends: Demand Gen rows \u20b918,612 and \u20b94,706.\n- What\u2019s working vs leaking: [Google Build] PMax - Seasonal New returned well \u2014 \u20b91,09,480 net sales on \u20b933,345 spend = 3.28x (52 orders). Brand Search returned \u20b919,226 on \u20b99,543 = 2.01x (9 orders). By contrast, Brand Serach\u2011Cat and Brand Serach\u2011Dog together spent \u20b926,494 and returned \u20b97,155 (0.45x and 0.14x respectively; 3 and 1 orders) \u2014 early signals of poor ROI or targeting.\n- Mix + mechanics: top 3 spenders carry most of the spend, so shifting budget into Demand Gen / Brand Serach rows raised average CPC and reduced conversion. The data shows where money leaked; it does not prove creative or landing\u2011page causes.\n\nWorth checking: pause or reallocate the two Demand Gen rows that bought zero orders (\u20b923,318) and review Brand Serach\u2011Cat/Dog (creative, targeting or bids) before scaling.\n\nPeriod: 2026-10-19..2026-10-25 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29\nNext: Break this down by campaign and ad set for Google (2026-10-19..2026-10-25 vs 2026-10-12..2026-10-18)."
+}

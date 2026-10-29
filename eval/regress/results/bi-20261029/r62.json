@@ -1,0 +1,38 @@
+{
+ "n": 62,
+ "aspect": "bi_capability",
+ "q": "What kinds of questions can you answer for me, and what can't you answer?",
+ "thread": "thread_2194b4b74db24f2897ec6c3f4f797c73",
+ "mission": "MS3-4a87b4fa89",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 9,
+ "elapsed_s": 8.087,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 0,
+ "llm_calls": 1,
+ "grounding": {
+  "derived": [],
+  "numbers": 0,
+  "measured": 0,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "I can answer most business-analytics questions about your store, ads, customers, products and inventory \u2014 as long as the answer can be supported by the metrics catalogue and the underlying data. I cannot invent numbers, make up definitions, or give answers the data cannot support.\n\nWhat I can do (examples)\n- Fetch and compare KPIs (net sales, orders, AOV, ad spend, ROAS, profit) for any period or custom date range, and explain the change with the data.\n- Breakdowns by channel, campaign, product, geography, or time grain (hour/day/week/month) using catalogue dimensions.\n- Diagnose a metric\u2019s movement (why sales/ROAS/returns changed) with statistical decomposition and tested candidate drivers.\n- Performance analyses of campaigns/products/channels: return on spend, spend that bought nothing, best/worst entities, and recommended checks grounded in the data.\n- P&L / waterfall breakdowns (net profit \u2192 contribution \u2192 ad spend \u2192 etc.) on the catalogue\u2019s finance basis.\n- Intraday or aligned multi-source tables (e.g., spend vs sessions vs orders by hour) and computed ratios using the fetched results.\n- Draft emails or meeting minutes that include the exact query results or charts.\n\nWhat I can\u2019t do\n- Invent or estimate missing numbers, thresholds, benchmarks or definitions not in the catalogue.\n- Answer about platforms or marketplaces that are not connected (I\u2019ll tell you what\u2019s not available).\n- Mix figures that use different basis/axes (order-date vs event-date P&L) without clearly identifying them \u2014 I won\u2019t present them as directly comparable.\n- Perform actions outside reporting (send messages unless you explicitly approve a drafted email, change ad budgets, or access systems).\n- Give causal claims unsupported by the data; I\u2019ll mark them as \u201clikely\u201d or \u201cinsufficient evidence\u201d when appropriate.\n\nHow to ask for the best answer\n- Be specific about period (or say \u201ctoday\u201d), the basis (order date by default), the brand if not Tilting Heads, and the slice you want (channel, campaign, product).\n- If you want a diagnosis, name candidate drivers to test (eg. ad spend, campaigns, price changes) and I\u2019ll include them.\n\nIf you\u2019d like, give me one question (example: \u201cHow did net sales this month compare with last month, by ad platform?\u201d) and I\u2019ll run the queries and explain."
+}

@@ -9,6 +9,9 @@ interface VoiceState {
   status: VoiceStatus;
   muted: boolean;
   error: string | null;
+  /** false = docked bar in place of the composer; true = full-screen takeover. */
+  expanded: boolean;
+  setExpanded: (expanded: boolean) => void;
   /** Live captions for the voice screen: what you said, and what Seleric is saying. */
   captions: { user: string; assistant: string };
   /** Audio streams the voice screen analyses to animate the orb. */
@@ -34,6 +37,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   status: "idle",
   muted: false,
   error: null,
+  expanded: false,
+  setExpanded: (expanded) => set({ expanded }),
   captions: { user: "", assistant: "" },
   micStream: null,
   agentStream: null,
@@ -48,7 +53,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       return;
     }
     const generation = ++attempt;
-    set({ status: "connecting", muted: false, error: null, captions: { user: "", assistant: "" } });
+    set({ status: "connecting", muted: false, error: null, expanded: false, captions: { user: "", assistant: "" } });
     const conversation = useConversationStore.getState();
     try {
       if (!conversation.selectedThreadId) await conversation.createThread();

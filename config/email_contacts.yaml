@@ -1,0 +1,8 @@
+# Trusted email contacts for session emails. A name that is not here is never turned into an address:
+# the agent asks the user instead. Explicit, well-formed addresses are accepted without being listed.
+contacts:
+  - name: Gaurav
+    email: gaurav@seleric.ai
+  - name: Tripti
+    email: tripti@seleric.ai
+groups: {}

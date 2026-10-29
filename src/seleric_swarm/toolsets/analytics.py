@@ -337,13 +337,25 @@ async def generate_visualization(
 
     ``chart_type`` selects the form. Supported forms are::
 
-        line, area, bar, stacked_bar, grouped_bar, pie, donut,
-        funnel, scatter, radar, heatmap
+        line, area, bar, horizontal_bar, stacked_bar, grouped_bar, combo,
+        pie, donut, treemap, funnel, waterfall, scatter, radar, heatmap
+
+    Choose by what the question asks: a trend over time -> line (area for a
+    cumulative level); a ranking or top-N -> horizontal_bar; a handful of
+    categories -> bar; a measure split by category over time -> stacked_bar
+    (parts that add up) or line; share of a whole -> donut (up to 6 slices) or
+    treemap (many); two measures per entity -> grouped_bar, or scatter to see
+    how they relate; one volume and one rate over time -> combo; ordered
+    stages that drop off -> funnel; signed steps from a start to a total ->
+    waterfall; many measures per entity -> heatmap or radar. Omit it to get the
+    form the evidence shape supports best.
+
+    Measures that differ in kind or size (money, counts, averages) are drawn in
+    separate panels automatically, never on one shared scale.
 
     Pass the form the user asked for, matching that list ("stacked bar" and
-    "stackedBar" both resolve to ``stacked_bar``). Omit it to get the form the
-    evidence shape supports best. An unknown form is refused, never silently
-    replaced.
+    "stackedBar" both resolve to ``stacked_bar``). An unknown form is refused,
+    never silently replaced.
 
     ``intent`` is a short description of what the chart should show; it never
     selects the form.
@@ -371,7 +383,13 @@ async def generate_visualization(
             f"{', '.join(CHART_TYPES)}.",
             error_code="VISUALIZATION_FAILED",
         )
-    spec = generate_visualization_spec(evidence, intent, title, chart_type=chart_type)
+    catalogue = ctx.deps.catalogue
+    metric_ids = {e.metric_id for e in evidence}
+    spec = generate_visualization_spec(
+        evidence, intent, title, chart_type=chart_type,
+        aggregations={m: a for m in metric_ids if (a := catalogue.aggregation_for(m))},
+        labels={m.id: m.label for m in catalogue.metrics if m.id in metric_ids and m.label},
+    )
 
     if "error" in spec:
         return _refuse(spec["error"], error_code="VISUALIZATION_FAILED")

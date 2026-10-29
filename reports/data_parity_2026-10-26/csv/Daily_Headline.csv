@@ -1,0 +1,1262 @@
+Category,Metric,Name,Axis,Day,Cube,ClickHouse (recomputed),|Delta|,Status
+commerce,cancel_revenue,Cancel revenue,order_date,2026-09-26,846.61,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-09-27,3811.87,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-09-28,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-09-29,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-09-30,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-01,1906.02,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-02,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-03,1270.34,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-04,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-05,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-06,2964.4100000000003,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-07,2032.1999999999998,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-08,2117.8,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-09,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-10,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-11,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-12,2794.92,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-13,4989.91,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-14,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-15,2117.8,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-16,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-17,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-18,2820.51,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-19,1906.02,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-20,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-21,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-22,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-23,1566.1,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-24,0.0,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-25,1694.07,,,NOT_RECOMPUTED
+commerce,cancel_revenue,Cancel revenue,order_date,2026-10-26,0.0,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-09-26,58437.353032590996,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-09-27,76384.06526576908,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-09-28,47101.5699816697,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-09-29,65020.75914765833,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-09-30,61224.78886370859,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-01,72113.43556659213,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-02,39149.0337092821,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-03,102244.81732580153,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-04,79487.86438637532,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-05,108999.58126581543,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-06,94370.85818576033,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-07,83361.32289283609,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-08,93332.8039346625,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-09,53879.72564368781,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-10,42194.33937326207,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-11,31692.89945706405,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-12,23896.468727671796,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-13,68118.83544925804,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-14,71170.03577899387,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-15,49752.736589270105,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-16,51912.55544848959,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-17,56733.454461811736,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-18,68609.5435000311,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-19,33475.01466506685,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-20,53375.42544364643,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-21,77870.76369802603,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-22,32738.77874503854,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-23,66781.04617778005,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-24,44827.479356451986,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-25,41520.384784624715,,,NOT_RECOMPUTED
+commerce,net_sales,Net sales,order_date,2026-10-26,13978.90017469738,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-09-26,9.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-09-28,433.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-09-29,4.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-03,0.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-05,2.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-06,3.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-07,0.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-08,2.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-09,4.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-10,2.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-12,2.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-13,7.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-14,1.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-15,2.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-18,1.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-19,1.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-21,4.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-22,1.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-23,3.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-24,6.0,,,NOT_RECOMPUTED
+operations,refund_count,Refund count,-,2026-10-26,2.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-09-26,1270.34,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-09-27,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-09-28,3387.29,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-09-29,4939.07,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-09-30,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-01,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-02,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-03,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-04,3049.33,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-05,846.61,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-06,4023.82,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-07,1947.46,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-08,4302.719999999999,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-09,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-10,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-11,1295.85,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-12,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-13,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-14,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-15,2117.8,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-16,2541.53,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-17,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-18,4176.360000000001,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-19,2477.29,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-20,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-21,2117.8,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-22,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-23,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-24,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-25,0.0,,,NOT_RECOMPUTED
+commerce,return_revenue,Return revenue,order_date,2026-10-26,0.0,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-09-26,0.0,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-09-27,3811.86,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-09-28,0.0,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-09-29,2117.8,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-09-30,0.0,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-01,5674.58,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-02,2117.8,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-03,5082.210000000001,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-04,9146.620000000003,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-05,7539.16,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-06,6689.84,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-07,7454.240000000001,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-08,8723.75,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-09,1694.07,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-10,6691.53,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-11,2117.8,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-12,0.0,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-13,7581.61,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-14,3142.45,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-15,3565.4300000000003,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-16,1694.07,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-17,2117.8,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-18,0.0,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-19,0.0,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-20,1694.07,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-21,0.0,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-22,0.0,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-23,0.0,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-24,0.0,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-25,0.0,,,NOT_RECOMPUTED
+commerce,rto_revenue,Rto revenue,order_date,2026-10-26,0.0,,,NOT_RECOMPUTED
+paid_media,ad_spend,Ad spend,-,2026-09-26,44991.735984,44991.735984,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-09-27,38071.68999999999,38071.68999999999,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-09-28,40800.912671,40800.912671,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-09-29,46669.43184400001,46669.43184400001,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-09-30,36055.936849000005,36055.936849000005,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-01,45967.58831,45967.58831,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-02,35504.78682,35504.78682,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-03,54602.83326300001,54602.83326300001,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-04,52968.01943499998,52968.01943499998,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-05,73811.90662900002,73811.90662900002,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-06,70633.76350199999,70633.76350199999,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-07,71171.65746299998,71171.65746299998,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-08,69851.37416800001,69851.37416800001,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-09,60101.688976000005,60101.688976000005,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-10,45085.33984,45085.33984,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-11,40079.867405,40079.867405,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-12,38666.878110000005,38666.878110000005,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-13,50448.126747999995,50448.126747999995,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-14,47393.12630900001,47393.12630900001,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-15,38047.40085300001,38047.40085300001,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-16,44059.139069,44059.139069,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-17,39348.76695500001,39348.76695500001,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-18,40813.543934999994,40813.543934999994,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-19,40538.565073000005,40538.565073000005,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-20,35853.786232,35853.786232,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-21,48050.78407799999,48050.78407799999,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-22,38429.113177,38429.113177,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-23,46798.146777999995,46798.146777999995,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-24,48074.307954,48074.307954,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-25,43109.44559500001,43109.44559500001,0.0,PASS
+paid_media,ad_spend,Ad spend,-,2026-10-26,19406.556271999998,19406.556271999998,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-09-26,117.0,117.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-09-27,141.0,141.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-09-28,137.0,137.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-09-29,195.0,195.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-09-30,144.0,144.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-01,200.0,200.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-02,90.0,90.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-03,198.0,198.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-04,217.0,217.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-05,236.0,236.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-06,218.0,218.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-07,249.0,249.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-08,279.0,279.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-09,184.0,184.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-10,136.0,136.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-11,146.0,146.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-12,164.0,164.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-13,102.0,102.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-14,148.0,148.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-15,126.0,126.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-16,106.0,106.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-17,76.0,76.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-18,97.0,97.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-19,81.0,81.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-20,87.0,87.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-21,151.0,151.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-22,93.0,93.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-23,113.0,113.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-24,111.0,111.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-25,87.0,87.0,0.0,PASS
+web_analytics,add_to_carts,Add to carts,-,2026-10-26,32.0,32.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-09-26,1269.5,1269.5,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-09-27,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-09-28,1694.07,1694.07,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-09-29,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-09-30,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-01,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-02,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-03,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-04,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-05,2117.8,2117.8,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-06,1270.34,1270.34,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-07,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-08,4150.0,4150.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-09,677.12,677.12,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-10,1906.02,1906.02,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-11,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-12,2794.92,2794.92,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-13,4989.91,4989.91,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-14,2117.8,2117.8,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-15,846.61,846.61,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-16,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-17,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-18,1295.85,1295.85,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-19,1906.02,1906.02,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-20,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-21,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-22,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-23,3090.76,3090.76,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-24,2117.8,2117.8,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-25,0.0,0.0,0.0,PASS
+commerce,cancel_revenue,Cancel revenue,event_date,2026-10-26,1694.07,1694.07,0.0,PASS
+paid_media,clicks,Clicks,-,2026-09-26,1593.0,1593.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-09-27,1385.0,1385.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-09-28,2343.0,2343.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-09-29,2299.0,2299.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-09-30,2313.0,2313.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-01,3067.0,3067.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-02,2658.0,2658.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-03,3607.0,3607.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-04,4610.0,4610.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-05,4655.0,4655.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-06,5007.0,5007.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-07,4854.0,4854.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-08,5253.0,5253.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-09,6349.0,6349.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-10,4590.0,4590.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-11,4511.0,4511.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-12,3434.0,3434.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-13,4236.0,4236.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-14,4345.0,4345.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-15,3856.0,3856.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-16,4315.0,4315.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-17,3738.0,3738.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-18,4030.0,4030.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-19,3088.0,3088.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-20,2577.0,2577.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-21,3788.0,3788.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-22,2150.0,2150.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-23,2413.0,2413.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-24,2408.0,2408.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-25,2025.0,2025.0,0.0,PASS
+paid_media,clicks,Clicks,-,2026-10-26,755.0,755.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-09-26,4.0,4.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-09-27,13.0,13.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-09-28,7.0,7.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-09-29,11.0,11.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-09-30,5.0,5.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-01,15.0,15.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-02,7.0,7.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-03,15.0,15.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-04,19.0,19.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-05,13.0,13.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-06,17.0,17.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-07,20.0,20.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-08,16.0,16.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-09,6.0,6.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-10,13.0,13.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-11,3.0,3.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-12,4.0,4.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-13,10.0,10.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-14,10.0,10.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-15,8.0,8.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-16,10.0,10.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-17,9.0,9.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-18,10.0,10.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-19,8.0,8.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-20,6.0,6.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-21,9.0,9.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-22,7.0,7.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-23,4.0,4.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-24,3.0,3.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-25,13.0,13.0,0.0,PASS
+commerce,cod_orders,Cod orders,-,2026-10-26,2.0,2.0,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-09-26,26932.04369333003,26932.04369333003,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-09-27,55238.76767877752,55238.76767877752,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-09-28,-659601.427463561,-659601.427463561,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-09-29,30845.156049298977,30845.156049298977,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-09-30,32508.77306375732,32508.77306375732,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-01,46001.839349620954,46001.839349620954,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-02,24240.262199478184,24240.262199478184,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-03,53114.53842162595,53114.53842162595,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-04,56728.29720515055,56728.29720515055,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-05,61633.62206581536,61633.62206581536,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-06,56122.54849054389,56122.54849054389,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-07,54184.185182612695,54184.185182612695,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-08,56922.63755043882,56922.63755043882,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-09,26165.149241602117,26165.149241602117,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-10,21428.53454137819,21428.53454137819,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-11,19621.97264726013,19621.97264726013,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-12,1830.0082820500108,1830.0082820500108,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-13,36272.495548057625,36272.495548057625,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-14,41175.107311610176,41175.107311610176,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-15,55090.67806595857,55090.67806595857,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-16,30680.376636032375,30680.376636032375,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-17,29900.040227032947,29900.040227032947,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-18,46292.6108000311,46292.6108000311,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-19,17100.135450579462,17100.135450579462,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-20,32460.334221385307,32460.334221385307,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-21,32330.83689766256,32330.83689766256,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-22,15557.792689239628,15557.792689239628,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-23,40177.58717778005,40177.58717778005,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-24,18832.144002326477,18832.144002326477,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-25,21787.45738462472,21787.45738462472,0.0,PASS
+finance,contribution_margin,Contribution margin,event_date,2026-10-26,6606.041496958512,6606.041496958512,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-09-26,35771.949732591,35771.949732591,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-09-27,47923.90386576905,47923.90386576905,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-09-28,28142.3619816697,28142.3619816697,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-09-29,39655.91194765833,39655.91194765833,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-09-30,34797.89096370858,34797.89096370858,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-01,43921.19496659213,43921.19496659213,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-02,21927.451509282102,21927.451509282102,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-03,55932.00512580144,55932.00512580144,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-04,46496.17728637533,46496.17728637533,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-05,64099.44006581535,64099.44006581535,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-06,56174.20048576033,56174.20048576033,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-07,46963.83029283614,46963.83029283614,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-08,53956.82653466249,53956.82653466249,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-09,33645.427743687804,33645.427743687804,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-10,23924.786373262064,23924.786373262064,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-11,16582.67195706405,16582.67195706405,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-12,13995.007927671799,13995.007927671799,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-13,39692.969149258024,39692.969149258024,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-14,41862.05447899387,41862.05447899387,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-15,27630.73598927011,27630.73598927011,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-16,29013.02904848959,29013.02904848959,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-17,31265.558061811706,31265.558061811706,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-18,42007.3432000311,42007.3432000311,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-19,20773.768665066847,20773.768665066847,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-20,33422.31114364643,33422.31114364643,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-21,46430.84409802605,46430.84409802605,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-22,19027.49004503854,19027.49004503854,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-23,42429.712377780044,42429.712377780044,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-24,26610.24085645198,26610.24085645198,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-25,22052.18738462472,22052.18738462472,0.0,PASS
+finance,contribution_margin,Contribution margin,order_date,2026-10-26,9282.422174697382,9282.422174697382,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-09-26,23.0,23.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-09-27,38.0,38.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-09-28,27.0,27.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-09-29,40.0,40.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-09-30,30.0,30.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-01,41.0,41.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-02,19.0,19.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-03,53.0,53.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-04,48.0,48.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-05,52.0,52.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-06,56.0,56.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-07,54.0,54.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-08,58.0,58.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-09,26.0,26.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-10,27.0,27.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-11,19.0,19.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-12,15.0,15.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-13,35.0,35.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-14,35.0,35.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-15,30.0,30.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-16,28.0,28.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-17,31.0,31.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-18,35.0,35.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-19,21.0,21.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-20,26.0,26.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-21,34.0,34.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-22,19.0,19.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-23,29.0,29.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-24,26.0,26.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-25,29.0,29.0,0.0,PASS
+web_analytics,funnel_order_purchases,Funnel purchases (orders),-,2026-10-26,7.0,7.0,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-09-26,58997.149700000016,58997.149700000016,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-09-27,75439.8371,75439.8371,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-09-28,45472.6524,45472.6524,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-09-29,72345.22000000002,72345.22000000002,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-09-30,56131.04050000002,56131.04050000002,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-01,72885.53110000002,72885.53110000002,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-02,33437.60153333333,33437.60153333333,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-03,105648.0515666667,105648.0515666667,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-04,78963.90510000003,78963.90510000003,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-05,112724.4071068231,112724.4071068231,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-06,100321.13061111116,100321.13061111116,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-07,87268.98550000001,87268.98550000001,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-08,105994.15770597951,105994.15770597951,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-09,54895.453499999996,54895.453499999996,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-10,46709.14363333333,46709.14363333333,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-11,31273.983899999996,31273.983899999996,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-12,24025.06,24025.06,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-13,72630.7112285548,72630.7112285548,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-14,65759.18096480731,65759.18096480731,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-15,54407.528888888904,54407.528888888904,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-16,56173.690457578654,56173.690457578654,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-17,57416.66703333334,57416.66703333334,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-18,64972.666511111114,64972.666511111114,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-19,35278.236666666664,35278.236666666664,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-20,53034.27327128485,53034.27327128485,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-21,78490.84429999998,78490.84429999998,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-22,32664.572071977,32664.572071977,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-23,66577.5344563042,66577.5344563042,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-24,44953.76999999999,44953.76999999999,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-25,41129.11928617379,41129.11928617379,0.0,PASS
+web_analytics,funnel_order_revenue,Funnel revenue (orders),-,2026-10-26,13792.816650195522,13792.816650195522,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-09-26,23.0,23.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-09-27,38.0,38.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-09-28,28.0,28.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-09-29,40.0,40.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-09-30,30.0,30.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-01,41.0,41.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-02,19.0,19.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-03,53.0,53.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-04,48.0,48.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-05,52.0,52.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-06,56.0,56.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-07,54.0,54.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-08,58.0,58.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-09,26.0,26.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-10,27.0,27.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-11,19.0,19.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-12,15.0,15.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-13,35.0,35.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-14,35.0,35.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-15,30.0,30.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-16,28.0,28.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-17,31.0,31.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-18,35.0,35.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-19,21.0,21.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-20,26.0,26.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-21,34.0,34.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-22,19.0,19.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-23,29.0,29.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-24,26.0,26.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-25,29.0,29.0,0.0,PASS
+web_analytics,funnel_purchases,Funnel purchases,-,2026-10-26,7.0,7.0,0.0,PASS
+commerce,gross_sales,Gross sales,-,2026-09-26,60222.10000000001,60222.1,1.4551915228366852e-11,PASS
+commerce,gross_sales,Gross sales,-,2026-09-27,83006.08000000006,83006.08000000002,4.3655745685100555e-11,PASS
+commerce,gross_sales,Gross sales,-,2026-09-28,49693.1,49693.09999999999,7.275957614183426e-12,PASS
+commerce,gross_sales,Gross sales,-,2026-09-29,70863.22000000002,70863.22000000002,0.0,PASS
+commerce,gross_sales,Gross sales,-,2026-09-30,59585.89000000001,59585.89000000001,0.0,PASS
+commerce,gross_sales,Gross sales,-,2026-10-01,77888.19000000003,77888.18999999999,4.3655745685100555e-11,PASS
+commerce,gross_sales,Gross sales,-,2026-10-02,39961.14,39961.13999999999,7.275957614183426e-12,PASS
+commerce,gross_sales,Gross sales,-,2026-10-03,106435.76000000005,106435.76000000005,0.0,PASS
+commerce,gross_sales,Gross sales,-,2026-10-04,88551.95,88551.94999999998,1.4551915228366852e-11,PASS
+commerce,gross_sales,Gross sales,-,2026-10-05,115709.25000000007,115709.25000000007,0.0,PASS
+commerce,gross_sales,Gross sales,-,2026-10-06,106371.04000000001,106371.04000000005,4.3655745685100555e-11,PASS
+commerce,gross_sales,Gross sales,-,2026-10-07,93037.94000000003,93037.93999999999,4.3655745685100555e-11,PASS
+commerce,gross_sales,Gross sales,-,2026-10-08,106504.28000000003,106504.28000000001,1.4551915228366852e-11,PASS
+commerce,gross_sales,Gross sales,-,2026-10-09,54608.54000000001,54608.54,7.275957614183426e-12,PASS
+commerce,gross_sales,Gross sales,-,2026-10-10,47586.799999999996,47586.8,7.275957614183426e-12,PASS
+commerce,gross_sales,Gross sales,-,2026-10-11,34054.17,34054.17000000001,1.4551915228366852e-11,PASS
+commerce,gross_sales,Gross sales,-,2026-10-12,25976.979999999996,25976.98,3.637978807091713e-12,PASS
+commerce,gross_sales,Gross sales,-,2026-10-13,79259.24000000002,79259.24000000002,0.0,PASS
+commerce,gross_sales,Gross sales,-,2026-10-14,72294.09,72294.09000000001,1.4551915228366852e-11,PASS
+commerce,gross_sales,Gross sales,-,2026-10-15,56190.38000000001,56190.380000000005,7.275957614183426e-12,PASS
+commerce,gross_sales,Gross sales,-,2026-10-16,54806.63,54806.630000000005,7.275957614183426e-12,PASS
+commerce,gross_sales,Gross sales,-,2026-10-17,57086.93000000001,57086.92999999999,1.4551915228366852e-11,PASS
+commerce,gross_sales,Gross sales,-,2026-10-18,74391.15000000002,74391.15000000002,0.0,PASS
+commerce,gross_sales,Gross sales,-,2026-10-19,37061.799999999996,37061.80000000001,1.4551915228366852e-11,PASS
+commerce,gross_sales,Gross sales,-,2026-10-20,53791.61000000001,53791.61000000001,0.0,PASS
+commerce,gross_sales,Gross sales,-,2026-10-21,78857.20999999998,78857.21,2.9103830456733704e-11,PASS
+commerce,gross_sales,Gross sales,-,2026-10-22,31734.54,31734.539999999997,3.637978807091713e-12,PASS
+commerce,gross_sales,Gross sales,-,2026-10-23,66875.96,66875.95999999999,1.4551915228366852e-11,PASS
+commerce,gross_sales,Gross sales,-,2026-10-24,43650.36000000001,43650.36000000001,0.0,PASS
+commerce,gross_sales,Gross sales,-,2026-10-25,42043.26999999999,42043.26999999999,0.0,PASS
+commerce,gross_sales,Gross sales,-,2026-10-26,13348.39,13348.390000000001,1.8189894035458565e-12,PASS
+paid_media,impressions,Impressions,-,2026-09-26,92239.0,92239.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-09-27,74784.0,74784.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-09-28,97799.0,97799.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-09-29,119416.0,119416.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-09-30,119144.0,119144.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-01,161489.0,161489.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-02,130329.0,130329.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-03,173771.0,173771.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-04,367330.0,367330.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-05,323321.0,323321.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-06,279632.0,279632.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-07,204701.0,204701.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-08,189264.0,189264.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-09,212108.0,212108.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-10,168319.0,168319.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-11,153942.0,153942.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-12,133026.0,133026.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-13,147294.0,147294.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-14,151565.0,151565.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-15,135774.0,135774.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-16,154120.0,154120.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-17,147305.0,147305.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-18,152332.0,152332.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-19,138072.0,138072.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-20,113496.0,113496.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-21,179792.0,179792.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-22,109656.0,109656.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-23,110000.0,110000.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-24,115324.0,115324.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-25,101919.0,101919.0,0.0,PASS
+paid_media,impressions,Impressions,-,2026-10-26,37622.0,37622.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-09-26,922.0,922.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-09-27,1133.0,1133.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-09-28,1121.0,1121.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-09-29,1225.0,1225.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-09-30,1072.0,1072.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-01,1577.0,1577.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-02,1068.0,1068.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-03,1748.0,1748.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-04,1970.0,1970.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-05,2150.0,2150.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-06,2557.0,2557.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-07,2447.0,2447.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-08,2397.0,2397.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-09,2901.0,2901.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-10,1168.0,1168.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-11,1032.0,1032.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-12,929.0,929.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-13,1393.0,1393.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-14,1256.0,1256.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-15,948.0,948.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-16,1134.0,1134.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-17,897.0,897.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-18,1243.0,1243.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-19,1202.0,1202.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-20,991.0,991.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-21,2148.0,2148.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-22,853.0,853.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-23,958.0,958.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-24,900.0,900.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-25,744.0,744.0,0.0,PASS
+paid_media,link_clicks,Link clicks,-,2026-10-26,330.0,330.0,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-09-26,23376.493300000002,23376.493300000002,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-09-27,29317.313800000007,29317.313800000007,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-09-28,-223979.4491999998,-223979.4491999998,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-09-29,23486.62720000001,23486.62720000001,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-09-30,25459.1653,25459.1653,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-01,30358.6854,30358.6854,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-02,16347.997000000001,16347.997000000001,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-03,48475.454600000005,48475.454600000005,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-04,33788.90670000001,33788.90670000001,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-05,49611.129199999996,49611.129199999996,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-06,40434.7575,40434.7575,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-07,39419.67259999999,39419.67259999999,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-08,43303.16739999999,43303.16739999999,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-09,18783.910299999996,18783.910299999996,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-10,19980.6254,19980.6254,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-11,15187.2823,15187.2823,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-12,6444.0736,6444.0736,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-13,26399.5263,26399.5263,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-14,29231.523699999994,29231.523699999994,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-15,-3509.024200000006,-3509.024200000006,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-16,23349.988799999996,23349.988799999996,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-17,23913.7564,23913.7564,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-18,28017.9427,28017.9427,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-19,11081.646400000001,11081.646400000001,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-20,19457.456699999995,19457.456699999995,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-21,28001.192799999993,28001.192799999993,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-22,13583.3691,13583.3691,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-23,23020.238999999994,23020.238999999994,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-24,12250.753700000001,12250.753700000001,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-25,19732.927399999997,19732.927399999997,0.0,PASS
+finance,net_cogs,Net COGS,event_date,2026-10-26,3731.2432,3731.2432,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-09-26,22665.403300000005,22665.403300000005,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-09-27,28460.161400000005,28460.161400000005,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-09-28,18959.208000000002,18959.208000000002,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-09-29,25364.84720000001,25364.84720000001,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-09-30,26426.897900000004,26426.897900000004,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-01,28192.240599999997,28192.240599999997,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-02,17221.582200000004,17221.582200000004,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-03,46312.8122,46312.8122,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-04,32991.687099999996,32991.687099999996,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-05,44900.141199999984,44900.141199999984,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-06,38196.6577,38196.6577,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-07,36397.4926,36397.4926,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-08,39375.97739999999,39375.97739999999,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-09,20234.297899999994,20234.297899999994,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-10,18269.553,18269.553,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-11,15110.227499999997,15110.227499999997,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-12,9901.460799999999,9901.460799999999,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-13,28425.8663,28425.8663,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-14,29307.981299999992,29307.981299999992,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-15,22122.000600000003,22122.000600000003,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-16,22899.5264,22899.5264,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-17,25467.896399999994,25467.896399999994,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-18,26602.200300000004,26602.200300000004,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-19,12701.246000000003,12701.246000000003,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-20,19953.114299999997,19953.114299999997,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-21,31439.91959999999,31439.91959999999,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-22,13711.288699999997,13711.288699999997,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-23,24351.333799999993,24351.333799999993,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-24,18217.238499999996,18217.238499999996,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-25,19468.197399999994,19468.197399999994,0.0,PASS
+finance,net_cogs,Net COGS,order_date,2026-10-26,4696.478,4696.478,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-09-26,-18059.692290669962,-18059.692290669962,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-09-27,17167.077678777514,17167.077678777514,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-09-28,-700402.3401345608,-700402.3401345608,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-09-29,-15824.275794701036,-15824.275794701036,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-09-30,-3547.163785242662,-3547.163785242662,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-01,34.25103962096591,34.25103962096591,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-02,-11264.524620521815,-11264.524620521815,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-03,-1488.2948413740678,-1488.2948413740678,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-04,3760.2777701505984,3760.2777701505984,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-05,-12178.284563184654,-12178.284563184654,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-06,-14511.215011456114,-14511.215011456114,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-07,-16987.472280387334,-16987.472280387334,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-08,-12928.736617561179,-12928.736617561179,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-09,-33936.53973439787,-33936.53973439787,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-10,-23656.805298621806,-23656.805298621806,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-11,-20457.89475773986,-20457.89475773986,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-12,-36836.86982794999,-36836.86982794999,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-13,-14175.63119994237,-14175.63119994237,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-14,-6218.018997389786,-6218.018997389786,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-15,17043.277212958565,17043.277212958565,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-16,-13378.762432967624,-13378.762432967624,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-17,-9448.726727967054,-9448.726727967054,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-18,5479.06686503109,5479.06686503109,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-19,-23438.429622420543,-23438.429622420543,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-20,-3393.45201061469,-3393.45201061469,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-21,-15719.947180337433,-15719.947180337433,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-22,-22871.320487760342,-22871.320487760342,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-23,-6620.559600219953,-6620.559600219953,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-24,-29242.163951673523,-29242.163951673523,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-25,-21321.98821037528,-21321.98821037528,0.0,PASS
+finance,net_profit,Net profit,event_date,2026-10-26,-12800.51477504149,-12800.51477504149,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-09-26,-9219.78625140899,-9219.78625140899,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-09-27,9852.213865769043,9852.213865769043,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-09-28,-12658.55068933032,-12658.55068933032,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-09-29,-7013.519896341695,-7013.519896341695,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-09-30,-1258.045885291407,-1258.045885291407,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-01,-2046.3933434078544,-2046.3933434078544,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-02,-13577.335310717894,-13577.335310717894,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-03,1329.1718628014355,1329.1718628014355,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-04,-6471.842148624621,-6471.842148624621,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-05,-9712.466563184618,-9712.466563184618,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-06,-14459.56301623968,-14459.56301623968,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-07,-24207.827170163906,-24207.827170163906,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-08,-15894.547633337499,-15894.547633337499,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-09,-26456.26123231218,-26456.26123231218,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-10,-21160.55346673793,-21160.55346673793,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-11,-23497.195447935926,-23497.195447935926,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-12,-24671.870182328206,-24671.870182328206,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-13,-10755.157598741966,-10755.157598741966,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-14,-5531.071830006104,-5531.071830006104,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-15,-10416.664863729895,-10416.664863729895,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-16,-15046.110020510401,-15046.110020510401,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-17,-8083.20889318829,-8083.20889318829,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-18,1193.799265031093,1193.799265031093,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-19,-19764.796407933143,-19764.796407933143,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-20,-2431.4750883535658,-2431.4750883535658,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-21,-1619.9399799739567,-1619.9399799739567,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-22,-19401.62313196144,-19401.62313196144,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-23,-4368.4344002199505,-4368.4344002199505,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-24,-21464.06709754801,-21464.06709754801,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-25,-21057.25821037528,-21057.25821037528,0.0,PASS
+finance,net_profit,Net profit,order_date,2026-10-26,-10124.13409730263,-10124.13409730263,0.0,PASS
+commerce,net_sales,Net sales,event_date,2026-09-26,50308.53699333004,50308.53699333001,2.9103830456733704e-11,PASS
+commerce,net_sales,Net sales,event_date,2026-09-27,84556.08147877756,84556.08147877749,7.275957614183426e-11,PASS
+commerce,net_sales,Net sales,event_date,2026-09-28,-883580.8766635616,-883580.8766635625,9.313225746154785e-10,PASS
+commerce,net_sales,Net sales,event_date,2026-09-29,54331.783249298984,54331.78324929898,7.275957614183426e-12,PASS
+commerce,net_sales,Net sales,event_date,2026-09-30,57967.93836375734,57967.938363757334,7.275957614183426e-12,PASS
+commerce,net_sales,Net sales,event_date,2026-10-01,76360.52474962096,76360.52474962093,2.9103830456733704e-11,PASS
+commerce,net_sales,Net sales,event_date,2026-10-02,40588.259199478176,40588.259199478176,0.0,PASS
+commerce,net_sales,Net sales,event_date,2026-10-03,101589.993021626,101589.99302162598,1.4551915228366852e-11,PASS
+commerce,net_sales,Net sales,event_date,2026-10-04,90517.20390515057,90517.20390515056,1.4551915228366852e-11,PASS
+commerce,net_sales,Net sales,event_date,2026-10-05,111244.75126581542,111244.7512658154,1.4551915228366852e-11,PASS
+commerce,net_sales,Net sales,event_date,2026-10-06,96557.30599054389,96557.3059905439,1.4551915228366852e-11,PASS
+commerce,net_sales,Net sales,event_date,2026-10-07,93603.85778261267,93603.85778261267,0.0,PASS
+commerce,net_sales,Net sales,event_date,2026-10-08,100225.80495043885,100225.80495043886,1.4551915228366852e-11,PASS
+commerce,net_sales,Net sales,event_date,2026-10-09,44949.059541602124,44949.05954160212,7.275957614183426e-12,PASS
+commerce,net_sales,Net sales,event_date,2026-10-10,41409.15994137819,41409.15994137817,1.4551915228366852e-11,PASS
+commerce,net_sales,Net sales,event_date,2026-10-11,34809.254947260124,34809.25494726013,7.275957614183426e-12,PASS
+commerce,net_sales,Net sales,event_date,2026-10-12,8274.081882050014,8274.081882050017,3.637978807091713e-12,PASS
+commerce,net_sales,Net sales,event_date,2026-10-13,62672.021848057644,62672.021848057644,0.0,PASS
+commerce,net_sales,Net sales,event_date,2026-10-14,70406.63101161018,70406.63101161018,0.0,PASS
+commerce,net_sales,Net sales,event_date,2026-10-15,51581.653865958564,51581.65386595857,7.275957614183426e-12,PASS
+commerce,net_sales,Net sales,event_date,2026-10-16,54030.365436032385,54030.365436032385,0.0,PASS
+commerce,net_sales,Net sales,event_date,2026-10-17,53813.79662703297,53813.796627032934,3.637978807091713e-11,PASS
+commerce,net_sales,Net sales,event_date,2026-10-18,74310.55350003112,74310.5535000311,1.4551915228366852e-11,PASS
+commerce,net_sales,Net sales,event_date,2026-10-19,28181.781850579468,28181.781850579464,3.637978807091713e-12,PASS
+commerce,net_sales,Net sales,event_date,2026-10-20,51917.790921385305,51917.790921385305,0.0,PASS
+commerce,net_sales,Net sales,event_date,2026-10-21,60332.029697662554,60332.029697662554,0.0,PASS
+commerce,net_sales,Net sales,event_date,2026-10-22,29141.16178923963,29141.16178923962,1.0913936421275139e-11,PASS
+commerce,net_sales,Net sales,event_date,2026-10-23,63197.82617778004,63197.826177780036,7.275957614183426e-12,PASS
+commerce,net_sales,Net sales,event_date,2026-10-24,31082.897702326474,31082.89770232648,7.275957614183426e-12,PASS
+commerce,net_sales,Net sales,event_date,2026-10-25,41520.384784624715,41520.384784624715,0.0,PASS
+commerce,net_sales,Net sales,event_date,2026-10-26,10337.284696958512,10337.284696958512,0.0,PASS
+commerce,new_customers,New customers,-,2026-09-26,16.0,16.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-09-27,27.0,27.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-09-28,21.0,21.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-09-29,34.0,34.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-09-30,23.0,23.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-01,31.0,31.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-02,13.0,13.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-03,45.0,45.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-04,38.0,38.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-05,31.0,31.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-06,44.0,44.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-07,43.0,43.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-08,40.0,40.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-09,25.0,25.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-10,22.0,22.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-11,15.0,15.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-12,9.0,9.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-13,24.0,24.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-14,22.0,22.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-15,25.0,25.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-16,18.0,18.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-17,24.0,24.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-18,27.0,27.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-19,16.0,16.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-20,21.0,21.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-21,22.0,22.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-22,15.0,15.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-23,18.0,18.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-24,14.0,14.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-25,21.0,21.0,0.0,PASS
+commerce,new_customers,New customers,-,2026-10-26,4.0,4.0,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-09-26,4498.7533,4498.7533,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-09-27,5245.1338000000005,5245.1338000000005,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-09-28,65856.20280000003,65856.20280000003,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-09-29,6308.627199999999,6308.627199999999,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-09-30,4023.3152999999998,4023.3152999999998,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-01,5341.4954,5341.4954,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-02,3089.4569999999994,3089.4569999999994,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-03,9325.094599999999,9325.094599999999,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-04,6069.1567000000005,6069.1567000000005,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-05,8195.8112,8195.8112,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-06,7282.377500000001,7282.377500000001,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-07,6505.415,6505.415,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-08,8018.037399999999,8018.037399999999,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-09,4405.7951,4405.7951,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-10,4019.8302,4019.8302,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-11,2136.6023,2136.6023,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-12,2404.3508,2404.3508,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-13,8309.738700000002,8309.738700000002,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-14,4700.6185,4700.6185,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-15,4247.7706,4247.7706,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-16,4638.1488,4638.1488,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-17,4672.1812,4672.1812,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-18,5381.282700000002,5381.282700000002,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-19,3122.5184000000004,3122.5184000000004,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-20,4330.3567,4330.3567,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-21,6435.899599999999,6435.899599999999,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-22,2917.9887000000003,2917.9887000000003,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-23,3552.9938000000006,3552.9938000000006,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-24,3861.9985,3861.9985,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-25,3664.6074000000003,3664.6074000000003,0.0,PASS
+finance,operating_cost,Operating cost,event_date,2026-10-26,981.648,981.648,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-09-26,3483.8133000000003,3483.8133000000003,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-09-27,5334.813800000001,5334.813800000001,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-09-28,3876.7328000000007,3876.7328000000007,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-09-29,5655.497199999999,5655.497199999999,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-09-30,3819.5903000000003,3819.5903000000003,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-01,5438.7354,5438.7354,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-02,3215.1069999999995,3215.1069999999995,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-03,9198.2546,9198.2546,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-04,6532.666700000001,6532.666700000001,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-05,8269.2112,8269.2112,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-06,7334.082500000001,7334.082500000001,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-07,6727.044999999999,6727.044999999999,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-08,8041.627399999998,8041.627399999998,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-09,4014.4251,4014.4251,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-10,3976.5002000000004,3976.5002000000004,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-11,2220.9223,2220.9223,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-12,1770.1408000000001,1770.1408000000001,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-13,8581.7687,8581.7687,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-14,4728.6585,4728.6585,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-15,4339.4906,4339.4906,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-16,4952.288799999999,4952.288799999999,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-17,4384.0912,4384.0912,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-18,5489.252700000001,5489.252700000001,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-19,2991.2584,2991.2584,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-20,4282.686700000001,4282.686700000001,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-21,5061.949600000001,5061.949600000001,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-22,2746.6287,2746.6287,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-23,3445.0238000000004,3445.0238000000004,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-24,3439.0685,3439.0685,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-25,3584.6474000000003,3584.6474000000003,0.0,PASS
+finance,operating_cost,Operating cost,order_date,2026-10-26,907.308,907.308,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-09-26,44991.73598399999,44991.73598399999,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-09-27,38071.689999999995,38071.689999999995,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-09-28,40800.91267100001,40800.91267100001,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-09-29,46669.43184400002,46669.43184400002,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-09-30,36055.93684899999,36055.93684899999,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-01,45967.58830999999,45967.58830999999,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-02,35504.786819999994,35504.786819999994,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-03,54602.83326300002,54602.83326300002,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-04,52968.01943499998,52968.01943499998,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-05,73811.90662899999,73811.90662899999,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-06,70633.76350200002,70633.76350200002,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-07,71171.65746299998,71171.65746299998,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-08,69851.37416800001,69851.37416800001,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-09,60101.68897599998,60101.68897599998,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-10,45085.33984,45085.33984,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-11,40079.86740499999,40079.86740499999,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-12,38666.87811000001,38666.87811000001,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-13,50448.126747999995,50448.126747999995,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-14,47393.12630899997,47393.12630899997,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-15,38047.400853,38047.400853,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-16,44059.139069,44059.139069,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-17,39348.76695500001,39348.76695500001,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-18,40813.543935,40813.543935,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-19,40538.56507299999,40538.56507299999,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-20,35853.786232,35853.786232,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-21,48050.78407800001,48050.78407800001,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-22,38429.11317699999,38429.11317699999,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-23,46798.146777999995,46798.146777999995,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-24,48074.307954,48074.307954,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-25,43109.445595000005,43109.445595000005,0.0,PASS
+finance,order_pnl_ad_spend,Ad spend (P&L basis),-,2026-10-26,19406.556272000005,19406.556272000005,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-09-26,50308.53699333003,50308.53699333003,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-09-27,84556.0814787775,84556.0814787775,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-09-28,-883580.8766635644,-883580.8766635644,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-09-29,54331.78324929897,54331.78324929897,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-09-30,57967.93836375731,57967.93836375731,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-01,76360.52474962095,76360.52474962095,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-02,40588.25919947817,40588.25919947817,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-03,101589.99302162595,101589.99302162595,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-04,90517.20390515056,90517.20390515056,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-05,111244.75126581539,111244.75126581539,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-06,96557.30599054389,96557.30599054389,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-07,93603.85778261264,93603.85778261264,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-08,100225.80495043883,100225.80495043883,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-09,44949.05954160211,44949.05954160211,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-10,41409.15994137818,41409.15994137818,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-11,34809.254947260124,34809.254947260124,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-12,8274.081882050008,8274.081882050008,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-13,62672.02184805762,62672.02184805762,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-14,70406.6310116102,70406.6310116102,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-15,51581.65386595856,51581.65386595856,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-16,54030.36543603238,54030.36543603238,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-17,53813.79662703295,53813.79662703295,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-18,74310.5535000311,74310.5535000311,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-19,28181.781850579464,28181.781850579464,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-20,51917.79092138529,51917.79092138529,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-21,60332.02969766257,60332.02969766257,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-22,29141.16178923963,29141.16178923963,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-23,63197.82617778004,63197.82617778004,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-24,31082.897702326478,31082.897702326478,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-25,41520.38478462473,41520.38478462473,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),event_date,2026-10-26,10337.284696958512,10337.284696958512,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-09-26,58437.353032590996,58437.353032590996,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-09-27,76384.06526576902,76384.06526576902,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-09-28,47101.56998166969,47101.56998166969,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-09-29,65020.75914765832,65020.75914765832,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-09-30,61224.78886370856,61224.78886370856,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-01,72113.43556659213,72113.43556659213,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-02,39149.033709282085,39149.033709282085,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-03,102244.81732580147,102244.81732580147,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-04,79487.86438637534,79487.86438637534,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-05,108999.5812658154,108999.5812658154,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-06,94370.85818576033,94370.85818576033,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-07,83361.32289283608,83361.32289283608,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-08,93332.80393466249,93332.80393466249,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-09,53879.725643687794,53879.725643687794,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-10,42194.33937326207,42194.33937326207,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-11,31692.899457064046,31692.899457064046,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-12,23896.468727671796,23896.468727671796,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-13,68118.83544925801,68118.83544925801,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-14,71170.03577899389,71170.03577899389,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-15,49752.73658927011,49752.73658927011,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-16,51912.55544848959,51912.55544848959,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-17,56733.454461811714,56733.454461811714,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-18,68609.5435000311,68609.5435000311,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-19,33475.01466506684,33475.01466506684,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-20,53375.42544364643,53375.42544364643,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-21,77870.76369802601,77870.76369802601,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-22,32738.778745038544,32738.778745038544,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-23,66781.04617778004,66781.04617778004,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-24,44827.479356451964,44827.479356451964,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-25,41520.38478462472,41520.38478462472,0.0,PASS
+finance,order_pnl_net_sales,Net sales (P&L basis),order_date,2026-10-26,13978.90017469738,13978.90017469738,0.0,PASS
+commerce,orders,Orders,-,2026-09-26,23.0,23.0,0.0,PASS
+commerce,orders,Orders,-,2026-09-27,38.0,38.0,0.0,PASS
+commerce,orders,Orders,-,2026-09-28,28.0,28.0,0.0,PASS
+commerce,orders,Orders,-,2026-09-29,40.0,40.0,0.0,PASS
+commerce,orders,Orders,-,2026-09-30,30.0,30.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-01,41.0,41.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-02,19.0,19.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-03,53.0,53.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-04,48.0,48.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-05,52.0,52.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-06,56.0,56.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-07,54.0,54.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-08,58.0,58.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-09,26.0,26.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-10,27.0,27.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-11,19.0,19.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-12,16.0,16.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-13,35.0,35.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-14,35.0,35.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-15,30.0,30.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-16,28.0,28.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-17,31.0,31.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-18,35.0,35.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-19,21.0,21.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-20,26.0,26.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-21,34.0,34.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-22,19.0,19.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-23,29.0,29.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-24,26.0,26.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-25,29.0,29.0,0.0,PASS
+commerce,orders,Orders,-,2026-10-26,7.0,7.0,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-09-26,40818.57,40818.57,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-09-27,64878.09,64878.09,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-09-28,-731023.6,-731023.6,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-09-29,65193.950000000004,65193.950000000004,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-09-30,70215.86,70215.86,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-01,56719.869999999995,56719.869999999995,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-02,48860.74999999999,48860.74999999999,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-03,124066.59000000003,124066.59000000003,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-04,77419.33,77419.33,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-05,122672.70000000003,122672.70000000003,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-06,196076.64000000004,196076.64000000004,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-07,113482.9,113482.9,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-08,85078.35000000002,85078.35000000002,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-09,102081.84000000003,102081.84000000003,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-10,77203.52,77203.52,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-11,48815.67,48815.67,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-12,61415.999999999985,61415.999999999985,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-13,96643.70000000001,96643.70000000001,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-14,68670.52999999998,68670.52999999998,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-15,58705.26000000001,58705.26000000001,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-16,50312.83,50312.83,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-17,61362.079999999994,61362.079999999994,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-18,56540.45999999999,56540.45999999999,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-19,45464.27,45464.27,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-20,48428.67999999999,48428.67999999999,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-21,74916.12999999999,74916.12999999999,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-22,43897.29,43897.29,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-23,89903.39,89903.39,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-24,58647.39,58647.39,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-25,34252.450000000004,34252.450000000004,0.0,PASS
+operations,payment_amount,Payment amount,-,2026-10-26,7663.710000000001,7663.710000000001,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-09-26,44991.735984,44991.735984,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-09-27,38071.69,38071.69,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-09-28,40800.912671000006,40800.912671000006,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-09-29,46669.431844000006,46669.431844000006,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-09-30,36055.936849,36055.936849,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-01,45967.58831000001,45967.58831000001,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-02,35504.786820000016,35504.786820000016,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-03,54602.83326300001,54602.83326300001,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-04,52968.01943499998,52968.01943499998,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-05,73811.90662900002,73811.90662900002,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-06,70633.763502,70633.763502,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-07,71171.65746299998,71171.65746299998,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-08,69851.37416799997,69851.37416799997,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-09,60101.688976,60101.688976,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-10,45085.339839999986,45085.339839999986,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-11,40079.86740500001,40079.86740500001,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-12,38666.87810999999,38666.87810999999,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-13,50448.12674799998,50448.12674799998,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-14,47393.12630900001,47393.12630900001,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-15,38047.400853,38047.400853,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-16,44059.13906900001,44059.13906900001,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-17,39348.76695500001,39348.76695500001,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-18,40813.54393499999,40813.54393499999,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-19,40538.565073000005,40538.565073000005,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-20,35853.78623200001,35853.78623200001,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-21,48050.784078,48050.784078,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-22,38429.11317700001,38429.11317700001,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-23,46798.146777999995,46798.146777999995,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-24,48074.30795400001,48074.30795400001,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-25,43109.445595,43109.445595,0.0,PASS
+product,product_ad_spend,Product ad spend (allocated),-,2026-10-26,19406.556271999998,19406.556271999998,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-09-26,50308.53699333001,50308.53699333001,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-09-27,84556.08147877749,84556.08147877749,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-09-28,-883580.8766635625,-883580.8766635625,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-09-29,54331.78324929898,54331.78324929898,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-09-30,57967.938363757334,57967.938363757334,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-01,76360.52474962093,76360.52474962093,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-02,40588.259199478176,40588.259199478176,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-03,101589.99302162598,101589.99302162598,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-04,90517.20390515056,90517.20390515056,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-05,111244.7512658154,111244.7512658154,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-06,96557.3059905439,96557.3059905439,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-07,93603.85778261267,93603.85778261267,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-08,100225.80495043886,100225.80495043886,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-09,44949.05954160212,44949.05954160212,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-10,41409.15994137817,41409.15994137817,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-11,34809.25494726013,34809.25494726013,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-12,8274.081882050017,8274.081882050017,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-13,62672.021848057644,62672.021848057644,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-14,70406.63101161018,70406.63101161018,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-15,51581.65386595857,51581.65386595857,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-16,54030.365436032385,54030.365436032385,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-17,53813.796627032934,53813.796627032934,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-18,74310.5535000311,74310.5535000311,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-19,28181.781850579464,28181.781850579464,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-20,51917.790921385305,51917.790921385305,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-21,60332.029697662554,60332.029697662554,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-22,29141.16178923962,29141.16178923962,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-23,63197.826177780036,63197.826177780036,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-24,31082.89770232648,31082.89770232648,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-25,41520.384784624715,41520.384784624715,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),event_date,2026-10-26,10337.284696958512,10337.284696958512,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-09-26,58437.35303259098,58437.35303259098,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-09-27,76384.06526576901,76384.06526576901,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-09-28,47101.56998166969,47101.56998166969,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-09-29,65020.759147658326,65020.759147658326,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-09-30,61224.788863708585,61224.788863708585,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-01,72113.4355665921,72113.4355665921,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-02,39149.0337092821,39149.0337092821,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-03,102244.81732580149,102244.81732580149,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-04,79487.86438637534,79487.86438637534,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-05,108999.58126581542,108999.58126581542,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-06,94370.85818576037,94370.85818576037,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-07,83361.3228928361,83361.3228928361,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-08,93332.80393466247,93332.80393466247,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-09,53879.72564368781,53879.72564368781,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-10,42194.339373262075,42194.339373262075,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-11,31692.89945706405,31692.89945706405,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-12,23896.46872767179,23896.46872767179,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-13,68118.83544925804,68118.83544925804,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-14,71170.03577899389,71170.03577899389,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-15,49752.736589270105,49752.736589270105,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-16,51912.5554484896,51912.5554484896,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-17,56733.45446181169,56733.45446181169,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-18,68609.54350003111,68609.54350003111,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-19,33475.01466506685,33475.01466506685,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-20,53375.42544364643,53375.42544364643,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-21,77870.76369802606,77870.76369802606,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-22,32738.77874503854,32738.77874503854,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-23,66781.04617778004,66781.04617778004,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-24,44827.47935645197,44827.47935645197,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-25,41520.384784624715,41520.384784624715,0.0,PASS
+product,product_order_net_sales,Product net sales (P&L basis),order_date,2026-10-26,13978.90017469738,13978.90017469738,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-09-26,3981.3500000000004,3981.3500000000004,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-09-27,0.0,0.0,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-09-28,877502.3100000024,877502.3100000027,3.4924596548080444e-10,PASS
+commerce,return_revenue,Return revenue,event_date,2026-09-29,5336.4400000000005,5336.4400000000005,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-09-30,677.12,677.12,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-01,2117.8,2117.8,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-02,0.0,0.0,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-03,2117.8,2117.8,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-04,0.0,0.0,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-05,1270.34,1270.34,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-06,592.37,592.37,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-07,2117.8,2117.8,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-08,846.61,846.61,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-09,0.0,0.0,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-10,2117.8,2117.8,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-11,0.0,0.0,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-12,6013.74,6013.74,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-13,6208.74,6208.74,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-14,0.0,0.0,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-15,4939.07,4939.07,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-16,0.0,0.0,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-17,1524.66,1524.66,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-18,0.0,0.0,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-19,0.0,0.0,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-20,0.0,0.0,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-21,5955.18,5955.18,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-22,1100.85,1100.85,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-23,2058.56,2058.56,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-24,4870.43,4870.43,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-25,0.0,0.0,0.0,PASS
+commerce,return_revenue,Return revenue,event_date,2026-10-26,2117.8,2117.8,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-09-26,2201.7,2201.7,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-09-27,0.0,0.0,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-09-28,50865.72999999998,50865.72999999999,7.275957614183426e-12,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-09-29,12576.360000000002,12576.36,1.8189894035458565e-12,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-09-30,2708.4799999999996,2708.4799999999996,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-01,1694.06,1694.06,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-02,0.0,0.0,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-03,3641.53,3641.53,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-04,0.0,0.0,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-05,0.0,0.0,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-06,9063.57,9063.57,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-07,0.0,0.0,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-08,3727.12,3727.12,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-09,10248.310000000001,10248.310000000001,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-10,4404.24,4404.24,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-11,0.0,0.0,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-12,10672.04,10672.04,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-13,6013.57,6013.57,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-14,1448.39,1448.39,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-15,0.0,0.0,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-16,2117.8,2117.8,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-17,3641.5299999999997,3641.5299999999997,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-18,0.0,0.0,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-19,7411.120000000001,7411.12,9.094947017729282e-13,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-20,3006.87,3006.87,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-21,13765.509999999998,13765.51,1.8189894035458565e-12,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-22,2794.92,2794.92,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-23,0.0,0.0,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-24,7327.210000000001,7327.210000000001,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-25,1694.07,1694.07,0.0,PASS
+commerce,rto_revenue,Rto revenue,event_date,2026-10-26,0.0,0.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-09-26,2436.0,2436.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-09-27,1965.0,1965.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-09-28,2521.0,2521.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-09-29,3167.0,3167.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-09-30,2754.0,2754.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-01,3403.0,3403.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-02,2904.0,2904.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-03,3697.0,3697.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-04,3946.0,3946.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-05,3999.0,3999.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-06,4763.0,4763.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-07,4774.0,4774.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-08,4224.0,4224.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-09,4461.0,4461.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-10,3620.0,3620.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-11,3137.0,3137.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-12,2795.0,2795.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-13,2431.0,2431.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-14,3411.0,3411.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-15,2843.0,2843.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-16,3455.0,3455.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-17,2603.0,2603.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-18,3107.0,3107.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-19,3199.0,3199.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-20,2391.0,2391.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-21,2995.0,2995.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-22,1847.0,1847.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-23,2154.0,2154.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-24,2194.0,2194.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-25,1852.0,1852.0,0.0,PASS
+web_analytics,sessions,Sessions,-,2026-10-26,844.0,844.0,0.0,PASS
+attribution,touches,Touches,-,2026-09-26,43.0,43.0,0.0,PASS
+attribution,touches,Touches,-,2026-09-27,62.0,62.0,0.0,PASS
+attribution,touches,Touches,-,2026-09-28,43.0,43.0,0.0,PASS
+attribution,touches,Touches,-,2026-09-29,80.0,80.0,0.0,PASS
+attribution,touches,Touches,-,2026-09-30,49.0,49.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-01,68.0,68.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-02,46.0,46.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-03,75.0,75.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-04,66.0,66.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-05,99.0,99.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-06,98.0,98.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-07,107.0,107.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-08,94.0,94.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-09,38.0,38.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-10,43.0,43.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-11,35.0,35.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-12,18.0,18.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-13,41.0,41.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-14,56.0,56.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-15,50.0,50.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-16,67.0,67.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-17,50.0,50.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-18,70.0,70.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-19,60.0,60.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-20,73.0,73.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-21,61.0,61.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-22,51.0,51.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-23,51.0,51.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-24,48.0,48.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-25,48.0,48.0,0.0,PASS
+attribution,touches,Touches,-,2026-10-26,13.0,13.0,0.0,PASS
+operations,transactions,Transactions,-,2026-09-26,40.0,40.0,0.0,PASS
+operations,transactions,Transactions,-,2026-09-27,51.0,51.0,0.0,PASS
+operations,transactions,Transactions,-,2026-09-28,478.0,478.0,0.0,PASS
+operations,transactions,Transactions,-,2026-09-29,48.0,48.0,0.0,PASS
+operations,transactions,Transactions,-,2026-09-30,43.0,43.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-01,59.0,59.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-02,28.0,28.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-03,78.0,78.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-04,68.0,68.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-05,66.0,66.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-06,130.0,130.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-07,80.0,80.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-08,83.0,83.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-09,64.0,64.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-10,50.0,50.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-11,32.0,32.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-12,40.0,40.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-13,58.0,58.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-14,55.0,55.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-15,46.0,46.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-16,40.0,40.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-17,48.0,48.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-18,42.0,42.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-19,35.0,35.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-20,42.0,42.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-21,56.0,56.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-22,33.0,33.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-23,50.0,50.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-24,54.0,54.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-25,39.0,39.0,0.0,PASS
+operations,transactions,Transactions,-,2026-10-26,13.0,13.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-09-26,35.0,35.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-09-27,59.0,59.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-09-28,-494.0,-494.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-09-29,34.0,34.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-09-30,36.0,36.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-01,52.0,52.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-02,27.0,27.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-03,70.0,70.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-04,68.0,68.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-05,74.0,74.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-06,68.0,68.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-07,68.0,68.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-08,77.0,77.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-09,25.0,25.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-10,29.0,29.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-11,28.0,28.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-12,6.0,6.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-13,43.0,43.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-14,53.0,53.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-15,34.0,34.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-16,33.0,33.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-17,36.0,36.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-18,44.0,44.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-19,17.0,17.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-20,35.0,35.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-21,39.0,39.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-22,21.0,21.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-23,51.0,51.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-24,27.0,27.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-25,35.0,35.0,0.0,PASS
+product,units_sold,Units sold,event_date,2026-10-26,8.0,8.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-09-26,40.0,40.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-09-27,55.0,55.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-09-28,32.0,32.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-09-29,45.0,45.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-09-30,41.0,41.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-01,49.0,49.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-02,26.0,26.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-03,70.0,70.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-04,59.0,59.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-05,71.0,71.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-06,65.0,65.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-07,61.0,61.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-08,73.0,73.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-09,32.0,32.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-10,30.0,30.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-11,26.0,26.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-12,17.0,17.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-13,47.0,47.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-14,53.0,53.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-15,32.0,32.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-16,32.0,32.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-17,39.0,39.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-18,41.0,41.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-19,20.0,20.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-20,36.0,36.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-21,48.0,48.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-22,24.0,24.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-23,53.0,53.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-24,35.0,35.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-25,35.0,35.0,0.0,PASS
+product,units_sold,Units sold,order_date,2026-10-26,10.0,10.0,0.0,PASS

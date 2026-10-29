@@ -28,6 +28,7 @@ SELERIC_MODULE_ARG_TOOLS = {
         "catalogue_related_metrics",
         "metrics_query",
         "metrics_drilldown",
+        "build_dataset_query",
     )
 }
 

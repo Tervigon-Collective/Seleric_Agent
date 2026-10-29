@@ -1,0 +1,33 @@
+Domain,Check,Window,Axis,Left,Left value,Right,Right value,|Delta|,Status,Note
+Attribution,touches: Σ by ad_platform = total,today,-,total touches,13.0,Σ over 2 ad_platform groups,13.0,0.0,PASS,
+Attribution,touches: Σ by ad_platform = total,yesterday,-,total touches,48.0,Σ over 3 ad_platform groups,48.0,0.0,PASS,null/unset share of value = 3.00
+Attribution,touches: Σ by ad_platform = total,last7,-,total touches,392.0,Σ over 3 ad_platform groups,392.0,0.0,PASS,null/unset share of value = 24.00
+Attribution,touches: Σ by ad_platform = total,last30,-,total touches,1790.0,Σ over 3 ad_platform groups,1790.0,0.0,PASS,null/unset share of value = 121.00
+Attribution,touches: Σ by campaign_id = total,today,-,total touches,13.0,Σ over 7 campaign_id groups,13.0,0.0,PASS,null/unset share of value = 2.00
+Attribution,touches: Σ by campaign_id = total,yesterday,-,total touches,48.0,Σ over 12 campaign_id groups,48.0,0.0,PASS,null/unset share of value = 13.00
+Attribution,touches: Σ by campaign_id = total,last7,-,total touches,392.0,Σ over 65 campaign_id groups,392.0,0.0,PASS,null/unset share of value = 42.00
+Attribution,touches: Σ by campaign_id = total,last30,-,total touches,1790.0,Σ over 156 campaign_id groups,1790.0,0.0,PASS,null/unset share of value = 273.00
+,,,,,,,,,,
+,,,,,,,,,,
+Attribution bridge (serve.bridge_order_attribution): every sale order must have credit summing to 1 in every model,,,,,,,,,,
+Window,Model,Sale orders,Orders with bridge rows,Orders credit != 1,min credit,max credit,Status,,,
+today,last_touch_journey,7,7,0,1.0,1.0,PASS,,,
+today,linear,7,7,0,1.0,1.0,PASS,,,
+today,last_touch,7,7,0,1.0,1.0,PASS,,,
+today,first_touch,7,7,0,1.0,1.0,PASS,,,
+today,last_non_direct,7,7,0,1.0,1.0,PASS,,,
+yesterday,last_touch_journey,29,29,0,1.0,1.0,PASS,,,
+yesterday,linear,29,29,0,1.0,1.0000000000000002,PASS,,,
+yesterday,last_touch,29,29,0,1.0,1.0,PASS,,,
+yesterday,first_touch,29,29,0,1.0,1.0,PASS,,,
+yesterday,last_non_direct,29,29,0,1.0,1.0,PASS,,,
+last7,last_touch_journey,184,184,0,1.0,1.0,PASS,,,
+last7,linear,184,184,0,0.9999999999999998,1.0000000000000002,PASS,,,
+last7,last_touch,184,184,0,1.0,1.0,PASS,,,
+last7,first_touch,184,184,0,1.0,1.0,PASS,,,
+last7,last_non_direct,184,184,0,1.0,1.0,PASS,,,
+last30,last_touch_journey,1006,1006,0,1.0,1.0,PASS,,,
+last30,linear,1006,1006,0,0.9999999999999998,1.0000000000000002,PASS,,,
+last30,last_touch,1006,1006,0,1.0,1.0,PASS,,,
+last30,first_touch,1006,1006,0,1.0,1.0,PASS,,,
+last30,last_non_direct,1006,1006,0,1.0,1.0,PASS,,,

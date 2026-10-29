@@ -3,6 +3,8 @@ import {
   AuiIf,
   MessagePrimitive,
   ThreadPrimitive,
+  useAui,
+  useAuiState,
   type DataMessagePartProps,
 } from "@assistant-ui/react";
 import { useRef, useEffect, useMemo, useState } from "react";
@@ -11,7 +13,7 @@ import { useOffice } from "../store";
 import { useConversationStore } from "../stores/conversation";
 import { useShellStore } from "../stores/shell";
 import { deriveRunPhases } from "../api/runPhases";
-import { ArrowDownIcon, CheckIcon, CopyIcon, ThumbDownIcon, ThumbUpIcon } from "./icons";
+import { ArrowDownIcon, ArrowRightIcon, CheckIcon, CopyIcon, ThumbDownIcon, ThumbUpIcon } from "./icons";
 import { conversationsApi } from "../api/conversations";
 import { MessagePartRenderer } from "./MessagePartRenderer";
 import { PromptRegistry } from "./PromptRegistry";
@@ -37,6 +39,18 @@ export function SelericContext({ data }: DataMessagePartProps) {
   const text = (data as { text?: unknown }).text;
   if (typeof text !== "string" || !text.trim()) return null;
   return <p className="message-context">{text}</p>;
+}
+
+export function SelericNext({ data }: DataMessagePartProps) {
+  const text = (data as { text?: unknown }).text;
+  const aui = useAui();
+  const running = useAuiState((s) => s.thread.isRunning);
+  if (typeof text !== "string" || !text.trim()) return null;
+  return (
+    <button type="button" className="next-step" disabled={running} onClick={() => aui.thread().append(text)}>
+      <span>{text}</span><ArrowRightIcon size={14} />
+    </button>
+  );
 }
 
 export function formatResponseTime(ms: number): string {
@@ -157,6 +171,7 @@ const parts = {
       "seleric-part": SelericPart,
       "seleric-sources": SelericSources,
       "seleric-context": SelericContext,
+      "seleric-next": SelericNext,
       "seleric-response-time": SelericResponseTime,
       "seleric-feedback": SelericFeedback,
     },
@@ -390,20 +405,17 @@ function ThreadContextBar() {
   const threadId = useConversationStore((s) => s.selectedThreadId);
   const thread = useConversationStore((s) => s.threads.find((item) => item.id === threadId));
   const count = useConversationStore((s) => (threadId ? s.messages[threadId]?.length ?? 0 : 0));
-  if (!threadId || !thread) return null;
-  // Compact context line: the question itself lives in the user bubble and the
-  // compact title in the header — no large duplicate heading here.
+  // Empty threads already show the welcome empty-state — don't echo "Untitled conversation".
+  if (!threadId || !thread || count === 0) return null;
   const exchanges = Math.ceil(count / 2);
   return (
     <div className="thread-context">
       <span className="thread-context-name" title={thread.title || "Untitled conversation"}>
         {thread.title || "Untitled conversation"}
       </span>
-      {count > 0 && (
-        <span className="thread-context-meta">
-          {exchanges} exchange{exchanges === 1 ? "" : "s"} · evidence stays attached below
-        </span>
-      )}
+      <span className="thread-context-meta">
+        {exchanges} exchange{exchanges === 1 ? "" : "s"} · evidence stays attached below
+      </span>
     </div>
   );
 }

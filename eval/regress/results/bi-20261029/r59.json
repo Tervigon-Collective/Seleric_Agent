@@ -1,0 +1,42 @@
+{
+ "n": 59,
+ "aspect": "bi_anomaly",
+ "q": "Why was the worst day so bad?",
+ "thread": "thread_9cc66871b67d4a10af115f8ee771ecf0",
+ "mission": "MS3-56e0b12f71",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 96,
+ "elapsed_s": 92.065,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 15,
+  "measured": 15,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "Net profit was \u20b9-26,445 on 2026-10-09 \u2014 \u20b99,734 worse than the weekday \u201cusual\u201d (\u2248 \u20b9-16,711) and \u20b97,897 worse than the day before (\u20b9-18,549 \u2192 \u20b9-26,445). The data shows the drop is mostly an accounting shift in ad spend versus contribution, not a single measurable upstream system failure.\n\nWhat changed (numbers by order date)\n- Ad spend rose vs its usual level and accounted for most of the swing: order\u2011P&L ad spend moved from a \u201cusual\u201d \u20b952,139 to \u20b960,102, an adverse effect of about \u20b97,963 on net profit (\u224882% of the net\u2011profit change vs usual).  \n- Contribution fell modestly vs usual: product contribution margin went from \u2248\u20b935,428 to \u20b933,656 (\u2248\u20b91,772 negative effect on net profit).  \n- Together these reconcile to the full drop \u2014 the accounting identity net profit = contribution margin \u2212 ad spend (P&L basis) matches the change.\n\nWhere it concentrated\n- A small set of ads/campaigns carried the move. The campaign TH-383\u2011SUSPENDER\u201129SEP and a few ads moved from zero to meaningful negative contribution (one ad contributed about \u20b94,279 of the adverse change; another \u2248\u20b92,876). Those few items together explain a large share of the swing versus the usual level.\n\nWhy (causal confidence)\n- The diagnostic runs did not find a single supported external cause. We can say confidently what changed (higher P&L ad spend vs lower contribution) and where it sat (a few campaigns/ads), but the data did not surface a supported label such as a bid/budget edit, creative failure, pricing change or stock issue as \u201cthe cause.\u201d\n\nWorth checking\n- Inspect TH-383\u2011SUSPENDER\u201129SEP and the flagged ads for budget/bid/creative edits or unusually high delivery on low\u2011performing audiences on 2026\u201110\u201109.  \n- Check order-level details for those ads\u2019 credited SKUs to see if a small product mix or pricing/return event magnified the impact.\n\nBreakdown tables (kept as requested)\n- Breakdown \u2014 worst day (2026-10-09) [[table:artifact_e176dbb9a4f84ab990c0fd12f7b53281]]\n- Breakdown \u2014 best day (2026-10-27) [[table:artifact_b94b71ad069f4d47a5fd0aaeb8413f52]]\n\nPeriod: 2026-10-01..2026-10-29 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28\nNext: Break 2026-10-09 down by campaign and ad (ad spend, net sales, contribution)"
+}

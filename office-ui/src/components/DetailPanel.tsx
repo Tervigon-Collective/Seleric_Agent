@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { SwarmUIEvent } from "../types";
-import { readRoute } from "../routing";
 import { isTraceableMissionId } from "../store";
 import { useConversationStore } from "../stores/conversation";
 import { useMissionRuntimeStore } from "../stores/missionRuntime";
@@ -10,7 +9,8 @@ import { CausalGraphPanel } from "./CausalGraphPanel";
 import { LoopDebugConsole } from "./LoopDebugConsole";
 import type { ChartSpec } from "./charts/ChartRenderer";
 
-/** Prefer a real MS* id from store, live timeline, or URL (Debug must survive refresh). */
+/** Prefer a real MS* id from store or this thread's timeline. Never the URL —
+ * stale ?mission= from a prior chat would otherwise paint Debug onto empty threads. */
 function resolveMissionId(
   storeId: string | null,
   timeline: SwarmUIEvent[],
@@ -21,8 +21,6 @@ function resolveMissionId(
     .map((event) => event.missionId)
     .find((id) => isTraceableMissionId(id));
   if (fromTimeline) return fromTimeline;
-  const fromUrl = readRoute().missionId;
-  if (isTraceableMissionId(fromUrl)) return fromUrl;
   return storeId;
 }
 

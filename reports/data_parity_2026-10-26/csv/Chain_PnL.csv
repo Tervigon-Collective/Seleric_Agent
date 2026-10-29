@@ -1,0 +1,381 @@
+Domain,Check,Window,Axis,Left,Left value,Right,Right value,|Delta|,Status,Note
+Commerce,net_sales: Σ by campaign_name = total,today,order_date,total net_sales,13978.90017469738,Σ over 5 campaign_name groups,13978.900174697379,1.8189894035458565e-12,PASS,
+Commerce,net_sales: Σ by campaign_name = total,yesterday,order_date,total net_sales,41520.38478462472,Σ over 10 campaign_name groups,41520.38478462472,0.0,PASS,"null/unset share of value = 9,824.01"
+Commerce,net_sales: Σ by campaign_name = total,last7,order_date,total net_sales,350588.8928706346,Σ over 35 campaign_name groups,350588.89287063456,5.820766091346741e-11,PASS,"null/unset share of value = 50,887.67"
+Commerce,net_sales: Σ by campaign_name = total,last30,order_date,total net_sales,1849777.740858697,Σ over 95 campaign_name groups,1849777.7408586962,9.313225746154785e-10,PASS,"null/unset share of value = 329,994.24"
+Commerce,net_sales: Σ by campaign_name = total,today,event_date,total net_sales,10337.284696958512,Σ over 4 campaign_name groups,10337.28469695851,1.8189894035458565e-12,PASS,
+Commerce,net_sales: Σ by campaign_name = total,yesterday,event_date,total net_sales,41520.38478462472,Σ over 10 campaign_name groups,41520.38478462472,0.0,PASS,"null/unset share of value = 9,824.01"
+Commerce,net_sales: Σ by campaign_name = total,last7,event_date,total net_sales,305373.87292359816,Σ over 49 campaign_name groups,305373.87292359816,0.0,PASS,"null/unset share of value = 37,168.08"
+Commerce,net_sales: Σ by campaign_name = total,last30,event_date,total net_sales,875901.6158115019,Σ over 203 campaign_name groups,875901.6158115015,3.4924596548080444e-10,PASS,"null/unset share of value = 6,051.42"
+Commerce,net_sales: Σ by payment_bucket = total,today,order_date,total net_sales,13978.90017469738,Σ over 3 payment_bucket groups,13978.90017469738,0.0,PASS,
+Commerce,net_sales: Σ by payment_bucket = total,yesterday,order_date,total net_sales,41520.38478462472,Σ over 2 payment_bucket groups,41520.38478462472,0.0,PASS,
+Commerce,net_sales: Σ by payment_bucket = total,last7,order_date,total net_sales,350588.8928706346,Σ over 3 payment_bucket groups,350588.8928706342,4.0745362639427185e-10,PASS,
+Commerce,net_sales: Σ by payment_bucket = total,last30,order_date,total net_sales,1849777.740858697,Σ over 3 payment_bucket groups,1849777.7408587078,1.0710209608078003e-08,PASS,
+Commerce,net_sales: Σ by payment_bucket = total,today,event_date,total net_sales,10337.284696958512,Σ over 2 payment_bucket groups,10337.28469695851,1.8189894035458565e-12,PASS,
+Commerce,net_sales: Σ by payment_bucket = total,yesterday,event_date,total net_sales,41520.38478462472,Σ over 2 payment_bucket groups,41520.38478462472,0.0,PASS,
+Commerce,net_sales: Σ by payment_bucket = total,last7,event_date,total net_sales,305373.87292359816,Σ over 3 payment_bucket groups,305373.8729235978,3.4924596548080444e-10,PASS,
+Commerce,net_sales: Σ by payment_bucket = total,last30,event_date,total net_sales,875901.6158115019,Σ over 3 payment_bucket groups,875901.6158115022,3.4924596548080444e-10,PASS,
+Commerce,net_sales: Σ by shipping_state = total,today,order_date,total net_sales,13978.90017469738,Σ over 5 shipping_state groups,13978.900174697379,1.8189894035458565e-12,PASS,
+Commerce,net_sales: Σ by shipping_state = total,yesterday,order_date,total net_sales,41520.38478462472,Σ over 9 shipping_state groups,41520.38478462472,0.0,PASS,
+Commerce,net_sales: Σ by shipping_state = total,last7,order_date,total net_sales,350588.8928706346,Σ over 21 shipping_state groups,350588.8928706346,0.0,PASS,
+Commerce,net_sales: Σ by shipping_state = total,last30,order_date,total net_sales,1849777.740858697,Σ over 28 shipping_state groups,1849777.7408586957,1.3969838619232178e-09,PASS,"null/unset share of value = 8,435.79"
+Commerce,net_sales: Σ by shipping_state = total,today,event_date,total net_sales,10337.284696958512,Σ over 6 shipping_state groups,10337.28469695851,1.8189894035458565e-12,PASS,
+Commerce,net_sales: Σ by shipping_state = total,yesterday,event_date,total net_sales,41520.38478462472,Σ over 9 shipping_state groups,41520.38478462472,0.0,PASS,
+Commerce,net_sales: Σ by shipping_state = total,last7,event_date,total net_sales,305373.87292359816,Σ over 21 shipping_state groups,305373.87292359816,0.0,PASS,
+Commerce,net_sales: Σ by shipping_state = total,last30,event_date,total net_sales,875901.6158115019,Σ over 29 shipping_state groups,875901.6158115017,1.1641532182693481e-10,PASS,"null/unset share of value = 8,435.79"
+Commerce,orders: Σ by campaign_name = total,today,-,total orders,7.0,Σ over 5 campaign_name groups,7.0,0.0,PASS,
+Commerce,orders: Σ by campaign_name = total,yesterday,-,total orders,29.0,Σ over 10 campaign_name groups,29.0,0.0,PASS,null/unset share of value = 6.00
+Commerce,orders: Σ by campaign_name = total,last7,-,total orders,184.0,Σ over 35 campaign_name groups,184.0,0.0,PASS,null/unset share of value = 30.00
+Commerce,orders: Σ by campaign_name = total,last30,-,total orders,1006.0,Σ over 95 campaign_name groups,1006.0,0.0,PASS,null/unset share of value = 174.00
+Commerce,orders: Σ by is_new_customer = total,today,-,total orders,7.0,Σ over 2 is_new_customer groups,7.0,0.0,PASS,
+Commerce,orders: Σ by is_new_customer = total,yesterday,-,total orders,29.0,Σ over 2 is_new_customer groups,29.0,0.0,PASS,
+Commerce,orders: Σ by is_new_customer = total,last7,-,total orders,184.0,Σ over 2 is_new_customer groups,184.0,0.0,PASS,
+Commerce,orders: Σ by is_new_customer = total,last30,-,total orders,1006.0,Σ over 2 is_new_customer groups,1006.0,0.0,PASS,
+Commerce,orders: Σ by order_status = total,today,-,total orders,7.0,Σ over 2 order_status groups,7.0,0.0,PASS,
+Commerce,orders: Σ by order_status = total,yesterday,-,total orders,29.0,Σ over 3 order_status groups,29.0,0.0,PASS,
+Commerce,orders: Σ by order_status = total,last7,-,total orders,184.0,Σ over 3 order_status groups,184.0,0.0,PASS,
+Commerce,orders: Σ by order_status = total,last30,-,total orders,1006.0,Σ over 5 order_status groups,1006.0,0.0,PASS,
+Commerce,orders: Σ by payment_bucket = total,today,-,total orders,7.0,Σ over 3 payment_bucket groups,7.0,0.0,PASS,
+Commerce,orders: Σ by payment_bucket = total,yesterday,-,total orders,29.0,Σ over 2 payment_bucket groups,29.0,0.0,PASS,
+Commerce,orders: Σ by payment_bucket = total,last7,-,total orders,184.0,Σ over 3 payment_bucket groups,184.0,0.0,PASS,
+Commerce,orders: Σ by payment_bucket = total,last30,-,total orders,1006.0,Σ over 3 payment_bucket groups,1006.0,0.0,PASS,
+Commerce,orders: Σ by shipping_state = total,today,-,total orders,7.0,Σ over 5 shipping_state groups,7.0,0.0,PASS,
+Commerce,orders: Σ by shipping_state = total,yesterday,-,total orders,29.0,Σ over 9 shipping_state groups,29.0,0.0,PASS,
+Commerce,orders: Σ by shipping_state = total,last7,-,total orders,184.0,Σ over 21 shipping_state groups,184.0,0.0,PASS,
+Commerce,orders: Σ by shipping_state = total,last30,-,total orders,1006.0,Σ over 28 shipping_state groups,1006.0,0.0,PASS,null/unset share of value = 2.00
+Composition,contribution_margin = Σ sign×components,yesterday,order_date,contribution_margin,22052.18738462472,"Σ +order_pnl_net_sales, -net_cogs",22052.187384624725,3.637978807091713e-12,PASS,formula.composition from catalogue
+Composition,contribution_margin = Σ sign×components,last7,order_date,contribution_margin,210746.5545706346,"Σ +order_pnl_net_sales, -net_cogs",210746.55457063467,8.731149137020111e-11,PASS,formula.composition from catalogue
+Composition,contribution_margin = Σ sign×components,last30,order_date,contribution_margin,1086129.283258697,"Σ +order_pnl_net_sales, -net_cogs",1086129.2832586966,4.656612873077393e-10,PASS,formula.composition from catalogue
+Composition,contribution_margin = Σ sign×components,yesterday,event_date,contribution_margin,21787.457384624722,"Σ +order_pnl_net_sales, -net_cogs",21787.457384624722,0.0,PASS,formula.composition from catalogue
+Composition,contribution_margin = Σ sign×components,last7,event_date,contribution_margin,178246.2878235982,"Σ +order_pnl_net_sales, -net_cogs",178246.28782359828,8.731149137020111e-11,PASS,formula.composition from catalogue
+Composition,contribution_margin = Σ sign×components,last30,event_date,contribution_margin,381574.50461150194,"Σ +order_pnl_net_sales, -net_cogs",381574.50461150164,2.9103830456733704e-10,PASS,formula.composition from catalogue
+Composition,gross_profit = Σ sign×components,yesterday,-,gross_profit,-17735.829403,"Σ +order_pnl_gross_sales, -gross_cogs, -order_pnl_ad_spend",-17735.829403,0.0,PASS,formula.composition from catalogue
+Composition,gross_profit = Σ sign×components,last7,-,gross_profit,-63858.922694999994,"Σ +order_pnl_gross_sales, -gross_cogs, -order_pnl_ad_spend",-63858.922695000016,2.1827872842550278e-11,PASS,formula.composition from catalogue
+Composition,gross_profit = Σ sign×components,last30,-,gross_profit,-101776.08783299994,"Σ +order_pnl_gross_sales, -gross_cogs, -order_pnl_ad_spend",-101776.08783299965,2.9103830456733704e-10,PASS,formula.composition from catalogue
+Composition,net_cogs = Σ sign×components,yesterday,order_date,net_cogs,19468.197399999997,"Σ +product_cost, +operating_cost, +exchange_cost",19468.1974,3.637978807091713e-12,PASS,formula.composition from catalogue
+Composition,net_cogs = Σ sign×components,last7,order_date,net_cogs,139842.3383,"Σ +product_cost, +operating_cost, +exchange_cost",139842.3383,0.0,PASS,formula.composition from catalogue
+Composition,net_cogs = Σ sign×components,last30,order_date,net_cogs,763648.4576000001,"Σ +product_cost, +operating_cost, +exchange_cost",763648.4576000002,1.1641532182693481e-10,PASS,formula.composition from catalogue
+Composition,net_cogs = Σ sign×components,yesterday,event_date,net_cogs,19732.9274,"Σ +product_cost, +operating_cost, +exchange_cost",19732.9274,0.0,PASS,formula.composition from catalogue
+Composition,net_cogs = Σ sign×components,last7,event_date,net_cogs,127127.5851,"Σ +product_cost, +operating_cost, +exchange_cost",127127.58510000001,1.4551915228366852e-11,PASS,formula.composition from catalogue
+Composition,net_cogs = Σ sign×components,last30,event_date,net_cogs,494327.1112000002,"Σ +product_cost, +operating_cost, +exchange_cost",494327.11120000016,5.820766091346741e-11,PASS,formula.composition from catalogue
+Composition,net_profit = Σ sign×components,yesterday,order_date,net_profit,-21055.86201837528,"Σ +contribution_margin, -order_pnl_ad_spend",-21055.862018375283,3.637978807091713e-12,PASS,formula.composition from catalogue
+Composition,net_profit = Σ sign×components,last7,order_date,net_profit,-90106.19812436542,"Σ +contribution_margin, -order_pnl_ad_spend",-90106.19812436539,2.9103830456733704e-11,PASS,formula.composition from catalogue
+Composition,net_profit = Σ sign×components,last30,order_date,net_profit,-339868.9845743032,"Σ +contribution_margin, -order_pnl_ad_spend",-339868.98457430303,1.7462298274040222e-10,PASS,formula.composition from catalogue
+Composition,net_profit = Σ sign×components,yesterday,event_date,net_profit,-21320.59201837528,"Σ +contribution_margin, -order_pnl_ad_spend",-21320.592018375282,3.637978807091713e-12,PASS,formula.composition from catalogue
+Composition,net_profit = Σ sign×components,last7,event_date,net_profit,-122606.46487140183,"Σ +contribution_margin, -order_pnl_ad_spend",-122606.46487140178,4.3655745685100555e-11,PASS,formula.composition from catalogue
+Composition,net_profit = Σ sign×components,last30,event_date,net_profit,-1044423.763221498,"Σ +contribution_margin, -order_pnl_ad_spend",-1044423.7632214981,1.1641532182693481e-10,PASS,formula.composition from catalogue
+Composition,operating_cost = Σ sign×components,yesterday,order_date,operating_cost,3584.6474000000007,"Σ +shipping_cost, +packaging_cost, +payment_gateway_fees, +cod_handling_fee, +checkout_fee, ",3584.6474000000007,0.0,PASS,formula.composition from catalogue
+Composition,operating_cost = Σ sign×components,last7,order_date,operating_cost,25551.2631,"Σ +shipping_cost, +packaging_cost, +payment_gateway_fees, +cod_handling_fee, +checkout_fee, ",25551.2631,0.0,PASS,formula.composition from catalogue
+Composition,operating_cost = Σ sign×components,last30,order_date,operating_cost,146935.97920000006,"Σ +shipping_cost, +packaging_cost, +payment_gateway_fees, +cod_handling_fee, +checkout_fee, ",146935.9792,5.820766091346741e-11,PASS,formula.composition from catalogue
+Composition,operating_cost = Σ sign×components,yesterday,event_date,operating_cost,3664.6074,"Σ +shipping_cost, +packaging_cost, +payment_gateway_fees, +cod_handling_fee, +checkout_fee, ",3664.607400000001,9.094947017729282e-13,PASS,formula.composition from catalogue
+Composition,operating_cost = Σ sign×components,last7,event_date,operating_cost,27886.3631,"Σ +shipping_cost, +packaging_cost, +payment_gateway_fees, +cod_handling_fee, +checkout_fee, ",27886.363100000002,3.637978807091713e-12,PASS,formula.composition from catalogue
+Composition,operating_cost = Σ sign×components,last30,event_date,operating_cost,212561.55920000008,"Σ +shipping_cost, +packaging_cost, +payment_gateway_fees, +cod_handling_fee, +checkout_fee, ",212561.5592,8.731149137020111e-11,PASS,formula.composition from catalogue
+Composition,order_pnl_net_sales = Σ sign×components,yesterday,order_date,order_pnl_net_sales,41520.38478462472,"Σ +order_pnl_gross_sales, +shipping_revenue, -order_pnl_cancel_revenue, -order_pnl_rto_reven",41520.38478462472,0.0,PASS,formula.composition from catalogue
+Composition,order_pnl_net_sales = Σ sign×components,last7,order_date,order_pnl_net_sales,350588.8928706347,"Σ +order_pnl_gross_sales, +shipping_revenue, -order_pnl_cancel_revenue, -order_pnl_rto_reven",350588.8928706345,1.7462298274040222e-10,PASS,formula.composition from catalogue
+Composition,order_pnl_net_sales = Σ sign×components,last30,order_date,order_pnl_net_sales,1849777.7408586966,"Σ +order_pnl_gross_sales, +shipping_revenue, -order_pnl_cancel_revenue, -order_pnl_rto_reven",1849777.740858697,4.656612873077393e-10,PASS,formula.composition from catalogue
+Composition,order_pnl_net_sales = Σ sign×components,yesterday,event_date,order_pnl_net_sales,41520.38478462472,"Σ +order_pnl_gross_sales, +shipping_revenue, -order_pnl_cancel_revenue, -order_pnl_rto_reven",41520.38478462472,0.0,PASS,formula.composition from catalogue
+Composition,order_pnl_net_sales = Σ sign×components,last7,event_date,order_pnl_net_sales,305373.8729235983,"Σ +order_pnl_gross_sales, +shipping_revenue, -order_pnl_cancel_revenue, -order_pnl_rto_reven",305373.87292359804,2.3283064365386963e-10,PASS,formula.composition from catalogue
+Composition,order_pnl_net_sales = Σ sign×components,last30,event_date,order_pnl_net_sales,875901.6158115019,"Σ +order_pnl_gross_sales, +shipping_revenue, -order_pnl_cancel_revenue, -order_pnl_rto_reven",875901.6158115023,4.656612873077393e-10,PASS,formula.composition from catalogue
+Composition,order_pnl_return_cancel_revenue = Σ sign×components,yesterday,order_date,order_pnl_return_cancel_revenue,1694.07,"Σ +order_pnl_cancel_revenue, +order_pnl_rto_revenue, +order_pnl_return_revenue",1694.07,0.0,PASS,formula.composition from catalogue
+Composition,order_pnl_return_cancel_revenue = Σ sign×components,last7,order_date,order_pnl_return_cancel_revenue,11455.349999999999,"Σ +order_pnl_cancel_revenue, +order_pnl_rto_revenue, +order_pnl_return_revenue",11455.349999999999,0.0,PASS,formula.composition from catalogue
+Composition,order_pnl_return_cancel_revenue = Σ sign×components,last30,order_date,order_pnl_return_cancel_revenue,159988.53999999998,"Σ +order_pnl_cancel_revenue, +order_pnl_rto_revenue, +order_pnl_return_revenue",159988.53999999998,0.0,PASS,formula.composition from catalogue
+Composition,order_pnl_return_cancel_revenue = Σ sign×components,yesterday,event_date,order_pnl_return_cancel_revenue,1694.07,"Σ +order_pnl_cancel_revenue, +order_pnl_rto_revenue, +order_pnl_return_revenue",1694.07,0.0,PASS,formula.composition from catalogue
+Composition,order_pnl_return_cancel_revenue = Σ sign×components,last7,event_date,order_pnl_return_cancel_revenue,57099.3,"Σ +order_pnl_cancel_revenue, +order_pnl_rto_revenue, +order_pnl_return_revenue",57099.3,0.0,PASS,formula.composition from catalogue
+Composition,order_pnl_return_cancel_revenue = Σ sign×components,last30,event_date,order_pnl_return_cancel_revenue,1124617.6199999999,"Σ +order_pnl_cancel_revenue, +order_pnl_rto_revenue, +order_pnl_return_revenue",1124617.62,2.3283064365386963e-10,PASS,formula.composition from catalogue
+Composition,product_contribution_margin = Σ sign×components,yesterday,order_date,product_contribution_margin,22052.18738462472,"Σ +product_order_net_sales, -product_order_net_cogs",22052.187384624718,3.637978807091713e-12,PASS,formula.composition from catalogue
+Composition,product_contribution_margin = Σ sign×components,last7,order_date,product_contribution_margin,210746.55457063456,"Σ +product_order_net_sales, -product_order_net_cogs",210746.55457063456,0.0,PASS,formula.composition from catalogue
+Composition,product_contribution_margin = Σ sign×components,last30,order_date,product_contribution_margin,1086129.2832586966,"Σ +product_order_net_sales, -product_order_net_cogs",1086129.2832586975,9.313225746154785e-10,PASS,formula.composition from catalogue
+Composition,product_contribution_margin = Σ sign×components,yesterday,event_date,product_contribution_margin,21787.45738462472,"Σ +product_order_net_sales, -product_order_net_cogs",21787.457384624722,3.637978807091713e-12,PASS,formula.composition from catalogue
+Composition,product_contribution_margin = Σ sign×components,last7,event_date,product_contribution_margin,178246.28782359813,"Σ +product_order_net_sales, -product_order_net_cogs",178246.28782359825,1.1641532182693481e-10,PASS,formula.composition from catalogue
+Composition,product_contribution_margin = Σ sign×components,last30,event_date,product_contribution_margin,381574.5046115018,"Σ +product_order_net_sales, -product_order_net_cogs",381574.50461150147,3.4924596548080444e-10,PASS,formula.composition from catalogue
+Composition,product_cost = Σ sign×components,yesterday,order_date,product_cost,15883.55,"Σ +gross_cogs, -product_cogs_credit",15883.55,0.0,PASS,formula.composition from catalogue
+Composition,product_cost = Σ sign×components,last7,order_date,product_cost,113708.20999999999,"Σ +gross_cogs, -product_cogs_credit",113708.20999999998,1.4551915228366852e-11,PASS,formula.composition from catalogue
+Composition,product_cost = Σ sign×components,last30,order_date,product_cost,594439.9200000002,"Σ +gross_cogs, -product_cogs_credit",594439.9200000002,0.0,PASS,formula.composition from catalogue
+Composition,product_cost = Σ sign×components,yesterday,event_date,product_cost,16068.32,"Σ +gross_cogs, -product_cogs_credit",16068.32,0.0,PASS,formula.composition from catalogue
+Composition,product_cost = Σ sign×components,last7,event_date,product_cost,98560.16,"Σ +gross_cogs, -product_cogs_credit",98560.15999999997,2.9103830456733704e-11,PASS,formula.composition from catalogue
+Composition,product_cost = Σ sign×components,last30,event_date,product_cost,298080.32000000007,"Σ +gross_cogs, -product_cogs_credit",298080.3200000001,5.820766091346741e-11,PASS,formula.composition from catalogue
+Composition,product_operating_cost = Σ sign×components,yesterday,order_date,product_operating_cost,3584.6474,"Σ +product_shipping_cost, +product_packaging_cost, +product_payment_gateway_fees, +product_o",3584.6474000000003,4.547473508864641e-13,PASS,formula.composition from catalogue
+Composition,product_operating_cost = Σ sign×components,last7,order_date,product_operating_cost,25551.2631,"Σ +product_shipping_cost, +product_packaging_cost, +product_payment_gateway_fees, +product_o",25551.2631,0.0,PASS,formula.composition from catalogue
+Composition,product_operating_cost = Σ sign×components,last30,order_date,product_operating_cost,146935.9792,"Σ +product_shipping_cost, +product_packaging_cost, +product_payment_gateway_fees, +product_o",146935.9792,0.0,PASS,formula.composition from catalogue
+Composition,product_operating_cost = Σ sign×components,yesterday,event_date,product_operating_cost,3664.6074,"Σ +product_shipping_cost, +product_packaging_cost, +product_payment_gateway_fees, +product_o",3664.6074000000003,4.547473508864641e-13,PASS,formula.composition from catalogue
+Composition,product_operating_cost = Σ sign×components,last7,event_date,product_operating_cost,27886.363100000002,"Σ +product_shipping_cost, +product_packaging_cost, +product_payment_gateway_fees, +product_o",27886.363100000002,0.0,PASS,formula.composition from catalogue
+Composition,product_operating_cost = Σ sign×components,last30,event_date,product_operating_cost,212561.5592,"Σ +product_shipping_cost, +product_packaging_cost, +product_payment_gateway_fees, +product_o",212561.55920000002,2.9103830456733704e-11,PASS,formula.composition from catalogue
+Composition,product_order_net_cogs = Σ sign×components,yesterday,order_date,product_order_net_cogs,19468.197399999997,"Σ +product_order_product_cost, +product_operating_cost, +product_order_exchange_cost",19468.1974,3.637978807091713e-12,PASS,formula.composition from catalogue
+Composition,product_order_net_cogs = Σ sign×components,last7,order_date,product_order_net_cogs,139842.3383,"Σ +product_order_product_cost, +product_operating_cost, +product_order_exchange_cost",139842.3383,0.0,PASS,formula.composition from catalogue
+Composition,product_order_net_cogs = Σ sign×components,last30,order_date,product_order_net_cogs,763648.4576000001,"Σ +product_order_product_cost, +product_operating_cost, +product_order_exchange_cost",763648.4576000003,2.3283064365386963e-10,PASS,formula.composition from catalogue
+Composition,product_order_net_cogs = Σ sign×components,yesterday,event_date,product_order_net_cogs,19732.9274,"Σ +product_order_product_cost, +product_operating_cost, +product_order_exchange_cost",19732.9274,0.0,PASS,formula.composition from catalogue
+Composition,product_order_net_cogs = Σ sign×components,last7,event_date,product_order_net_cogs,127127.58509999998,"Σ +product_order_product_cost, +product_operating_cost, +product_order_exchange_cost",127127.58510000001,2.9103830456733704e-11,PASS,formula.composition from catalogue
+Composition,product_order_net_cogs = Σ sign×components,last30,event_date,product_order_net_cogs,494327.11120000016,"Σ +product_order_product_cost, +product_operating_cost, +product_order_exchange_cost",494327.1112000001,5.820766091346741e-11,PASS,formula.composition from catalogue
+Composition,product_order_net_sales = Σ sign×components,yesterday,order_date,product_order_net_sales,41520.384784624715,"Σ +product_order_gross_sales, +product_order_shipping_revenue, -product_order_cancel_revenue",41520.38478462472,7.275957614183426e-12,PASS,formula.composition from catalogue
+Composition,product_order_net_sales = Σ sign×components,last7,order_date,product_order_net_sales,350588.89287063456,"Σ +product_order_gross_sales, +product_order_shipping_revenue, -product_order_cancel_revenue",350588.89287063456,0.0,PASS,formula.composition from catalogue
+Composition,product_order_net_sales = Σ sign×components,last30,order_date,product_order_net_sales,1849777.7408586976,"Σ +product_order_gross_sales, +product_order_shipping_revenue, -product_order_cancel_revenue",1849777.740858697,4.656612873077393e-10,PASS,formula.composition from catalogue
+Composition,product_order_net_sales = Σ sign×components,yesterday,event_date,product_order_net_sales,41520.38478462472,"Σ +product_order_gross_sales, +product_order_shipping_revenue, -product_order_cancel_revenue",41520.38478462472,0.0,PASS,formula.composition from catalogue
+Composition,product_order_net_sales = Σ sign×components,last7,event_date,product_order_net_sales,305373.8729235982,"Σ +product_order_gross_sales, +product_order_shipping_revenue, -product_order_cancel_revenue",305373.8729235981,1.1641532182693481e-10,PASS,formula.composition from catalogue
+Composition,product_order_net_sales = Σ sign×components,last30,event_date,product_order_net_sales,875901.6158115016,"Σ +product_order_gross_sales, +product_order_shipping_revenue, -product_order_cancel_revenue",875901.615811502,3.4924596548080444e-10,PASS,formula.composition from catalogue
+Composition,product_order_product_cost = Σ sign×components,yesterday,order_date,product_order_product_cost,15883.550000000001,"Σ +product_gross_cogs, -product_order_product_cogs_credit",15883.55,1.8189894035458565e-12,PASS,formula.composition from catalogue
+Composition,product_order_product_cost = Σ sign×components,last7,order_date,product_order_product_cost,113708.20999999999,"Σ +product_gross_cogs, -product_order_product_cogs_credit",113708.20999999998,1.4551915228366852e-11,PASS,formula.composition from catalogue
+Composition,product_order_product_cost = Σ sign×components,last30,order_date,product_order_product_cost,594439.9200000003,"Σ +product_gross_cogs, -product_order_product_cogs_credit",594439.9200000003,0.0,PASS,formula.composition from catalogue
+Composition,product_order_product_cost = Σ sign×components,yesterday,event_date,product_order_product_cost,16068.32,"Σ +product_gross_cogs, -product_order_product_cogs_credit",16068.32,0.0,PASS,formula.composition from catalogue
+Composition,product_order_product_cost = Σ sign×components,last7,event_date,product_order_product_cost,98560.16,"Σ +product_gross_cogs, -product_order_product_cogs_credit",98560.15999999997,2.9103830456733704e-11,PASS,formula.composition from catalogue
+Composition,product_order_product_cost = Σ sign×components,last30,event_date,product_order_product_cost,298080.32000000007,"Σ +product_gross_cogs, -product_order_product_cogs_credit",298080.3200000003,2.3283064365386963e-10,PASS,formula.composition from catalogue
+Composition,product_order_return_cancel_revenue = Σ sign×components,yesterday,order_date,product_order_return_cancel_revenue,1694.07,"Σ +product_order_cancel_revenue, +product_order_rto_revenue, +product_order_return_revenue",1694.07,0.0,PASS,formula.composition from catalogue
+Composition,product_order_return_cancel_revenue = Σ sign×components,last7,order_date,product_order_return_cancel_revenue,11455.35,"Σ +product_order_cancel_revenue, +product_order_rto_revenue, +product_order_return_revenue",11455.35,0.0,PASS,formula.composition from catalogue
+Composition,product_order_return_cancel_revenue = Σ sign×components,last30,order_date,product_order_return_cancel_revenue,159988.54,"Σ +product_order_cancel_revenue, +product_order_rto_revenue, +product_order_return_revenue",159988.54000000004,2.9103830456733704e-11,PASS,formula.composition from catalogue
+Composition,product_order_return_cancel_revenue = Σ sign×components,yesterday,event_date,product_order_return_cancel_revenue,1694.07,"Σ +product_order_cancel_revenue, +product_order_rto_revenue, +product_order_return_revenue",1694.07,0.0,PASS,formula.composition from catalogue
+Composition,product_order_return_cancel_revenue = Σ sign×components,last7,event_date,product_order_return_cancel_revenue,57099.3,"Σ +product_order_cancel_revenue, +product_order_rto_revenue, +product_order_return_revenue",57099.3,0.0,PASS,formula.composition from catalogue
+Composition,product_order_return_cancel_revenue = Σ sign×components,last30,event_date,product_order_return_cancel_revenue,1124617.6200000003,"Σ +product_order_cancel_revenue, +product_order_rto_revenue, +product_order_return_revenue",1124617.6200000003,0.0,PASS,formula.composition from catalogue
+Composition,units_sold = Σ sign×components,yesterday,order_date,units_sold,35.0,"Σ +units_ordered, -units_cancelled, -units_rto, -returned_units",35.0,0.0,PASS,formula.composition from catalogue
+Composition,units_sold = Σ sign×components,last7,order_date,units_sold,251.0,"Σ +units_ordered, -units_cancelled, -units_rto, -returned_units",251.0,0.0,PASS,formula.composition from catalogue
+Composition,units_sold = Σ sign×components,last30,order_date,units_sold,1287.0,"Σ +units_ordered, -units_cancelled, -units_rto, -returned_units",1287.0,0.0,PASS,formula.composition from catalogue
+Composition,units_sold = Σ sign×components,yesterday,event_date,units_sold,35.0,"Σ +units_ordered, -units_cancelled, -units_rto, -returned_units",35.0,0.0,PASS,formula.composition from catalogue
+Composition,units_sold = Σ sign×components,last7,event_date,units_sold,225.0,"Σ +units_ordered, -units_cancelled, -units_rto, -returned_units",225.0,0.0,PASS,formula.composition from catalogue
+Composition,units_sold = Σ sign×components,last30,event_date,units_sold,730.0,"Σ +units_ordered, -units_cancelled, -units_rto, -returned_units",730.0,0.0,PASS,formula.composition from catalogue
+P&L,Cancel revenue: same quantity in two domains,yesterday,order_date,order_pnl_cancel_revenue,1694.07,cancel_revenue,1694.07,0.0,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,yesterday,order_date,order_pnl_cancel_revenue,1694.07,product_order_cancel_revenue,1694.07,0.0,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,yesterday,event_date,order_pnl_cancel_revenue,0.0,cancel_revenue,0.0,0.0,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,yesterday,event_date,order_pnl_cancel_revenue,0.0,product_order_cancel_revenue,0.0,0.0,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,last7,order_date,order_pnl_cancel_revenue,5166.19,cancel_revenue,5166.1900000000005,9.094947017729282e-13,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,last7,order_date,order_pnl_cancel_revenue,5166.19,product_order_cancel_revenue,5166.1900000000005,9.094947017729282e-13,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,last7,event_date,order_pnl_cancel_revenue,7114.580000000001,cancel_revenue,7114.58,9.094947017729282e-13,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,last7,event_date,order_pnl_cancel_revenue,7114.580000000001,product_order_cancel_revenue,7114.58,9.094947017729282e-13,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,last30,order_date,order_pnl_cancel_revenue,32838.58,cancel_revenue,32838.58,0.0,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,last30,order_date,order_pnl_cancel_revenue,32838.58,product_order_cancel_revenue,32838.58,0.0,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,last30,event_date,order_pnl_cancel_revenue,32244.519999999997,cancel_revenue,32244.520000000004,7.275957614183426e-12,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,last30,event_date,order_pnl_cancel_revenue,32244.519999999997,product_order_cancel_revenue,32244.52,3.637978807091713e-12,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,today,order_date,order_pnl_cancel_revenue,0.0,cancel_revenue,0.0,0.0,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,today,order_date,order_pnl_cancel_revenue,0.0,product_order_cancel_revenue,0.0,0.0,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,today,event_date,order_pnl_cancel_revenue,1694.07,cancel_revenue,1694.07,0.0,PASS,cross-view identity
+P&L,Cancel revenue: same quantity in two domains,today,event_date,order_pnl_cancel_revenue,1694.07,product_order_cancel_revenue,1694.07,0.0,PASS,cross-view identity
+P&L,Contribution margin: same quantity in two domains,yesterday,order_date,contribution_margin,22052.18738462472,product_contribution_margin,22052.18738462472,0.0,PASS,cross-view identity
+P&L,Contribution margin: same quantity in two domains,yesterday,event_date,contribution_margin,21787.457384624722,product_contribution_margin,21787.45738462472,3.637978807091713e-12,PASS,cross-view identity
+P&L,Contribution margin: same quantity in two domains,last7,order_date,contribution_margin,210746.5545706346,product_contribution_margin,210746.55457063456,2.9103830456733704e-11,PASS,cross-view identity
+P&L,Contribution margin: same quantity in two domains,last7,event_date,contribution_margin,178246.2878235982,product_contribution_margin,178246.28782359813,5.820766091346741e-11,PASS,cross-view identity
+P&L,Contribution margin: same quantity in two domains,last30,order_date,contribution_margin,1086129.283258697,product_contribution_margin,1086129.2832586966,4.656612873077393e-10,PASS,cross-view identity
+P&L,Contribution margin: same quantity in two domains,last30,event_date,contribution_margin,381574.50461150194,product_contribution_margin,381574.5046115018,1.1641532182693481e-10,PASS,cross-view identity
+P&L,Contribution margin: same quantity in two domains,today,order_date,contribution_margin,9282.422174697382,product_contribution_margin,9282.42217469738,1.8189894035458565e-12,PASS,cross-view identity
+P&L,Contribution margin: same quantity in two domains,today,event_date,contribution_margin,6606.041496958511,product_contribution_margin,6606.04149695851,9.094947017729282e-13,PASS,cross-view identity
+P&L,Discounts: same quantity in two domains,yesterday,-,order_pnl_discounts,1113.5609,discounts,1113.5609,0.0,PASS,cross-view identity
+P&L,Discounts: same quantity in two domains,yesterday,-,order_pnl_discounts,1113.5609,product_order_discounts,1113.5609,0.0,PASS,cross-view identity
+P&L,Discounts: same quantity in two domains,last7,-,order_pnl_discounts,10928.5697,discounts,10928.5697,0.0,PASS,cross-view identity
+P&L,Discounts: same quantity in two domains,last7,-,order_pnl_discounts,10928.5697,product_order_discounts,10928.5697,0.0,PASS,cross-view identity
+P&L,Discounts: same quantity in two domains,last30,-,order_pnl_discounts,76147.6606,discounts,76147.6606,0.0,PASS,cross-view identity
+P&L,Discounts: same quantity in two domains,last30,-,order_pnl_discounts,76147.6606,product_order_discounts,76147.6606,0.0,PASS,cross-view identity
+P&L,Discounts: same quantity in two domains,today,-,order_pnl_discounts,296.5258,discounts,296.5258,0.0,PASS,cross-view identity
+P&L,Discounts: same quantity in two domains,today,-,order_pnl_discounts,296.5258,product_order_discounts,296.5258,0.0,PASS,cross-view identity
+P&L,Gross sales: same quantity in two domains,yesterday,-,order_pnl_gross_sales,42043.270000000004,gross_sales,42043.270000000004,0.0,PASS,cross-view identity
+P&L,Gross sales: same quantity in two domains,yesterday,-,order_pnl_gross_sales,42043.270000000004,product_order_gross_sales,42043.270000000004,0.0,PASS,cross-view identity
+P&L,Gross sales: same quantity in two domains,last7,-,order_pnl_gross_sales,354014.74999999994,gross_sales,354014.75,5.820766091346741e-11,PASS,cross-view identity
+P&L,Gross sales: same quantity in two domains,last7,-,order_pnl_gross_sales,354014.74999999994,product_order_gross_sales,354014.75,5.820766091346741e-11,PASS,cross-view identity
+P&L,Gross sales: same quantity in two domains,last30,-,order_pnl_gross_sales,1968099.6000000006,gross_sales,1968099.6,4.656612873077393e-10,PASS,cross-view identity
+P&L,Gross sales: same quantity in two domains,last30,-,order_pnl_gross_sales,1968099.6000000006,product_order_gross_sales,1968099.6000000006,0.0,PASS,cross-view identity
+P&L,Gross sales: same quantity in two domains,today,-,order_pnl_gross_sales,13348.390000000001,gross_sales,13348.39,1.8189894035458565e-12,PASS,cross-view identity
+P&L,Gross sales: same quantity in two domains,today,-,order_pnl_gross_sales,13348.390000000001,product_order_gross_sales,13348.39,1.8189894035458565e-12,PASS,cross-view identity
+P&L,Net COGS: same quantity in two domains,yesterday,order_date,net_cogs,19468.197399999997,product_order_net_cogs,19468.197399999997,0.0,PASS,cross-view identity
+P&L,Net COGS: same quantity in two domains,yesterday,event_date,net_cogs,19732.9274,product_order_net_cogs,19732.9274,0.0,PASS,cross-view identity
+P&L,Net COGS: same quantity in two domains,last7,order_date,net_cogs,139842.3383,product_order_net_cogs,139842.3383,0.0,PASS,cross-view identity
+P&L,Net COGS: same quantity in two domains,last7,event_date,net_cogs,127127.5851,product_order_net_cogs,127127.58509999998,1.4551915228366852e-11,PASS,cross-view identity
+P&L,Net COGS: same quantity in two domains,last30,order_date,net_cogs,763648.4576000001,product_order_net_cogs,763648.4576000001,0.0,PASS,cross-view identity
+P&L,Net COGS: same quantity in two domains,last30,event_date,net_cogs,494327.1112000002,product_order_net_cogs,494327.11120000016,5.820766091346741e-11,PASS,cross-view identity
+P&L,Net COGS: same quantity in two domains,today,order_date,net_cogs,4696.478,product_order_net_cogs,4696.478,0.0,PASS,cross-view identity
+P&L,Net COGS: same quantity in two domains,today,event_date,net_cogs,3731.2432,product_order_net_cogs,3731.2432,0.0,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,yesterday,order_date,order_pnl_net_sales,41520.38478462472,net_sales,41520.38478462472,0.0,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,yesterday,order_date,order_pnl_net_sales,41520.38478462472,product_order_net_sales,41520.384784624715,7.275957614183426e-12,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,yesterday,event_date,order_pnl_net_sales,41520.38478462472,net_sales,41520.38478462472,0.0,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,yesterday,event_date,order_pnl_net_sales,41520.38478462472,product_order_net_sales,41520.38478462472,0.0,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,last7,order_date,order_pnl_net_sales,350588.8928706347,net_sales,350588.8928706346,5.820766091346741e-11,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,last7,order_date,order_pnl_net_sales,350588.8928706347,product_order_net_sales,350588.89287063456,1.1641532182693481e-10,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,last7,event_date,order_pnl_net_sales,305373.8729235983,net_sales,305373.87292359816,1.1641532182693481e-10,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,last7,event_date,order_pnl_net_sales,305373.8729235983,product_order_net_sales,305373.8729235982,5.820766091346741e-11,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,last30,order_date,order_pnl_net_sales,1849777.7408586966,net_sales,1849777.7408586964,2.3283064365386963e-10,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,last30,order_date,order_pnl_net_sales,1849777.7408586966,product_order_net_sales,1849777.7408586976,9.313225746154785e-10,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,last30,event_date,order_pnl_net_sales,875901.6158115019,net_sales,875901.6158115019,0.0,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,last30,event_date,order_pnl_net_sales,875901.6158115019,product_order_net_sales,875901.6158115016,2.3283064365386963e-10,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,today,order_date,order_pnl_net_sales,13978.90017469738,net_sales,13978.90017469738,0.0,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,today,order_date,order_pnl_net_sales,13978.90017469738,product_order_net_sales,13978.90017469738,0.0,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,today,event_date,order_pnl_net_sales,10337.284696958512,net_sales,10337.284696958512,0.0,PASS,cross-view identity
+P&L,Net sales: same quantity in two domains,today,event_date,order_pnl_net_sales,10337.284696958512,product_order_net_sales,10337.284696958512,0.0,PASS,cross-view identity
+P&L,New customers: same quantity in two domains,yesterday,-,new_customers,21.0,channel_new_customers,21.0,0.0,PASS,cross-view identity
+P&L,New customers: same quantity in two domains,last7,-,new_customers,127.0,channel_new_customers,127.0,0.0,PASS,cross-view identity
+P&L,New customers: same quantity in two domains,last30,-,new_customers,744.0,channel_new_customers,744.0,0.0,PASS,cross-view identity
+P&L,New customers: same quantity in two domains,today,-,new_customers,4.0,channel_new_customers,4.0,0.0,PASS,cross-view identity
+P&L,Operating cost: same quantity in two domains,yesterday,order_date,operating_cost,3584.6474000000007,product_operating_cost,3584.6474,9.094947017729282e-13,PASS,cross-view identity
+P&L,Operating cost: same quantity in two domains,yesterday,event_date,operating_cost,3664.6074,product_operating_cost,3664.6074,0.0,PASS,cross-view identity
+P&L,Operating cost: same quantity in two domains,last7,order_date,operating_cost,25551.2631,product_operating_cost,25551.2631,0.0,PASS,cross-view identity
+P&L,Operating cost: same quantity in two domains,last7,event_date,operating_cost,27886.3631,product_operating_cost,27886.363100000002,3.637978807091713e-12,PASS,cross-view identity
+P&L,Operating cost: same quantity in two domains,last30,order_date,operating_cost,146935.97920000006,product_operating_cost,146935.9792,5.820766091346741e-11,PASS,cross-view identity
+P&L,Operating cost: same quantity in two domains,last30,event_date,operating_cost,212561.55920000008,product_operating_cost,212561.5592,8.731149137020111e-11,PASS,cross-view identity
+P&L,Operating cost: same quantity in two domains,today,order_date,operating_cost,907.308,product_operating_cost,907.308,0.0,PASS,cross-view identity
+P&L,Operating cost: same quantity in two domains,today,event_date,operating_cost,981.648,product_operating_cost,981.6480000000001,1.1368683772161603e-13,PASS,cross-view identity
+P&L,Orders: same quantity in two domains,yesterday,-,orders,29.0,channel_orders,29.0,0.0,PASS,cross-view identity
+P&L,Orders: same quantity in two domains,last7,-,orders,184.0,channel_orders,184.0,0.0,PASS,cross-view identity
+P&L,Orders: same quantity in two domains,last30,-,orders,1006.0,channel_orders,1006.0,0.0,PASS,cross-view identity
+P&L,Orders: same quantity in two domains,today,-,orders,7.0,channel_orders,7.0,0.0,PASS,cross-view identity
+P&L,Product cost: same quantity in two domains,yesterday,order_date,product_cost,15883.55,product_order_product_cost,15883.550000000001,1.8189894035458565e-12,PASS,cross-view identity
+P&L,Product cost: same quantity in two domains,yesterday,event_date,product_cost,16068.32,product_order_product_cost,16068.32,0.0,PASS,cross-view identity
+P&L,Product cost: same quantity in two domains,last7,order_date,product_cost,113708.20999999999,product_order_product_cost,113708.20999999999,0.0,PASS,cross-view identity
+P&L,Product cost: same quantity in two domains,last7,event_date,product_cost,98560.16,product_order_product_cost,98560.16,0.0,PASS,cross-view identity
+P&L,Product cost: same quantity in two domains,last30,order_date,product_cost,594439.9200000002,product_order_product_cost,594439.9200000003,1.1641532182693481e-10,PASS,cross-view identity
+P&L,Product cost: same quantity in two domains,last30,event_date,product_cost,298080.32000000007,product_order_product_cost,298080.32000000007,0.0,PASS,cross-view identity
+P&L,Product cost: same quantity in two domains,today,order_date,product_cost,3789.17,product_order_product_cost,3789.17,0.0,PASS,cross-view identity
+P&L,Product cost: same quantity in two domains,today,event_date,product_cost,2481.67,product_order_product_cost,2481.67,0.0,PASS,cross-view identity
+P&L,RTO cost: same quantity in two domains,yesterday,order_date,rto_cost,0.0,product_rto_cost,0.0,0.0,PASS,cross-view identity
+P&L,RTO cost: same quantity in two domains,yesterday,event_date,rto_cost,79.96,product_rto_cost,79.96,0.0,PASS,cross-view identity
+P&L,RTO cost: same quantity in two domains,last7,order_date,rto_cost,228.64000000000001,product_rto_cost,228.64,2.842170943040401e-14,PASS,cross-view identity
+P&L,RTO cost: same quantity in two domains,last7,event_date,rto_cost,2563.7400000000002,product_rto_cost,2563.7400000000002,0.0,PASS,cross-view identity
+P&L,RTO cost: same quantity in two domains,last30,order_date,rto_cost,4761.54,product_rto_cost,4761.54,0.0,PASS,cross-view identity
+P&L,RTO cost: same quantity in two domains,last30,event_date,rto_cost,70387.12,product_rto_cost,70387.12000000001,1.4551915228366852e-11,PASS,cross-view identity
+P&L,RTO cost: same quantity in two domains,today,order_date,rto_cost,0.0,product_rto_cost,0.0,0.0,PASS,cross-view identity
+P&L,RTO cost: same quantity in two domains,today,event_date,rto_cost,74.34,product_rto_cost,74.34,0.0,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,yesterday,order_date,order_pnl_rto_revenue,0.0,rto_revenue,0.0,0.0,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,yesterday,order_date,order_pnl_rto_revenue,0.0,product_order_rto_revenue,0.0,0.0,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,yesterday,event_date,order_pnl_rto_revenue,1694.07,rto_revenue,1694.07,0.0,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,yesterday,event_date,order_pnl_rto_revenue,1694.07,product_order_rto_revenue,1694.07,0.0,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,last7,order_date,order_pnl_rto_revenue,1694.07,rto_revenue,1694.07,0.0,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,last7,order_date,order_pnl_rto_revenue,1694.07,product_order_rto_revenue,1694.07,0.0,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,last7,event_date,order_pnl_rto_revenue,35999.700000000004,rto_revenue,35999.7,7.275957614183426e-12,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,last7,event_date,order_pnl_rto_revenue,35999.700000000004,product_order_rto_revenue,35999.7,7.275957614183426e-12,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,last30,order_date,order_pnl_rto_revenue,88656.69,rto_revenue,88656.69,0.0,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,last30,order_date,order_pnl_rto_revenue,88656.69,product_order_rto_revenue,88656.69000000002,1.4551915228366852e-11,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,last30,event_date,order_pnl_rto_revenue,161024.13,rto_revenue,161024.12999999998,2.9103830456733704e-11,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,last30,event_date,order_pnl_rto_revenue,161024.13,product_order_rto_revenue,161024.13000000006,5.820766091346741e-11,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,today,order_date,order_pnl_rto_revenue,0.0,rto_revenue,0.0,0.0,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,today,order_date,order_pnl_rto_revenue,0.0,product_order_rto_revenue,0.0,0.0,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,today,event_date,order_pnl_rto_revenue,0.0,rto_revenue,0.0,0.0,PASS,cross-view identity
+P&L,RTO revenue: same quantity in two domains,today,event_date,order_pnl_rto_revenue,0.0,product_order_rto_revenue,0.0,0.0,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,yesterday,order_date,order_pnl_return_revenue,0.0,return_revenue,0.0,0.0,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,yesterday,order_date,order_pnl_return_revenue,0.0,product_order_return_revenue,0.0,0.0,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,yesterday,event_date,order_pnl_return_revenue,0.0,return_revenue,0.0,0.0,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,yesterday,event_date,order_pnl_return_revenue,0.0,product_order_return_revenue,0.0,0.0,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,last7,order_date,order_pnl_return_revenue,4595.09,return_revenue,4595.09,0.0,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,last7,order_date,order_pnl_return_revenue,4595.09,product_order_return_revenue,4595.09,0.0,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,last7,event_date,order_pnl_return_revenue,13985.02,return_revenue,13985.02,0.0,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,last7,event_date,order_pnl_return_revenue,13985.02,product_order_return_revenue,13985.02,0.0,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,last30,order_date,order_pnl_return_revenue,38493.26999999999,return_revenue,38493.270000000004,1.4551915228366852e-11,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,last30,order_date,order_pnl_return_revenue,38493.26999999999,product_order_return_revenue,38493.270000000004,1.4551915228366852e-11,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,last30,event_date,order_pnl_return_revenue,931348.9700000001,return_revenue,931348.9700000003,2.3283064365386963e-10,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,last30,event_date,order_pnl_return_revenue,931348.9700000001,product_order_return_revenue,931348.9700000002,1.1641532182693481e-10,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,today,order_date,order_pnl_return_revenue,0.0,return_revenue,0.0,0.0,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,today,order_date,order_pnl_return_revenue,0.0,product_order_return_revenue,0.0,0.0,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,today,event_date,order_pnl_return_revenue,2117.8,return_revenue,2117.8,0.0,PASS,cross-view identity
+P&L,Return revenue: same quantity in two domains,today,event_date,order_pnl_return_revenue,2117.8,product_order_return_revenue,2117.8,0.0,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,yesterday,order_date,order_pnl_return_cancel_revenue,1694.07,return_cancel_revenue,1694.07,0.0,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,yesterday,order_date,order_pnl_return_cancel_revenue,1694.07,product_order_return_cancel_revenue,1694.07,0.0,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,yesterday,event_date,order_pnl_return_cancel_revenue,1694.07,return_cancel_revenue,1694.07,0.0,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,yesterday,event_date,order_pnl_return_cancel_revenue,1694.07,product_order_return_cancel_revenue,1694.07,0.0,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,last7,order_date,order_pnl_return_cancel_revenue,11455.349999999999,return_cancel_revenue,11455.350000000002,3.637978807091713e-12,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,last7,order_date,order_pnl_return_cancel_revenue,11455.349999999999,product_order_return_cancel_revenue,11455.35,1.8189894035458565e-12,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,last7,event_date,order_pnl_return_cancel_revenue,57099.3,return_cancel_revenue,57099.3,0.0,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,last7,event_date,order_pnl_return_cancel_revenue,57099.3,product_order_return_cancel_revenue,57099.3,0.0,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,last30,order_date,order_pnl_return_cancel_revenue,159988.53999999998,return_cancel_revenue,159988.54,2.9103830456733704e-11,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,last30,order_date,order_pnl_return_cancel_revenue,159988.53999999998,product_order_return_cancel_revenue,159988.54,2.9103830456733704e-11,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,last30,event_date,order_pnl_return_cancel_revenue,1124617.6199999999,return_cancel_revenue,1124617.62,2.3283064365386963e-10,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,last30,event_date,order_pnl_return_cancel_revenue,1124617.6199999999,product_order_return_cancel_revenue,1124617.6200000003,4.656612873077393e-10,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,today,order_date,order_pnl_return_cancel_revenue,0.0,return_cancel_revenue,0.0,0.0,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,today,order_date,order_pnl_return_cancel_revenue,0.0,product_order_return_cancel_revenue,0.0,0.0,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,today,event_date,order_pnl_return_cancel_revenue,3811.87,return_cancel_revenue,3811.87,0.0,PASS,cross-view identity
+P&L,Return+cancel revenue: same quantity in two domains,today,event_date,order_pnl_return_cancel_revenue,3811.87,product_order_return_cancel_revenue,3811.87,0.0,PASS,cross-view identity
+P&L,Shipping revenue: same quantity in two domains,yesterday,-,shipping_revenue,1212.7102623635906,product_order_shipping_revenue,1212.7102623635906,0.0,PASS,cross-view identity
+P&L,Shipping revenue: same quantity in two domains,last7,-,shipping_revenue,7922.877352076299,product_order_shipping_revenue,7922.877352076298,9.094947017729282e-13,PASS,cross-view identity
+P&L,Shipping revenue: same quantity in two domains,last30,-,shipping_revenue,39638.974878090434,product_order_shipping_revenue,39638.97487809043,7.275957614183426e-12,PASS,cross-view identity
+P&L,Shipping revenue: same quantity in two domains,today,-,shipping_revenue,630.5101746973799,product_order_shipping_revenue,630.5101746973799,0.0,PASS,cross-view identity
+P&L,Taxes on net sales: same quantity in two domains,yesterday,order_date,taxes_on_net_sales,7473.615215375279,product_taxes_on_net_sales,7473.615215375278,9.094947017729282e-13,PASS,cross-view identity
+P&L,Taxes on net sales: same quantity in two domains,yesterday,event_date,taxes_on_net_sales,7473.615215375279,product_taxes_on_net_sales,7473.615215375277,1.8189894035458565e-12,PASS,cross-view identity
+P&L,Taxes on net sales: same quantity in two domains,last7,order_date,taxes_on_net_sales,63034.14712936539,product_taxes_on_net_sales,63034.147129365396,7.275957614183426e-12,PASS,cross-view identity
+P&L,Taxes on net sales: same quantity in two domains,last7,event_date,taxes_on_net_sales,54774.97707640181,product_taxes_on_net_sales,54774.9770764018,7.275957614183426e-12,PASS,cross-view identity
+P&L,Taxes on net sales: same quantity in two domains,last30,order_date,taxes_on_net_sales,331569.54914130335,product_taxes_on_net_sales,331569.54914130346,1.1641532182693481e-10,PASS,cross-view identity
+P&L,Taxes on net sales: same quantity in two domains,last30,event_date,taxes_on_net_sales,158662.17918849827,product_taxes_on_net_sales,158662.17918849818,8.731149137020111e-11,PASS,cross-view identity
+P&L,Taxes on net sales: same quantity in two domains,today,order_date,taxes_on_net_sales,2516.1998253026204,product_taxes_on_net_sales,2516.19982530262,4.547473508864641e-13,PASS,cross-view identity
+P&L,Taxes on net sales: same quantity in two domains,today,event_date,taxes_on_net_sales,1822.5953030414892,product_taxes_on_net_sales,1822.5953030414894,2.2737367544323206e-13,PASS,cross-view identity
+P&L,event_date total + Undated = order_date total (all history 2024-11-01..2026-10-25),all-history,both,event_date dated + Undated,35578892.07605253,order_date total,35576029.27057479,2862.8054777383804,PASS,"dated=35662591.4419539, undated=-83699.36590136358 | residual Rs 2,862.81 (0.008%) over all history, not investigated (likely outcomes booked 2026-10-26, after the window end)"
+P&L,net_profit: Σ by campaign_id = total,today,order_date,total net_profit,-9297.58330030262,Σ over 22 campaign_id groups,-9297.58330030262,0.0,PASS,
+P&L,net_profit: Σ by campaign_id = total,yesterday,order_date,total net_profit,-21055.86201837528,Σ over 31 campaign_id groups,-21055.86201837528,0.0,PASS,"null/unset share of value = 5,320.22"
+P&L,net_profit: Σ by campaign_id = total,last7,order_date,total net_profit,-90106.19812436542,Σ over 74 campaign_id groups,-90106.19812436537,4.3655745685100555e-11,PASS,"null/unset share of value = 32,161.50"
+P&L,net_profit: Σ by campaign_id = total,last30,order_date,total net_profit,-339868.9845743032,Σ over 141 campaign_id groups,-339868.9845743033,1.1641532182693481e-10,PASS,"null/unset share of value = 204,737.96"
+P&L,net_profit: Σ by campaign_id = total,today,event_date,total net_profit,-11973.963978041491,Σ over 22 campaign_id groups,-11973.96397804149,1.8189894035458565e-12,PASS,
+P&L,net_profit: Σ by campaign_id = total,yesterday,event_date,total net_profit,-21320.59201837528,Σ over 31 campaign_id groups,-21320.59201837528,0.0,PASS,"null/unset share of value = 5,320.22"
+P&L,net_profit: Σ by campaign_id = total,last7,event_date,total net_profit,-122606.46487140183,Σ over 86 campaign_id groups,-122606.46487140178,4.3655745685100555e-11,PASS,"null/unset share of value = 21,888.08"
+P&L,net_profit: Σ by campaign_id = total,last30,event_date,total net_profit,-1044423.763221498,Σ over 247 campaign_id groups,-1044423.7632214978,2.3283064365386963e-10,PASS,"null/unset share of value = -30,874.28"
+P&L,net_profit: Σ by finance_channel = total,today,order_date,total net_profit,-9297.58330030262,Σ over 2 finance_channel groups,-9297.58330030262,0.0,PASS,
+P&L,net_profit: Σ by finance_channel = total,yesterday,order_date,total net_profit,-21057.258210375283,Σ over 3 finance_channel groups,-21057.25821037528,3.637978807091713e-12,PASS,null/unset share of value = 0.00
+P&L,net_profit: Σ by finance_channel = total,last7,order_date,total net_profit,-90107.5943163654,Σ over 4 finance_channel groups,-90107.59431636531,8.731149137020111e-11,PASS,null/unset share of value = 0.00
+P&L,net_profit: Σ by finance_channel = total,last30,order_date,total net_profit,-339870.3807663032,Σ over 5 finance_channel groups,-339870.38076630316,5.820766091346741e-11,PASS,null/unset share of value = 0.00
+P&L,net_profit: Σ by finance_channel = total,today,event_date,total net_profit,-11973.963978041491,Σ over 2 finance_channel groups,-11973.963978041491,0.0,PASS,
+P&L,net_profit: Σ by finance_channel = total,yesterday,event_date,total net_profit,-21321.98821037528,Σ over 3 finance_channel groups,-21321.98821037528,0.0,PASS,null/unset share of value = 0.00
+P&L,net_profit: Σ by finance_channel = total,last7,event_date,total net_profit,-122606.46487140183,Σ over 4 finance_channel groups,-122606.46487140184,1.4551915228366852e-11,PASS,
+P&L,net_profit: Σ by finance_channel = total,last30,event_date,total net_profit,-1044423.763221498,Σ over 6 finance_channel groups,-1044423.7632214966,1.3969838619232178e-09,PASS,"null/unset share of value = -157,830.97"
+P&L,order_pnl_gross_sales: Σ by campaign_id = total,today,-,total order_pnl_gross_sales,13348.390000000001,Σ over 22 campaign_id groups,13348.390000000001,0.0,PASS,
+P&L,order_pnl_gross_sales: Σ by campaign_id = total,yesterday,-,total order_pnl_gross_sales,42043.270000000004,Σ over 31 campaign_id groups,42043.27,7.275957614183426e-12,PASS,"null/unset share of value = 9,782.48"
+P&L,order_pnl_gross_sales: Σ by campaign_id = total,last7,-,total order_pnl_gross_sales,354014.74999999994,Σ over 74 campaign_id groups,354014.75,5.820766091346741e-11,PASS,"null/unset share of value = 50,033.51"
+P&L,order_pnl_gross_sales: Σ by campaign_id = total,last30,-,total order_pnl_gross_sales,1968099.6000000006,Σ over 141 campaign_id groups,1968099.5999999999,6.984919309616089e-10,PASS,"null/unset share of value = 350,706.97"
+P&L,order_pnl_gross_sales: Σ by finance_channel = total,today,-,total order_pnl_gross_sales,13348.390000000001,Σ over 2 finance_channel groups,13348.390000000001,0.0,PASS,
+P&L,order_pnl_gross_sales: Σ by finance_channel = total,yesterday,-,total order_pnl_gross_sales,42043.270000000004,Σ over 3 finance_channel groups,42043.27,7.275957614183426e-12,PASS,
+P&L,order_pnl_gross_sales: Σ by finance_channel = total,last7,-,total order_pnl_gross_sales,354014.74999999994,Σ over 4 finance_channel groups,354014.74999999994,0.0,PASS,
+P&L,order_pnl_gross_sales: Σ by finance_channel = total,last30,-,total order_pnl_gross_sales,1968099.6000000006,Σ over 5 finance_channel groups,1968099.6000000061,5.587935447692871e-09,PASS,null/unset share of value = 0.00
+P&L,order_pnl_gross_sales: Σ by payment_bucket = total,today,-,total order_pnl_gross_sales,13348.390000000001,Σ over 3 payment_bucket groups,13348.390000000001,0.0,PASS,
+P&L,order_pnl_gross_sales: Σ by payment_bucket = total,yesterday,-,total order_pnl_gross_sales,42043.270000000004,Σ over 3 payment_bucket groups,42043.270000000004,0.0,PASS,
+P&L,order_pnl_gross_sales: Σ by payment_bucket = total,last7,-,total order_pnl_gross_sales,354014.74999999994,Σ over 4 payment_bucket groups,354014.7499999999,5.820766091346741e-11,PASS,
+P&L,order_pnl_gross_sales: Σ by payment_bucket = total,last30,-,total order_pnl_gross_sales,1968099.6000000006,Σ over 4 payment_bucket groups,1968099.6000000066,6.05359673500061e-09,PASS,
+P&L,order_pnl_net_sales: Σ by ad_id = total,today,order_date,total order_pnl_net_sales,13978.90017469738,Σ over 24 ad_id groups,13978.90017469738,0.0,PASS,"null/unset share of value = 4,874.58"
+P&L,order_pnl_net_sales: Σ by ad_id = total,yesterday,order_date,total order_pnl_net_sales,41520.38478462472,Σ over 33 ad_id groups,41520.384784624715,7.275957614183426e-12,PASS,"null/unset share of value = 28,359.19"
+P&L,order_pnl_net_sales: Σ by ad_id = total,last7,order_date,total order_pnl_net_sales,350588.8928706347,Σ over 77 ad_id groups,350588.8928706346,5.820766091346741e-11,PASS,"null/unset share of value = 168,665.60"
+P&L,order_pnl_net_sales: Σ by ad_id = total,last30,order_date,total order_pnl_net_sales,1849777.7408586966,Σ over 155 ad_id groups,1849777.7408586966,0.0,PASS,"null/unset share of value = 676,109.53"
+P&L,order_pnl_net_sales: Σ by ad_id = total,today,event_date,total order_pnl_net_sales,10337.284696958512,Σ over 24 ad_id groups,10337.284696958512,0.0,PASS,"null/unset share of value = 2,968.56"
+P&L,order_pnl_net_sales: Σ by ad_id = total,yesterday,event_date,total order_pnl_net_sales,41520.38478462472,Σ over 33 ad_id groups,41520.384784624715,7.275957614183426e-12,PASS,"null/unset share of value = 28,359.19"
+P&L,order_pnl_net_sales: Σ by ad_id = total,last7,event_date,total order_pnl_net_sales,305373.8729235983,Σ over 90 ad_id groups,305373.8729235982,5.820766091346741e-11,PASS,"null/unset share of value = 151,927.04"
+P&L,order_pnl_net_sales: Σ by ad_id = total,last30,event_date,total order_pnl_net_sales,875901.6158115019,Σ over 270 ad_id groups,875901.6158115023,4.656612873077393e-10,PASS,"null/unset share of value = 239,531.03"
+P&L,order_pnl_net_sales: Σ by ad_platform = total,today,order_date,total order_pnl_net_sales,13978.90017469738,Σ over 2 ad_platform groups,13978.90017469738,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by ad_platform = total,yesterday,order_date,total order_pnl_net_sales,41520.38478462472,Σ over 3 ad_platform groups,41520.38478462472,0.0,PASS,"null/unset share of value = 3,218.65"
+P&L,order_pnl_net_sales: Σ by ad_platform = total,last7,order_date,total order_pnl_net_sales,350588.8928706347,Σ over 3 ad_platform groups,350588.8928706347,0.0,PASS,"null/unset share of value = 35,560.28"
+P&L,order_pnl_net_sales: Σ by ad_platform = total,last30,order_date,total order_pnl_net_sales,1849777.7408586966,Σ over 3 ad_platform groups,1849777.7408586997,3.026798367500305e-09,PASS,"null/unset share of value = 184,550.19"
+P&L,order_pnl_net_sales: Σ by ad_platform = total,today,event_date,total order_pnl_net_sales,10337.284696958512,Σ over 2 ad_platform groups,10337.284696958512,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by ad_platform = total,yesterday,event_date,total order_pnl_net_sales,41520.38478462472,Σ over 3 ad_platform groups,41520.38478462472,0.0,PASS,"null/unset share of value = 3,218.65"
+P&L,order_pnl_net_sales: Σ by ad_platform = total,last7,event_date,total order_pnl_net_sales,305373.8729235983,Σ over 3 ad_platform groups,305373.8729235982,5.820766091346741e-11,PASS,"null/unset share of value = 25,100.86"
+P&L,order_pnl_net_sales: Σ by ad_platform = total,last30,event_date,total order_pnl_net_sales,875901.6158115019,Σ over 3 ad_platform groups,875901.6158115024,5.820766091346741e-10,PASS,"null/unset share of value = -44,222.56"
+P&L,order_pnl_net_sales: Σ by campaign_id = total,today,order_date,total order_pnl_net_sales,13978.90017469738,Σ over 22 campaign_id groups,13978.90017469738,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by campaign_id = total,yesterday,order_date,total order_pnl_net_sales,41520.38478462472,Σ over 31 campaign_id groups,41520.38478462472,0.0,PASS,"null/unset share of value = 9,824.01"
+P&L,order_pnl_net_sales: Σ by campaign_id = total,last7,order_date,total order_pnl_net_sales,350588.8928706347,Σ over 74 campaign_id groups,350588.8928706346,5.820766091346741e-11,PASS,"null/unset share of value = 50,887.67"
+P&L,order_pnl_net_sales: Σ by campaign_id = total,last30,order_date,total order_pnl_net_sales,1849777.7408586966,Σ over 141 campaign_id groups,1849777.7408586966,0.0,PASS,"null/unset share of value = 329,994.24"
+P&L,order_pnl_net_sales: Σ by campaign_id = total,today,event_date,total order_pnl_net_sales,10337.284696958512,Σ over 22 campaign_id groups,10337.284696958512,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by campaign_id = total,yesterday,event_date,total order_pnl_net_sales,41520.38478462472,Σ over 31 campaign_id groups,41520.38478462472,0.0,PASS,"null/unset share of value = 9,824.01"
+P&L,order_pnl_net_sales: Σ by campaign_id = total,last7,event_date,total order_pnl_net_sales,305373.8729235983,Σ over 86 campaign_id groups,305373.8729235982,5.820766091346741e-11,PASS,"null/unset share of value = 37,168.08"
+P&L,order_pnl_net_sales: Σ by campaign_id = total,last30,event_date,total order_pnl_net_sales,875901.6158115019,Σ over 247 campaign_id groups,875901.6158115019,0.0,PASS,"null/unset share of value = 6,051.42"
+P&L,order_pnl_net_sales: Σ by finance_channel = total,today,order_date,total order_pnl_net_sales,13978.90017469738,Σ over 2 finance_channel groups,13978.90017469738,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by finance_channel = total,yesterday,order_date,total order_pnl_net_sales,41520.38478462472,Σ over 3 finance_channel groups,41520.38478462472,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by finance_channel = total,last7,order_date,total order_pnl_net_sales,350588.8928706347,Σ over 4 finance_channel groups,350588.8928706347,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by finance_channel = total,last30,order_date,total order_pnl_net_sales,1849777.7408586966,Σ over 5 finance_channel groups,1849777.7408586994,2.7939677238464355e-09,PASS,
+P&L,order_pnl_net_sales: Σ by finance_channel = total,today,event_date,total order_pnl_net_sales,10337.284696958512,Σ over 2 finance_channel groups,10337.284696958512,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by finance_channel = total,yesterday,event_date,total order_pnl_net_sales,41520.38478462472,Σ over 3 finance_channel groups,41520.38478462472,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by finance_channel = total,last7,event_date,total order_pnl_net_sales,305373.8729235983,Σ over 4 finance_channel groups,305373.8729235982,5.820766091346741e-11,PASS,
+P&L,order_pnl_net_sales: Σ by finance_channel = total,last30,event_date,total order_pnl_net_sales,875901.6158115019,Σ over 6 finance_channel groups,875901.6158115027,8.149072527885437e-10,PASS,"null/unset share of value = -195,469.01"
+P&L,order_pnl_net_sales: Σ by is_new_customer = total,today,order_date,total order_pnl_net_sales,13978.90017469738,Σ over 3 is_new_customer groups,13978.90017469738,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by is_new_customer = total,yesterday,order_date,total order_pnl_net_sales,41520.38478462472,Σ over 3 is_new_customer groups,41520.38478462472,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by is_new_customer = total,last7,order_date,total order_pnl_net_sales,350588.8928706347,Σ over 3 is_new_customer groups,350588.89287063456,1.1641532182693481e-10,PASS,
+P&L,order_pnl_net_sales: Σ by is_new_customer = total,last30,order_date,total order_pnl_net_sales,1849777.7408586966,Σ over 3 is_new_customer groups,1849777.7408586997,3.026798367500305e-09,PASS,
+P&L,order_pnl_net_sales: Σ by is_new_customer = total,today,event_date,total order_pnl_net_sales,10337.284696958512,Σ over 3 is_new_customer groups,10337.284696958512,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by is_new_customer = total,yesterday,event_date,total order_pnl_net_sales,41520.38478462472,Σ over 3 is_new_customer groups,41520.38478462472,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by is_new_customer = total,last7,event_date,total order_pnl_net_sales,305373.8729235983,Σ over 3 is_new_customer groups,305373.8729235982,5.820766091346741e-11,PASS,
+P&L,order_pnl_net_sales: Σ by is_new_customer = total,last30,event_date,total order_pnl_net_sales,875901.6158115019,Σ over 3 is_new_customer groups,875901.6158114995,2.3283064365386963e-09,PASS,
+P&L,order_pnl_net_sales: Σ by payment_bucket = total,today,order_date,total order_pnl_net_sales,13978.90017469738,Σ over 3 payment_bucket groups,13978.90017469738,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by payment_bucket = total,yesterday,order_date,total order_pnl_net_sales,41520.38478462472,Σ over 3 payment_bucket groups,41520.38478462472,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by payment_bucket = total,last7,order_date,total order_pnl_net_sales,350588.8928706347,Σ over 4 payment_bucket groups,350588.89287063456,1.1641532182693481e-10,PASS,
+P&L,order_pnl_net_sales: Σ by payment_bucket = total,last30,order_date,total order_pnl_net_sales,1849777.7408586966,Σ over 4 payment_bucket groups,1849777.7408587013,4.6566128730773926e-09,PASS,
+P&L,order_pnl_net_sales: Σ by payment_bucket = total,today,event_date,total order_pnl_net_sales,10337.284696958512,Σ over 3 payment_bucket groups,10337.284696958512,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by payment_bucket = total,yesterday,event_date,total order_pnl_net_sales,41520.38478462472,Σ over 3 payment_bucket groups,41520.384784624715,7.275957614183426e-12,PASS,
+P&L,order_pnl_net_sales: Σ by payment_bucket = total,last7,event_date,total order_pnl_net_sales,305373.8729235983,Σ over 4 payment_bucket groups,305373.8729235981,1.7462298274040222e-10,PASS,
+P&L,order_pnl_net_sales: Σ by payment_bucket = total,last30,event_date,total order_pnl_net_sales,875901.6158115019,Σ over 4 payment_bucket groups,875901.6158115041,2.2118911147117615e-09,PASS,
+P&L,order_pnl_net_sales: Σ by shipping_region = total,today,order_date,total order_pnl_net_sales,13978.90017469738,Σ over 6 shipping_region groups,13978.90017469738,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by shipping_region = total,yesterday,order_date,total order_pnl_net_sales,41520.38478462472,Σ over 10 shipping_region groups,41520.38478462472,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by shipping_region = total,last7,order_date,total order_pnl_net_sales,350588.8928706347,Σ over 22 shipping_region groups,350588.8928706346,5.820766091346741e-11,PASS,
+P&L,order_pnl_net_sales: Σ by shipping_region = total,last30,order_date,total order_pnl_net_sales,1849777.7408586966,Σ over 28 shipping_region groups,1849777.7408586969,2.3283064365386963e-10,PASS,"null/unset share of value = 8,435.79"
+P&L,order_pnl_net_sales: Σ by shipping_region = total,today,event_date,total order_pnl_net_sales,10337.284696958512,Σ over 7 shipping_region groups,10337.284696958512,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by shipping_region = total,yesterday,event_date,total order_pnl_net_sales,41520.38478462472,Σ over 10 shipping_region groups,41520.38478462472,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by shipping_region = total,last7,event_date,total order_pnl_net_sales,305373.8729235983,Σ over 22 shipping_region groups,305373.87292359816,1.1641532182693481e-10,PASS,
+P&L,order_pnl_net_sales: Σ by shipping_region = total,last30,event_date,total order_pnl_net_sales,875901.6158115019,Σ over 29 shipping_region groups,875901.6158115022,3.4924596548080444e-10,PASS,"null/unset share of value = 8,435.79"
+P&L,order_pnl_net_sales: Σ by sub_channel = total,today,order_date,total order_pnl_net_sales,13978.90017469738,Σ over 9 sub_channel groups,13978.90017469738,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by sub_channel = total,yesterday,order_date,total order_pnl_net_sales,41520.38478462472,Σ over 10 sub_channel groups,41520.38478462472,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by sub_channel = total,last7,order_date,total order_pnl_net_sales,350588.8928706347,Σ over 13 sub_channel groups,350588.89287063456,1.1641532182693481e-10,PASS,
+P&L,order_pnl_net_sales: Σ by sub_channel = total,last30,order_date,total order_pnl_net_sales,1849777.7408586966,Σ over 21 sub_channel groups,1849777.7408586978,1.1641532182693481e-09,PASS,
+P&L,order_pnl_net_sales: Σ by sub_channel = total,today,event_date,total order_pnl_net_sales,10337.284696958512,Σ over 9 sub_channel groups,10337.28469695851,1.8189894035458565e-12,PASS,
+P&L,order_pnl_net_sales: Σ by sub_channel = total,yesterday,event_date,total order_pnl_net_sales,41520.38478462472,Σ over 10 sub_channel groups,41520.38478462472,0.0,PASS,
+P&L,order_pnl_net_sales: Σ by sub_channel = total,last7,event_date,total order_pnl_net_sales,305373.8729235983,Σ over 14 sub_channel groups,305373.87292359816,1.1641532182693481e-10,PASS,
+P&L,order_pnl_net_sales: Σ by sub_channel = total,last30,event_date,total order_pnl_net_sales,875901.6158115019,Σ over 32 sub_channel groups,875901.6158115026,6.984919309616089e-10,PASS,"null/unset share of value = -195,469.01"

@@ -37,7 +37,11 @@ Missions execute in the `recovery` container, not in `api`: after an agent chang
   rewrite drops verified content. Anything still failing ships with a visible "Not verified against the data" note,
   also written to `limitations` and `trace.grounding`.
 - Answer cleaning (`agent/answer_text.py`): metric ids replaced by names, tables realigned, decimals rounded.
-- `agent/auto_chart.py` attaches one chart of the main result when the model made none.
+- `agent/present.py` runs after the answer (no model call) and attaches the visuals the main result's *shape* calls for:
+  KPI cards (snapshot of 2+ measures, with the change when there are two periods), a table (several measures or a long
+  list; several views are joined on the shared entity/day, a cell a view lacks is a dash, never 0) or a chart
+  (`agent/auto_chart.py` builds it). Nothing reads wording; shares are detected from the answer quoting percentages of
+  the rows' sum (donut/treemap). `Meta` formats values from the catalogue (unit, aggregation, ratio components).
 
 ## 3. Tools
 
@@ -73,6 +77,16 @@ voice, `/v1/business-state` (runs the loop with `business_snapshot`), the busine
 `trace.steps` holds every tool call / return (with `ms`, `phase_ms` for diagnosis); `trace.stats.llm_steps` holds per
 step ms, tokens, cached and reasoning tokens, effort; `trace.grounding` the grounding result.
 There is no Prometheus exporter in this repo.
+
+### Charts
+
+`analytics/chart_vocabulary.py` is the one list of forms (mirrored in `office-ui/src/api/chartContract.ts`, checked by
+`tests/api/test_office_v3_adapter.py`): line, area, bar, horizontal_bar, stacked_bar, grouped_bar, combo, pie, donut,
+treemap, funnel, waterfall, scatter, radar, heatmap, causal_graph. `analytics/visualization.py` picks a default from the
+evidence shape (ranking -> horizontal bars, trend -> line, volume + rate over time -> combo, several measures over time
+-> lines, never stacked) and the model can name a form in `show_chart`. Measures that differ in unit kind (money /
+counts / averages, from the catalogue `aggregation`) or in size (>30x) are drawn in separate **panels** (`spec.panels`),
+never on twin axes. `break_down_metric` attaches a waterfall (P&L walk or period bridge) itself.
 
 ## 6. Evaluation
 

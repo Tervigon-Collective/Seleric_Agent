@@ -22,6 +22,7 @@ from seleric_swarm.api.async_missions import (
 )
 from seleric_swarm.api.business_state import router as business_state_router
 from seleric_swarm.api.conversations import router as conversations_router
+from seleric_swarm.api.emails import router as emails_router
 from seleric_swarm.api.mission_access import request_principal, require_mission_access
 from seleric_swarm.api.phase7 import router as phase7_router
 from seleric_swarm.api.ready import check_readiness
@@ -36,6 +37,7 @@ from seleric_swarm.observability.tracing import (
     traced_span,
 )
 from seleric_swarm.runtime import SwarmRuntime
+from seleric_swarm.services.mcp_query import scope_date_axis
 
 # event families the control plane emits (without the trailing "_")
 _EVENT_FAMILIES = frozenset(
@@ -149,6 +151,7 @@ app = FastAPI(
 app.state.runtime_provider = get_runtime
 app.include_router(conversations_router)
 app.include_router(phase7_router)
+app.include_router(emails_router)
 app.include_router(business_state_router)
 
 # Load repo .env before anything reads settings (CWD-independent): the voice
@@ -404,6 +407,7 @@ def _stream_mission_response(
     request_id: str,
     principal: Any,
     req: MissionRequest,
+    date_axis: str | None = None,
 ) -> StreamingResponse:
     """Run the mission synchronously while streaming the answer over SSE.
 
@@ -423,6 +427,7 @@ def _stream_mission_response(
                 query=query,
                 timezone=timezone,
                 as_of=as_of,
+                date_axis=date_axis,
                 session_id=session_id,
                 request_id=request_id,
                 full_diagnostic=req.full_diagnostic,
@@ -548,6 +553,10 @@ async def create_mission(
                 status_code=400,
                 detail=f"scope.as_of year out of supported range (1900-2400): {as_of!r}",
             )
+    try:
+        date_axis = scope_date_axis(req.scope)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     # Correlate with X-Request-ID middleware (echoed on the response).
     request_id = str(getattr(request.state, "request_id", None) or uuid4().hex)
     session_id = req.session_id or uuid4().hex
@@ -578,6 +587,7 @@ async def create_mission(
             query=query,
             timezone=timezone,
             as_of=as_of,
+            date_axis=date_axis,
             session_id=session_id,
             request_id=request_id,
             principal=principal,
@@ -594,6 +604,7 @@ async def create_mission(
             query=query,
             timezone=timezone,
             as_of=as_of,
+            date_axis=date_axis,
             request_id=request_id,
             session_id=session_id,
             workspace_id=principal.workspace_id,
@@ -617,6 +628,7 @@ async def create_mission(
         query=query,
         timezone=timezone,
         as_of=as_of,
+        date_axis=date_axis,
         session_id=session_id,
         request_id=request_id,
         full_diagnostic=req.full_diagnostic,
