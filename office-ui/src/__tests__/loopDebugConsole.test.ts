@@ -84,6 +84,13 @@ describe("loop debug console helpers", () => {
     expect(entries[3].head).toContain("11165→981");
   });
 
+  it("shows the head of a long tool return; the trace keeps all of it", () => {
+    const long = "x".repeat(2500);
+    const [entry] = entriesFromTrace([{ kind: "tool_return", tool: "metrics_query", ok: true, result: long }], []);
+    expect(entry.body?.startsWith("x".repeat(2000))).toBe(true);
+    expect(entry.body).toContain("500 more chars");
+  });
+
   it("maps live timeline events into the debug log", () => {
     const timeline: SwarmUIEvent[] = [
       {

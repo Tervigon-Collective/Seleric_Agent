@@ -31,6 +31,12 @@ function fmtSeconds(ms: number | null | undefined): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+// The trace keeps whole tool returns; the console shows the head of each.
+const RESULT_DISPLAY_CHARS = 2000;
+function clipResult(text: string): string {
+  return text.length <= RESULT_DISPLAY_CHARS ? text : `${text.slice(0, RESULT_DISPLAY_CHARS)}… (${text.length - RESULT_DISPLAY_CHARS} more chars)`;
+}
+
 function fmtJson(value: unknown): string {
   try {
     return JSON.stringify(value, null, 1);
@@ -171,7 +177,7 @@ export function entriesFromTrace(
         key: `step-${i}-return`,
         head: bits.join(" · "),
         cls: ok ? "ok" : "bad",
-        body: step.result != null ? String(step.result) : undefined,
+        body: step.result != null ? clipResult(String(step.result)) : undefined,
       });
     }
   }

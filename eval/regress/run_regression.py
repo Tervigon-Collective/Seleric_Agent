@@ -4,10 +4,12 @@ usage: python3 run_regression.py <questions.json> <out_dir> [concurrency] [only=
 
 Each item runs in its own thread, except items sharing a "session" key: those run in order in one thread
 (follow-ups). Item keys: q, aspect, checks (answer checks: contains_sql / contains_number / contains_any /
-contains_all_words / not_lead / not_contains / max_revisions), tool_checks (key into agent6_checks.CHECKS, scored
+contains_all_words / contains_any_sql / not_lead / not_contains / max_revisions), bugs (UAT bug ids the item
+tests: summary.open_bugs lists those of failing items), tool_checks (key into agent6_checks.CHECKS, scored
 over trace.steps), reference ("q1": direct MCP net_sales yesterday vs previous_period).
-Writes r<NN>.json per item and summary.json (pass counts, p50/p90 wall time) in <out_dir>.
+A turn with any trace.stats.errors fails. Writes r<NN>.json per item and summary.json (pass counts, p50/p90 wall time) in <out_dir>.
 """
+import collections
 import concurrent.futures as cf
 import json
 import os
@@ -83,6 +85,9 @@ def check(answer, revisions, c):
         tol = max(0.006, abs(want) * 0.002) if abs(want) < 100 else max(0.6, abs(want) * 0.002)
         # a deduction may be printed with its sign: the magnitude is the figure
         return any(abs(n - want) <= tol or abs(abs(n) - abs(want)) <= tol for n in numbers(a)), f"number {want} (live)"
+    if "contains_any_sql" in c:  # one of several equivalent figures (e.g. a total or its per-order form)
+        oks = [check(answer, revisions, {"contains_sql": q}) for q in c["contains_any_sql"]]
+        return any(ok for ok, _ in oks), "any of " + ", ".join(w for _, w in oks)
     if "contains_number" in c:
         want = c["contains_number"]
         return any(abs(n - want) <= max(0.6, abs(want) * 0.0005) for n in numbers(a)), f"number {want}"
@@ -176,12 +181,17 @@ def run(i, item, out_dir, tid):
             for what, ok in agent6_checks.window_reference_checks(numbers(answer), windows, item["window_reference"], total).items():
                 checks.append({"ok": ok, "what": f"reference window total {what}"})
     stats = tr.get("stats") or {}
+    errors = [str(e) for e in stats.get("errors") or []]  # the loop's own tool-error log: failed_tools misses most
+    if errors:
+        checks.append({"ok": False, "what": f"tool errors: {len(errors)}"})
     out = {
         "n": i + 1, "aspect": item.get("aspect"), "q": q, "thread": tid, "mission": mid, "run_status": st,
         "status": res.get("status"), "wall_s": round(time.time() - t0), "elapsed_s": tr.get("elapsed_seconds"),
         "revisions": revisions, "retries": retries, "tool_calls": len(calls), "llm_calls": stats.get("llm_calls"),
         "grounding": tr.get("grounding"), "tools": [c["name"] for c in calls],
-        "failed_tools": [c["name"] for c in calls if not c["ok"]], "checks": checks, "answer": answer,
+        "failed_tools": [c["name"] for c in calls if not c["ok"]], "tool_errors": errors,
+        "models": [st.get("model") for st in stats.get("llm_steps") or []], "bugs": item.get("bugs") or [],
+        "checks": checks, "answer": answer,
     }
     _write_json(os.path.join(out_dir, f"r{i + 1:02d}.json"), out)
     verdict = "FAIL" if any(c["ok"] is False for c in out["checks"]) else \
@@ -227,7 +237,11 @@ def main():
                "checked_items": len(scored), "checked_pass": len(scored) - len(failed_checks),
                "unchecked_items": [o["n"] for o in outs if o not in scored], "checks_failed_items": failed_checks,
                "wall_p50_s": pct(walls, 50), "wall_p90_s": pct(walls, 90), "concurrency": conc,
-               "revisions": sum(o["revisions"] for o in outs), "retries": sum(o["retries"] for o in outs)}
+               "revisions": sum(o["revisions"] for o in outs), "retries": sum(o["retries"] for o in outs),
+               "tool_error_items": [o["n"] for o in outs if o["tool_errors"]],
+               "step_models": dict(collections.Counter(m for o in outs for m in o["models"])),
+               "open_bugs": sorted({b for o in outs if o["n"] in failed_checks for b in o["bugs"]}),
+               "bugs_tested": sorted({b for o in scored for b in o["bugs"]})}
     _write_json(os.path.join(out_dir, "summary.json"), summary)
     print("SUMMARY", json.dumps(summary))
 

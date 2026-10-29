@@ -393,7 +393,7 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
             state.steps.append({"kind": "tool_call", "tool": name, "args": args, "duplicate": dup})
             state.steps.append({"kind": "tool_return", "tool": name, "ok": not is_err, "ms": ms, "chars": len(body),
                                 "query_id": payload.get("query_id") if isinstance(payload, dict) else None,
-                                "result": body[:2000]})
+                                "result": body})  # whole return (already capped by compact): the UI cuts it for display
             return body
 
         return call
