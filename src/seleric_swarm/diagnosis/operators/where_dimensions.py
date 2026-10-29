@@ -65,12 +65,28 @@ def _typical_specificity(seg: dict[str, Series], window: EventWindow) -> float |
     return _median(vals) if vals else None
 
 
+_VOLUME_JUDGED = 0.9  # the segments that carry this share of the volume decide whether a dimension repeats across days
+
+
 def _is_identifier_like(seg: dict[str, Series]) -> bool:
-    """A dimension whose values almost never repeat across days (ids, timestamps)."""
+    """A dimension whose values almost never repeat across days (ids, timestamps). Judged on the segments that carry the
+    volume: a campaign split has hundreds of tiny, short-lived campaigns, but the few that carry the spend run for weeks,
+    so the split is real (live 2026-10-29: Meta spend never split by campaign). An id column is one day per value
+    whatever the volume."""
     if not seg:
         return True
-    days_present = [sum(1 for v in s.values() if _finite(v) and v != 0) for s in seg.values()]
-    return _median([float(x) for x in days_present]) < 2
+    days_present = {k: sum(1 for v in s.values() if _finite(v) and v != 0) for k, s in seg.items()}
+    volume = {k: sum(abs(float(v)) for v in s.values() if _finite(v)) for k, s in seg.items()}
+    total = sum(volume.values())
+    if total <= 0:
+        return _median([float(x) for x in days_present.values()]) < 2
+    judged, running = [], 0.0
+    for k in sorted(volume, key=lambda k: -volume[k]):
+        judged.append(float(days_present[k]))
+        running += volume[k]
+        if running >= _VOLUME_JUDGED * total:
+            break
+    return _median(judged) < 2
 
 
 def _analyse_additive_dimension(

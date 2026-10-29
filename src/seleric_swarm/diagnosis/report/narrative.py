@@ -178,6 +178,11 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta], *, cfg: Diagn
     period = e.reference_kind == _PERIOD_KIND
     where = next((d for d in r.chain_dimensions if _covers_whole(d, cfg=cfg) and (d.localised or d.simpsons_paradox)), None)
     where_metric = r.chain[0].metric if where is not None and r.chain else None
+    own = next((d for d in r.dimensions if d.kind == "additive" and _covers_whole(d, cfg=cfg) and d.localised and d.top), None)
+    if own is not None and not period:
+        # An additive outcome answers "where" with its own split (which campaign took the spend); a rate beside it is
+        # read after (live 2026-10-29: Meta spend was explained by the product-view rate of its landing pages).
+        where, where_metric = own, r.outcome
     if period:
         where = next((d for d in r.dimensions if _covers_whole(d, cfg=cfg) and d.top and d.n_segments >= 2), None)
         where_metric = r.outcome if where is not None else None
@@ -229,12 +234,28 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta], *, cfg: Diagn
                     _ratio_segment_text(x, also[0], where_metric, lineage, fmt=fmt) for x in shown
                 ) + "."
         else:
+            # a localised split names the few segments that carried it, not only the largest
+            def _lead(d: DimensionFinding) -> str:
+                top = d.top[0]
+                same = [x for x in d.top if _sign(x.share_of_change or 0.0) == _sign(top.share_of_change or 0.0)][:3] if d.localised else [top]
+                return "; ".join(
+                    f"{x.segment} went from {_val(x.reference, where_metric, lineage, fmt)} to {_val(x.event, where_metric, lineage, fmt)}, "
+                    f"about {_share(x.share_of_change)} of the change"
+                    for x in same
+                )
+
             txt = (
-                f"WHERE: by {where.dimension.replace('_', ' ')}, {s0.segment} went from {_val(s0.reference, where_metric, lineage, fmt)} "
-                f"to {_val(s0.event, where_metric, lineage, fmt)}, about {_share(s0.share_of_change)} of the change "
-                f"versus {_reference_words(e)} (not the day before — never apply this share to the "
-                "day-before change)."
+                f"WHERE: by {where.dimension.replace('_', ' ')}, {_lead(where)}"
+                f" versus {_reference_words(e)} (not the day before — never apply this share to the day-before change)."
             )
+            # One level finer, from the same data: what inside it carried the change (a different split, not an id of the same one).
+            finer = next((
+                d for d in r.dimensions
+                if d is not where and d.kind == "additive" and d.localised and d.top and _covers_whole(d, cfg=cfg)
+                and d.n_segments > where.n_segments and (d.top[0].event, d.top[0].reference) != (s0.event, s0.reference)
+            ), None)
+            if finer is not None and where.localised:
+                txt += f" By {finer.dimension.replace('_', ' ')}: {_lead(finer)}."
         out.append(txt)
     elif (full := [d for d in r.dimensions if _covers_whole(d, cfg=cfg)][:3]) and all(d.broad_based for d in full):
         out.append(

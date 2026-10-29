@@ -274,6 +274,23 @@ def test_identifier_like_dimension_is_skipped():
     assert r.dimensions == []
 
 
+def test_a_split_whose_volume_sits_in_long_lived_segments_is_not_identifier_like():
+    """Meta spend by campaign (2026-10-29): hundreds of tiny one-day campaigns, but the three that carry the spend run
+    every day, so the split is real and the campaign that took the extra spend is found."""
+    rng = np.random.default_rng(11)
+    y_a, y_b, y_c = (500 + rng.normal(0, 10, N) for _ in range(3))
+    y_c[-1] += 400  # the new spend sits in one campaign
+    segs = {"big_a": S(y_a), "big_b": S(y_b), "big_c": S(y_c)}
+    segs |= {f"one_day_{i}": {DAYS[i % (N - 1)]: 1.0} for i in range(300)}  # 300 tiny campaigns, one day each
+    total = y_a + y_b + y_c + np.array([sum(s.get(d, 0.0) for k, s in segs.items() if k.startswith("one_day")) for d in DAYS])
+    r = diagnose(DiagnosisInput(
+        outcome="m_y", event_days=EVENT, series={"m_y": S(total)}, lineage={"m_y": A("m_y")},
+        segments={"m_y": {"dim_campaign": segs}},
+    ))
+    dim = next(d for d in r.dimensions if d.dimension == "dim_campaign")
+    assert dim.top[0].segment == "big_c"
+
+
 def test_outlier_weeks_are_excluded_from_reference():
     rng = np.random.default_rng(10)
     y = 1000 + rng.normal(0, 20, N)
