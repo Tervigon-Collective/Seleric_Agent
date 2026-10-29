@@ -1,0 +1,54 @@
+{
+ "n": 56,
+ "aspect": "bi_customers",
+ "q": "What share of our customers have ordered more than once, and are new customers or repeat customers worth more?",
+ "thread": "thread_7a935c4987ea411783c1f2fc7116542c",
+ "mission": "MS3-eda6028cfe",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 130,
+ "elapsed_s": 128.501,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 8,
+  "measured": 8,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "metrics_query",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "tool_errors": [],
+ "models": [
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-mini-2025-08-07",
+  "gpt-4o-2024-11-20"
+ ],
+ "bugs": [
+  6
+ ],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": false,
+   "what": "number 15.4 (live)"
+  }
+ ],
+ "answer": "About 25% of our customers in the last 30 days have ordered more than once. Repeat customers are worth more on average, spending \u20b92,218 each compared to \u20b91,783 for new customers.\n\n- Total net sales were \u20b918,77,686, with \u20b913,38,818 from new customers and \u20b95,38,868 from repeat customers.\n- New customers made up 77.8% of the customer base, while repeat customers accounted for 25.2%.\n- The higher average spend by repeat customers suggests they are more valuable individually.\n\nWorth considering: strategies to increase the repeat rate, as repeat customers contribute more per order. \n\nPeriod: 2026-09-29\u20132026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29  \nNext: Break this down by channel or campaign."
+}

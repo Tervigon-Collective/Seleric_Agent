@@ -1,0 +1,47 @@
+{
+ "n": 57,
+ "aspect": "bi_customers",
+ "q": "Which channel brings us the most repeat customers?",
+ "thread": "thread_7a935c4987ea411783c1f2fc7116542c",
+ "mission": "MS3-dc65138b96",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 21,
+ "elapsed_s": 16.481,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 2,
+  "measured": 2,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "catalogue_resolve_dimension",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "tool_errors": [],
+ "models": [
+  "gpt-5-mini-2025-08-07",
+  "gpt-4o-2024-11-20"
+ ],
+ "bugs": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "The channel bringing the most repeat customers in the last 30 days is Instagram Feed, with 92 repeat customers. Organic traffic follows with 77 repeat customers, and Facebook Feed ranks third with 28.\n\n- Instagram Feed leads significantly, suggesting it is effective at retaining customers.\n- Organic traffic also performs well, likely due to its cost efficiency and trust factor.\n\nWorth considering: strategies to further leverage Instagram Feed and Organic traffic for repeat customer growth.\n\nPeriod: 2026-09-29\u20132026-10-28 \u00b7 Data as of 2026-10-29  \nNext: Break this down by campaign within Instagram Feed."
+}

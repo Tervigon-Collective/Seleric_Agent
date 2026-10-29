@@ -1,0 +1,57 @@
+{
+ "n": 77,
+ "aspect": "why_rootcause",
+ "q": "Why are we losing money in September when every order has a positive margin?",
+ "thread": "thread_ac87bc539db34bb5ad52504f2f16e08c",
+ "mission": "MS3-2f358cbaad",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 48,
+ "elapsed_s": 41.769,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 7,
+  "measured": 7,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "tool_errors": [],
+ "models": [
+  "gpt-4o-2024-11-20",
+  "gpt-5-mini-2025-08-07"
+ ],
+ "bugs": [
+  37
+ ],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": true,
+   "what": "any of number 974.0 (live), number 907026.0 (live)"
+  },
+  {
+   "ok": true,
+   "what": "any of number 1282.0 (live), number 1193322.0 (live)"
+  }
+ ],
+ "answer": "You aren\u2019t wrong about per-order margins \u2014 the books show every order with positive contribution \u2014 but overall P&L in September was still a loss because total ad spend and other P&L lines outweighed that contribution. Net profit (order-date) for 1\u201330 Sep 2026 was a loss of \u20b92,86,296 (previous 30-day window 2\u201331 Aug: loss of \u20b97,73,786), so the business remained unprofitable on the month level even though orders were individually profitable.\n\nWhat\u2019s behind it\n- Big driver: ad spend overwhelmed contribution. Ad spend (P&L basis) fell from \u20b922,03,894 \u2192 \u20b911,93,322, while contribution fell from \u20b914,30,108 \u2192 \u20b99,07,026; the move in ad spend and contribution together explain the swing to the smaller loss in September.  \n- Revenue fell: P&L gross/net sales fell (gross sales and net sales dropped ~44.5%), shrinking the contribution pool available to cover fixed and ad costs.  \n- Platform mix mattered: Meta and Google together account for most of the movement (Meta and Google ad/platform splits account for the majority of the change in net profit). The period-level decomposition in the data reconciles exactly to the net-profit change (the change is an accounting identity, not a speculation).\n\nWorth checking:\n- Which campaigns or product groups bought the most attributed contribution vs spend (break down by ad platform \u2192 campaign \u2192 product). That will show whether spend is buying low-margin sales or simply there\u2019s not enough sales volume to cover fixed costs.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29\nNext: Break this down by ad platform and campaign (show ad spend, attributed contribution, net profit by campaign)."
+}

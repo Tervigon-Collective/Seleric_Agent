@@ -1,0 +1,54 @@
+{
+ "n": 78,
+ "aspect": "why_rootcause",
+ "q": "What would it take to break even?",
+ "thread": "thread_ac87bc539db34bb5ad52504f2f16e08c",
+ "mission": "MS3-f3aca6f6ae",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 47,
+ "elapsed_s": 38.634,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 8,
+  "measured": 8,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "break_down_metric",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "tool_errors": [],
+ "models": [
+  "gpt-4o-2024-11-20",
+  "gpt-5-mini-2025-08-07",
+  "gpt-4o-2024-11-20"
+ ],
+ "bugs": [
+  29
+ ],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": false,
+   "what": "any of number 1.74 (live), number 974.0 (live)"
+  }
+ ],
+ "answer": "To break even in September, you would need to either reduce ad spend by \u20b92,86,296 (24% of the current level) or increase contribution margin by \u20b92,86,296 (a 31.6% increase). \n\nThis means:\n- Cutting ad spend to \u20b99,07,026 (from \u20b911,93,322) would align it with the contribution margin and eliminate the loss.\n- Alternatively, increasing contribution margin to \u20b911,93,322 (from \u20b99,07,026) would cover the current ad spend and other costs.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29  \nNext: Break down contribution margin by product and channel."
+}

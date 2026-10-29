@@ -1,0 +1,58 @@
+{
+ "n": 50,
+ "aspect": "bi_drill",
+ "q": "Inside that channel, which campaign was the biggest, and was it actually profitable?",
+ "thread": "thread_f3b3e9a94aad4f28ac64b6ff84c3b9bf",
+ "mission": "MS3-abbdab44cc",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 67,
+ "elapsed_s": 59.742,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 8,
+  "measured": 8,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "metrics_drilldown",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "tool_errors": [
+  "metrics_query: {\"error\":\"Filter dimension 'channel' is not valid on view 'finance'.\",\"suggestions\":[\"ad_format\",\"ad_id\",\"ad_name\",\"ad_platform\",\"ad_status\",\"adset_id\",\"adset_name\",\"adset_status\",\"attribution_member\",\"brand_id\",\"campaign_id\",\"campaign_name\",\"campaign_objective\",\"campaign_status\",\"campaign_type\",\"cr"
+ ],
+ "models": [
+  "gpt-4o-2024-11-20",
+  "gpt-4o-2024-11-20",
+  "gpt-5-mini-2025-08-07",
+  "gpt-4o-2024-11-20"
+ ],
+ "bugs": [
+  13
+ ],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": false,
+   "what": "tool errors: 1"
+  }
+ ],
+ "answer": "The campaign \"TH-336-PAWTECH-1SEP\" was the biggest contributor inside Instagram feed in September, pulling in \u20b941,294 in net sales. However, it was not profitable: its ad spend (delivery-date basis) was \u20b937,802, leaving a contribution margin of \u20b922,962 but a net profit of \u2212\u20b914,840 (contribution minus ad spend).\n\nWhat that means\n- Net sales: \u20b941,294 (order date).\n- Ad spend: \u20b937,802 (delivery-date basis).\n- Contribution margin: \u20b922,962 (net sales \u2212 COGS).\n- Net profit: \u2212\u20b914,840 (contribution margin \u2212 ad spend).\n\nWorth checking: whether ad spend timing or allocation inflated costs, and whether the campaign's ROAS (revenue \u00f7 ad spend) aligns with expectations.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29\nNext: Break this campaign down by product."
+}

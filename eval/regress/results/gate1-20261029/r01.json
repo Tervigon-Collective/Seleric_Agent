@@ -1,0 +1,38 @@
+{
+ "n": 1,
+ "aspect": "golden",
+ "q": "What were net sales yesterday?",
+ "thread": "thread_cb0f2fa4359b4460bae9c03ae444104f",
+ "mission": "MS3-951d03005c",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 12.856,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 1,
+  "measured": 1,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "tool_errors": [],
+ "models": [
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-mini-2025-08-07"
+ ],
+ "bugs": [],
+ "checks": [],
+ "answer": "By order date, net sales yesterday (2026-10-28) were \u20b91,02,067.  \n\n- Scope: default brand (Tilting Heads).  \n- Basis: order date (orders placed on 2026-10-28).  \n\nPeriod: 2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29  \nNext: Break this down by channel and campaign."
+}

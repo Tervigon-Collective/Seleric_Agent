@@ -1,0 +1,60 @@
+{
+ "n": 81,
+ "aspect": "why_rootcause",
+ "q": "Why did sales drop on 9 October?",
+ "thread": "thread_679a06f30be64935ae1e6722a82d4d2c",
+ "mission": "MS3-22ccb38005",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 71,
+ "elapsed_s": 68.036,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 18,
+  "measured": 18,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "tool_errors": [],
+ "models": [
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-mini-2025-08-07"
+ ],
+ "bugs": [
+  21,
+  30,
+  38
+ ],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": true,
+   "what": "any of ['conversion', 'checkout', 'purchase rate']"
+  },
+  {
+   "ok": false,
+   "what": "any of ['add to cart', 'add-to-cart', 'cart']"
+  }
+ ],
+ "answer": "Net sales fell on 9 Oct to \u20b953,880 (by order date), down 40.8% from \u20b990,962 on 8 Oct \u2014 the drop was driven by far fewer orders, not less traffic. The diagnostic scan did not find a single upstream cause it can label as \u201cthe cause.\u201d\n\n- What changed, at a glance: Orders fell from 58 \u2192 26 (\u221255.2%), pushing net sales down; Net AOV rose \u20b91,568 \u2192 \u20b92,072 (+32.1%) which softened the decline by about \u20b914,881; sessions were steady 4,224 \u2192 4,461 (+5.6%) so traffic did not explain the drop. Net sales usual level (a recent normal blend) is ~\u20b989,086, so 9 Oct sits below the normal range but not an extreme outlier.\n- Where it broke: conversion dropped \u2014 conversion rate 1.35% \u2192 0.56% (\u221252.8%), so the site/offer converted far worse on 9 Oct despite similar sessions. By ad: the ad \u201cTH-222-WINGBIRD\u201d fell sharply (net sales \u20b98,931 \u2192 \u20b91,101), and several other ads moved materially in both directions.\n- What we can rule out: sessions did not move unusually, and the statistical test found no supported_cause among the drivers tested (ad spend, sessions, returns). The results show what moved (orders & conversion) but cannot attribute a single cause from the available data.\n\nWorth checking: campaign/ad-level conversion and landing-page issues for 9 Oct (start with TH-222-WINGBIRD); check if any ad edits, landing-page changes or tracking breaks happened that day.\n\nPeriod: 2026-10-09 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29\nNext: Break this down by ad platform and campaign."
+}

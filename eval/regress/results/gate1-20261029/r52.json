@@ -1,0 +1,77 @@
+{
+ "n": 52,
+ "aspect": "bi_decompose",
+ "q": "Net sales fell a lot from August to September. How much of that was fewer orders, how much was smaller baskets, and how much was discounting?",
+ "thread": "thread_6be5bab204d1480f8a3f20205e0902f1",
+ "mission": "MS3-5e4075e0b1",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 123,
+ "elapsed_s": 113.992,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [
+   "37.2%"
+  ],
+  "numbers": 14,
+  "measured": 13,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "break_down_metric",
+  "catalogue_get_metrics",
+  "diagnose_metric_change",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "tool_errors": [
+  "break_down_metric: net_sales has no declared composition in the catalogue, so it cannot be broken into reconciling lines. Metrics with a verified composition: contribution_margin (Contribution margin), gross_profit (Gross profit), net_cogs (Net COGS), net_profit (Net profit), operating_cost (Operating cost), order_pnl"
+ ],
+ "models": [
+  "gpt-5-mini-2025-08-07",
+  "gpt-4o-2024-11-20",
+  "gpt-4o-2024-11-20",
+  "gpt-5-mini-2025-08-07",
+  "gpt-4o-2024-11-20"
+ ],
+ "bugs": [
+  5,
+  38
+ ],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": false,
+   "what": "number 2905147.0 (live)"
+  },
+  {
+   "ok": true,
+   "what": "number 1574765.0 (live)"
+  },
+  {
+   "ok": false,
+   "what": "number 1720.0 (live)"
+  },
+  {
+   "ok": false,
+   "what": "tool errors: 1"
+  }
+ ],
+ "answer": "Net sales fell by 44.5% from \u20b928,35,191 in August to \u20b915,74,765 in September. This drop was driven by fewer orders, with a slight offset from higher average order values (AOV). Discounts increased but did not significantly impact the overall decline.\n\n- **Orders**: Dropped from 1,681 in August to 931 in September (-44.6%), reducing net sales by \u20b912,66,783.\n- **AOV**: Increased slightly from \u20b91,687 to \u20b91,691 (+0.3%), adding \u20b96,356 to net sales.\n- **Discounts**: Rose from \u20b976,493 in August to \u20b91,04,905 in September (+37.2%), but this was already accounted for in gross sales and did not directly affect net sales.\n\nThe decline in orders was the primary driver of the drop in net sales, with discounts playing a minor role.\n\nPeriod: 2026-08-01\u20132026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29  \nNext: Break this down by channel and campaign."
+}

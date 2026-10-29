@@ -1,0 +1,59 @@
+{
+ "n": 48,
+ "aspect": "bi_drill",
+ "q": "Walk me through September: how much did we sell, what did it cost us to get those sales, and what was left at the end?",
+ "thread": "thread_f3b3e9a94aad4f28ac64b6ff84c3b9bf",
+ "mission": "MS3-2fbc508257",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 43,
+ "elapsed_s": 38.532,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 10,
+  "measured": 10,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "catalogue_get_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "tool_errors": [],
+ "models": [
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-mini-2025-08-07"
+ ],
+ "bugs": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": true,
+   "what": "number 1574765.0 (live)"
+  },
+  {
+   "ok": true,
+   "what": "number 1193322.0 (live)"
+  },
+  {
+   "ok": true,
+   "what": "number -286296.0 (live)"
+  }
+ ],
+ "answer": "By order date: September net sales were \u20b915,74,765. The business made \u20b99,07,026 of contribution (net sales \u2212 COGS \u20b96,67,739) but ad delivery costs (delivery-date / P&L ad spend) were \u20b911,93,322, leaving a negative contribution-after-ads (net profit) of \u2212\u20b92,86,296 \u2014 ads cost more than the margin they bought.\n\nWhat that means\n- Top\u2011line: Net sales (order date) = \u20b915,74,765 for 01\u201330 Sep 2026.  \n- Cost of goods: Net COGS (order date) = \u20b96,67,739, so contribution before ads = \u20b99,07,026.  \n- Cost to get sales: Ad spend (delivery / P&L basis) = \u20b911,93,322 \u2014 this is measured on delivery date (finance/paid_media clock).  \n- Left at the end: Contribution after ads / net profit (order-date basis) = \u2212\u20b92,86,296 (contribution minus P&L ad spend). This shows ad delivery exceeded the margin available to cover it.\n\nWorth checking: ad efficiency by platform/campaign (ad spend \u00f7 contribution) and whether ad spend timing or allocation (delivery-date vs order-date) is inflating reported ad costs.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29\nNext: Break this down by ad platform and campaign."
+}

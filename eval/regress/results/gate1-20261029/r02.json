@@ -1,0 +1,38 @@
+{
+ "n": 2,
+ "aspect": "golden",
+ "q": "What were net sales, orders, and ad spend yesterday?",
+ "thread": "thread_a1ef4838c5654299b76a7f35aa681b66",
+ "mission": "MS3-e9e67a9b52",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 12.91,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 6,
+  "measured": 6,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "tool_errors": [],
+ "models": [
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-mini-2025-08-07"
+ ],
+ "bugs": [],
+ "checks": [],
+ "answer": "Yesterday (order date): net sales were \u20b91,02,067, you had 45 orders, and ad spend (platform-reported by delivery date) was \u20b960,719.\n\n- Net sales (by order date): \u20b91,02,067 \u2014 total sales placed on 2026-10-28.  \n- Orders (count of sale orders placed): 45.  \n- Ad spend (platform delivery clock, native): \u20b960,719 \u2014 platform-reported delivery for 2026-10-28 (date axis differs from order-date sales).\n\nNote: I used the default brand (Tilting Heads). Period: 2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29\n\nNext: Break this down by ad platform and campaign."
+}

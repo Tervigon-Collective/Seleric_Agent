@@ -1,0 +1,54 @@
+{
+ "n": 49,
+ "aspect": "bi_drill",
+ "q": "Which channel pulled in the most of that?",
+ "thread": "thread_f3b3e9a94aad4f28ac64b6ff84c3b9bf",
+ "mission": "MS3-987f87c21a",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 43,
+ "elapsed_s": 39.789,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 12,
+  "measured": 12,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "metrics_query",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "tool_errors": [],
+ "models": [
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-mini-2025-08-07"
+ ],
+ "bugs": [
+  13
+ ],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": false,
+   "what": "number 935415.0 (live)"
+  }
+ ],
+ "answer": "Instagram feed (ig_feed) drove the most sales in September: \u20b97,06,621 (44.9% of net sales), followed by Google Performance Max at \u20b92,48,095 (15.8%) and Facebook feed at \u20b92,22,950 (14.2%). \n\nWhat changed\n- ig_feed: \u20b97,06,620 \u2192 44.9% of September net sales (order date). This concentration means nearly half the month's revenue depended on one channel.\n- google_pmax: \u20b92,48,095 \u2192 15.8% \u2014 the second-largest contributor.\n- fb_feed: \u20b92,22,951 \u2192 14.2% \u2014 third place.\n\nWorth checking: campaign-level efficiency inside ig_feed (ad spend, ROAS and contribution per campaign) because a large share from one channel concentrates risk.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29\nNext: Break ig_feed down by campaign."
+}

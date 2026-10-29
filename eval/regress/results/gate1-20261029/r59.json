@@ -1,0 +1,53 @@
+{
+ "n": 59,
+ "aspect": "bi_anomaly",
+ "q": "Why was the worst day so bad?",
+ "thread": "thread_46433d2c7b884549bde951355f3abfc6",
+ "mission": "MS3-6c4a40c5b4",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 71,
+ "elapsed_s": 67.184,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 15,
+  "measured": 15,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "tool_errors": [],
+ "models": [
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-mini-2025-08-07"
+ ],
+ "bugs": [
+  23
+ ],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": true,
+   "what": "any of ['conversion', 'checkout', 'add to cart', 'add-to-cart']"
+  }
+ ],
+ "answer": "Net profit on 2026-10-09 was \u20b9-26,445 \u2014 about \u20b99,734 worse than its usual same\u2011weekday level (usual: \u20b9-16,711, a 58.3% drop). The data shows the day was worse because margin and sales moved against profit, not because of a single verified external cause.\n\n- What changed (size and why it matters)\n  - Net profit: 2026-10-09 = \u20b9-26,445 vs usual same\u2011weekday \u2248 \u20b9-16,711 (worse by \u20b99,734). This is a notable negative swing in profit.\n  - Net sales (P&L basis): \u20b953,880 on 2026-10-09, down from a prior-day reference of \u20b990,962 (\u221240.8%). Lower revenue removed the top\u2011line cushion for profit.\n  - Ad spend (P&L basis): \u20b960,102 on 2026-10-09 (vs \u20b969,851 on 2026-10-08). Higher-than-usual ad cost relative to the sales it bought increased the loss: the change in ad spend accounted for ~82% of the net profit move in the decomposition the analysis produced.\n  - Contribution margin dropped: contribution margin fell to \u20b933,657 (from \u20b951,303 the previous day), explaining much of the net profit decline.\n- Where the change sat\n  - The deterioration concentrated in specific campaigns/ads (examples flagged in the analysis include campaign TH-383-SUSPENDER-29SEP and a small set of ads that together moved several thousand rupees of profit that day). These campaign-level swings explain a material share of the profit change versus the usual weekday.\n- Did we identify a cause?\n  - No single upstream cause met the statistical bar. The diagnosis is arithmetic: lower sales plus the pattern of ad spend and campaign-level performance produced the loss. The engine did not label any external event (inventory, refunds, booking timing, or a single campaign edit) as a supported cause.\n\nWorth checking:\n- Break this day down by ad campaign and ad creative (the flagged campaigns show the largest negative swings).\n- Compare order volume and conversion rates for those campaigns on 2026-10-09 vs the usual same weekday to see if reduced conversion or poor-performing creatives explain the revenue drop.\n- Reconcile P&L ad allocation for the flagged campaigns to confirm whether spend was concentrated but delivered low credited sales.\n\nPeriod: 2026-10-01..2026-10-29 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29  \nNext: Break this down by channel and campaign."
+}

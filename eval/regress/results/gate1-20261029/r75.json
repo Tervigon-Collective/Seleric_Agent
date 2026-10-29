@@ -1,0 +1,49 @@
+{
+ "n": 75,
+ "aspect": "why_rootcause",
+ "q": "So is this a website problem or an ads problem?",
+ "thread": "thread_50300bcff945484282941302e49193e8",
+ "mission": "MS3-19acd94382",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 63,
+ "elapsed_s": 59.869,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 18,
+  "measured": 18,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "tool_errors": [],
+ "models": [
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-mini-2025-08-07"
+ ],
+ "bugs": [
+  28
+ ],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "This looks like more of a customer/acquisition problem than a website breakdown: orders fell 12.4% (210 \u2192 184) but the statistical diagnosis identifies the drop in customers as a supported cause \u2014 customers fell 22.0% (214 \u2192 167) and the engine estimates that explains most of the orders loss. Ad spend rose slightly, so spend itself did not cause the decline.\n\n- What moved: Customers 214 \u2192 167 (\u221222.0%) \u2014 identified as a cause; Sessions 20,645 \u2192 16,632 (\u221219.4%) moved with orders but the analysis flags it as correlation (may be reacting rather than causing). \n- Ads and clicks: Ad spend \u20b92,98,777 \u2192 \u20b93,00,853 (+0.7%) moved opposite to orders and is ruled out as a cause. Clicks fell (27,954 \u2192 18,449, \u221234.0%) and are outside their usual range, but the causal test shows raw association disappears after controlling for calendar and competing drivers \u2014 not a supported cause.\n- Website behaviour blind spots: PDP-level metrics (page views, add-to-cart, purchase rate) were not available for this scope and could not be tested; that means a conversion funnel problem on PDPs cannot be ruled out from the data we have.\n\nWorth checking: 1) Break down the customer and sessions drop by acquisition channel (paid vs organic) and campaign to see whether acquisition fell; 2) Pull PDP page-views \u2192 add-to-cart \u2192 purchase rate by channel to confirm whether conversion on-site changed.\n\nPeriod: 2026-10-19 to 2026-10-25 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29  \nNext: Break this down by channel and campaign."
+}

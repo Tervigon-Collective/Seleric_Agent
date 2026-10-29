@@ -1,0 +1,43 @@
+{
+ "n": 62,
+ "aspect": "bi_capability",
+ "q": "What kinds of questions can you answer for me, and what can't you answer?",
+ "thread": "thread_5ed89dd8df60436884e926d3f93f1bf1",
+ "mission": "MS3-841cd21fbb",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 9,
+ "elapsed_s": 6.993,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 0,
+ "llm_calls": 1,
+ "grounding": {
+  "derived": [],
+  "numbers": 0,
+  "measured": 0,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [],
+ "failed_tools": [],
+ "tool_errors": [],
+ "models": [
+  "gpt-5-mini-2025-08-07"
+ ],
+ "bugs": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "Short answer: I\u2019m your BI investigation agent \u2014 I can run data-backed queries, diagnostics and performance analyses from the company metrics catalogue and explain what the data shows. I cannot guess, invent numbers, or act outside the connected data sources.\n\nWhat I can do (examples)\n- Get KPIs and period comparisons: \u201cShow net sales, orders, ad spend and net profit for Oct 1\u201329 vs the previous period.\u201d\n- Today / intraday checks: \u201cWhat happened today so far vs the same hours yesterday\u201d (I run a live today query).\n- Breakdowns and drilldowns: \u201cBreak net sales down by ad platform and campaign\u201d or \u201cDrill orders by product.\u201d\n- Diagnose a change: \u201cWhy did orders fall yesterday?\u201d \u2014 I run an automated statistical diagnosis and then confirm with targeted drilldowns.\n- Performance portfolio analyses: \u201cWhich campaigns/products are profitable or wasting ad spend?\u201d (I run the queries, then the audit_entities facts).\n- P&L / waterfall: \u201cWalk me from net sales to net profit for this month.\u201d\n- Build aligned cross-source tables: \u201cCompare spend, sessions, and orders by hour\u201d and run correlated analysis or simple forecasts.\n- Draft emails/moM from the findings (I show the draft; I send only after your explicit approval).\n\nWhat I can\u2019t do\n- Invent numbers, thresholds, formulas, or \u201cbest guess\u201d figures \u2014 every number I state must come from the catalogue/queries.\n- Access systems not connected (any platform not in the data stack), or produce data we don\u2019t have\u2014I\u2019ll say \u201cno data available.\u201d\n- Speculate about causes beyond what the data supports; I\u2019ll label things as \u201clikely\u201d or \u201cinsufficient evidence.\u201d\n- Change ad accounts, pause campaigns, or send emails without your explicit \u201csend\u201d confirmation after I draft them.\n- Mix incomparable bases (order-date vs P&L event-date) without calling out the axis and keeping them separate.\n\nIf you want, try one: give me a metric and a period (or say \u201ctoday\u201d) and I\u2019ll run the exact queries and explain what the data says."
+}

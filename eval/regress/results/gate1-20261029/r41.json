@@ -1,0 +1,61 @@
+{
+ "n": 41,
+ "aspect": "uat_web",
+ "q": "Which product pages lose the most people?",
+ "thread": "thread_d18bc87c708a4037887233867e2402c6",
+ "mission": "MS3-28022f4ea8",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 151,
+ "elapsed_s": 148.666,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 5,
+ "llm_calls": 6,
+ "grounding": {
+  "derived": [],
+  "numbers": 12,
+  "measured": 12,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "metrics_query",
+  "catalogue_resolve_dimension",
+  "metrics_query",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "tool_errors": [
+  "metrics_query: {\"error\":\"Dimension 'product_title' (\u2192 product_title) is not supported by metric 'pdp_page_views'. Supported: added_to_cart, brand_id, browser, campaign_name, channel, device_type, furthest_section_instance_id, geo_city, geo_region, has_snapshot, is_engaged, last_checkpoint_reason, layout_version, p",
+  "run_python: sandbox code raised KeyError: 'pdp_page_views'. Fix the script and retry.\nTraceback (most recent call last):\n  File \"/app/.venv/lib/python3.12/site-packages/seleric_swarm/toolsets/sandbox_child.py\", line 178, in main\n    builtins.exec(code, namespace)  # noqa: S102 - the point of this process\n    ^^"
+ ],
+ "models": [
+  "gpt-4o-2024-11-20",
+  "gpt-4o-2024-11-20",
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-mini-2025-08-07",
+  "gpt-4o-2024-11-20"
+ ],
+ "bugs": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": false,
+   "what": "tool errors: 2"
+  }
+ ],
+ "answer": "The product pages with the highest drop-off rates between viewing and purchasing are:\n\n1. **Calmfrost Puffer Jacket**: 189 views, 0 purchases, 100% drop-off.\n2. **Empress Plush Bed**: 72 views, 0 purchases, 100% drop-off.\n3. **Ranger Harness Jacket**: 289 views, 2 purchases, 99.3% drop-off.\n4. **Comfyclimb Stairs**: 246 views, 2 purchases, 99.2% drop-off.\n5. **Buy Frostfit Jacket for Pets**: 79 views, 1 purchase, 98.7% drop-off.\n\nAcross the top 10 products, there were 1,961 views and only 34 purchases, resulting in a significant drop-off rate overall.\n\nWorth considering: Investigate why these specific product pages fail to convert, focusing on user experience, pricing, and product presentation. \n\nPeriod: 2026-10-22 to 2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29  \nNext: Break down engagement metrics for these products."
+}

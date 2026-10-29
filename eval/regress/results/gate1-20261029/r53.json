@@ -1,0 +1,56 @@
+{
+ "n": 53,
+ "aspect": "bi_decompose",
+ "q": "Which of those can we actually fix?",
+ "thread": "thread_6be5bab204d1480f8a3f20205e0902f1",
+ "mission": "MS3-f78652e348",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 55,
+ "elapsed_s": 52.766,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 8,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [
+   "28,412"
+  ],
+  "numbers": 18,
+  "measured": 17,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "tool_errors": [],
+ "models": [
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-mini-2025-08-07"
+ ],
+ "bugs": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "By order date: the fall is mainly fewer orders \u2014 orders fell from 1,720 in Aug to 931 in Sep (\u201145.9%). AOV barely moved (\u20b92,399 \u2192 \u20b92,423, +1.0%) and discounts rose (\u20b976,493 \u2192 \u20b91,04,905, +37.1%). Of the three, discounts are the easiest immediate lever; orders are addressable but need diagnosis; AOV is a low-impact lever here.\n\n- Orders (1,720 \u2192 931, \u201145.9%): this is the largest driver and is fixable in principle (marketing, traffic, conversion or inventory fixes), but the data here doesn't say which funnel stage broke \u2014 we need a channel/campaign and sessions \u2192 conversion breakdown to target the right action.\n- Discounts (\u20b976,493 \u2192 \u20b91,04,905, +\u20b928,412): a directly controllable item (pricing, promo rules, coupon targeting). Reducing unneeded blanket discounts or tightening voucher rules will lower leakage quickly.\n- AOV (\u20b92,399 \u2192 \u20b92,423, +1.0%): small change and not the reason for the drop; tactics exist to raise it (bundles, min-cart offers) but they won\u2019t recover the lost volume alone.\n\nWorth checking: split the orders drop by ad platform, channel and campaign, and compare sessions and conversion rate per channel; also check inventory/cancel rates and any campaign budget/status changes.\n\nPeriod: 2026-08-01\u20132026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29  \nNext: Break this down by channel and campaign."
+}

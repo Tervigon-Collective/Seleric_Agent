@@ -1,0 +1,52 @@
+{
+ "n": 63,
+ "aspect": "bi_capability",
+ "q": "What's the difference between net ROAS and the ROAS Meta shows, and which should I trust for budget decisions?",
+ "thread": "thread_5ed89dd8df60436884e926d3f93f1bf1",
+ "mission": "MS3-410ed5f73b",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 63,
+ "elapsed_s": 59.671,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 0,
+  "measured": 0,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "catalogue_get_metrics"
+ ],
+ "failed_tools": [],
+ "tool_errors": [],
+ "models": [
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-mini-2025-08-07"
+ ],
+ "bugs": [
+  2
+ ],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": true,
+   "what": "any of ['contribution']"
+  }
+ ],
+ "answer": "Net ROAS and Meta\u2019s (platform-reported) ROAS are different measures with different uses: net ROAS (our net ROAS) is contribution before ads \u00f7 ad spend \u2014 a profit-side efficiency on the company books \u2014 while Meta\u2019s ROAS is a placement/attribution view (gross-style) that credits gross sales to ads and is useful as an ad-delivery signal, not a company profit measure.\n\nWhat that means\n- Basis and timing: Net ROAS is available on a switchable date axis but is normally used on order date and is built from contribution_before_ads and ad spend (profit before ads \u00f7 spend). Gross/placement ROAS (the platform-style ROAS our catalogue calls gross ROAS) is placement-only attribution and credits gross sales at the placement time. Use net ROAS when you need the business P&L picture; gross ROAS when you want ad platform delivery signals (which campaign is driving attributed conversions right now).\n- What each includes: Net ROAS accounts for product & fulfilment costs and other contribution lines (so it reflects the margin available to pay for ads). Meta\u2019s ROAS (placement/gross) uses attributed gross sales and does not deduct COGS, fulfilment, returns or company-level deductions.\n- Trust for budgets: rely on net ROAS for budget decisions tied to profitability (can we afford to scale this spend?). Use Meta\u2019s ROAS as a high-frequency operational signal (which creatives/campaigns are converting in-platform) but reconcile it to net ROAS before increasing spend materially.\nWorth checking: compare net ROAS and gross ROAS by ad_platform and campaign for the last 30 days to see which campaigns have big gaps (large gross ROAS but low or negative net ROAS).\n\nPeriod: 2026-10-01..2026-10-29 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29\nNext: Compare net ROAS and gross ROAS for the last 30 days by ad_platform and campaign."
+}
