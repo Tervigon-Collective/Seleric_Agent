@@ -194,7 +194,11 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta], *, cfg: Diagn
                     "the other way (Simpson's paradox)."
                 )
             elif abs(where.mix_effect or 0.0) > abs(where.rate_effect or 0.0):
-                txt += " The overall rate moved mainly because the mix shifted, while rates within each group held."
+                # mix + rate = the overall move: both are stated, so "rates held" is never claimed when they did not
+                txt += (
+                    f" The overall rate moved mainly because the mix shifted ({_effect(where.mix_effect or 0.0, where_metric, lineage, fmt=fmt)}); "
+                    f"rates within the groups moved it {_effect(where.rate_effect or 0.0, where_metric, lineage, fmt=fmt)}."
+                )
             also = [
                 d for d in (*r.chain_dimensions, *r.dimensions)
                 if d is not where and d.kind == "rate" and d.top and _covers_whole(d, cfg=cfg) and (d.localised or d.simpsons_paradox)

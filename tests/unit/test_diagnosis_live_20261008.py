@@ -89,6 +89,8 @@ def test_rate_without_weekly_pattern_is_referenced_on_nearest_days_and_flagged()
     assert abs(top.mix_effect) > abs(next(s for s in dim.top if s.segment == "old").mix_effect)
     where = next(line for line in r.narrative if line.startswith("WHERE"))
     assert "new in this period" in where
+    # mix + rate = the overall move: the text states both and never claims the within-group rates held
+    assert "held" not in where and "mix shifted (" in where and "rates within the groups moved it" in where
 
 
 def test_weekly_pattern_test_tells_seasonal_from_flat():
