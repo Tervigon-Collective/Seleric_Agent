@@ -271,9 +271,20 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None, is_cance
             return ToolResult(success=False, retryable=True, error_code="INSUFFICIENT_EVIDENCE",
                               summary="Nothing to audit: fetch ad spend (with orders and revenue) broken down by the entity "
                                       "(campaign_name, product_title, ...) with metrics_query, then pass its query_id.")
+        # live 2026-10-29 MS3-b9d572c736: product_title and product_handle results share no key, the join fell back to the
+        # spend view alone and the audit reported "no ranking possible" for data it never read. Refuse; do not reduce.
+        dropped = {s.query_id for s in sources} - {s.query_id for s in frame.sources}
+        if dropped:
+            keyed = {tuple(s.dims) for s in sources}
+            return ToolResult(success=False, retryable=True, error_code="INSUFFICIENT_EVIDENCE",
+                              summary=f"These results cannot be audited together: {', '.join(sorted(dropped))} share no entity key with the spend result "
+                                      f"(keyed by {' vs '.join(sorted(', '.join(k) for k in keyed))}). Call audit_entities again with only the "
+                                      "results keyed by the same entity as the spend result.")
         meta = present.Meta.of(ctx.deps, frame.measures)
+        spend_rows = next((len(s.rows) for s in sources if roles.spend in s.measures), 0)
         found = entity_audit.audit(entity_audit.entities_of(frame.rows, entity_col, roles), labels=meta.labels, roles=roles,
-                                   symbol=present._CURRENCY_SYMBOLS.get((frame.currency or "INR").upper(), "₹"))
+                                   symbol=present._CURRENCY_SYMBOLS.get((frame.currency or "INR").upper(), "₹"),
+                                   cut_at=spend_rows if spend_rows and spend_rows >= (call_args.get("limit") or 0) > 0 else None)
         return ToolResult(success=True, summary=found.text())
 
     async def business_snapshot(ctx: RunContext[SelericDeps]) -> dict[str, Any]:

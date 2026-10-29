@@ -10,7 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { enhanceQuery } from "../api/queryEnhance";
 import { attachAutoCorrect, type AutoCorrectItem } from "../utils/autocorrect";
 import { VoiceDock } from "./VoiceOverlay";
-import { MicIcon, PaperclipIcon, SendIcon, SparklesIcon, StopIcon } from "./icons";
+import { MicIcon, PaperclipIcon, PromptsIcon, SendIcon, SparklesIcon, StopIcon } from "./icons";
 
 const VOICE_LABEL: Record<VoiceStatus, string> = {
   idle: "Talk to Seleric",
@@ -208,6 +208,15 @@ export function Composer() {
       {/* Hidden, not unmounted: keeps the draft and the autocorrect listeners alive. */}
       <div className="composer-inner" hidden={voiceLive}>
         <ComposerPrimitive.Root className="composer" aria-label="Message composer">
+          <button
+            type="button"
+            className="attach-btn prompts-btn"
+            aria-label="Open prompt registry"
+            title="Prompts"
+            onClick={() => window.dispatchEvent(new Event("seleric:open-prompts"))}
+          >
+            <PromptsIcon size={16} />
+          </button>
           <ComposerPrimitive.AddAttachment className="attach-btn" aria-label="Choose attachments" title="Attach a file">
             <PaperclipIcon size={16} />
           </ComposerPrimitive.AddAttachment>

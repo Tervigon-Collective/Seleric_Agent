@@ -3,9 +3,12 @@ import { Composer } from "./components/Composer";
 import { DetailPanel } from "./components/DetailPanel";
 import { PanelErrorBoundary } from "./components/ErrorBoundary";
 import { OfficeWorkspace } from "./components/OfficeWorkspace";
+import { OpsWorkspace } from "./components/ops/OpsWorkspace";
+import { WorkspaceSwitch } from "./components/ops/WorkspaceSwitch";
 import { ThreadSidebar } from "./components/ThreadSidebar";
 import { Transcript } from "./components/Transcript";
 import { VoiceOverlay } from "./components/VoiceOverlay";
+import { useWakeWord } from "./wakeWord";
 import { CommandSearch } from "./components/CommandSearch";
 import { AdminDiagnostics } from "./components/AdminDiagnostics";
 import { PromptRegistryModal } from "./components/PromptRegistryModal";
@@ -72,6 +75,7 @@ function HeaderMenu({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
+  useWakeWord();
   const [searchOpen, setSearchOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
@@ -95,6 +99,7 @@ export default function App() {
   // Union-typed alias: `workspace` narrows to "conversation" past the office
   // early-return below, which would make the Office tab comparison a type error.
   const workspaceTab: typeof workspace = workspace;
+  const opsPage = useShellStore((s) => s.opsPage);
   const setWorkspace = useShellStore((s) => s.setWorkspace);
   const sidebarOpen = useShellStore((s) => s.sidebarOpen);
   const detailsOpen = useShellStore((s) => s.detailsOpen);
@@ -128,6 +133,7 @@ export default function App() {
     if (!routingReady) return;
     writeRoute({
       workspace,
+      opsPage,
       threadId: selectedThreadId,
       // Keep URL mission only while a real run is attached. "pending" leaves the
       // previous param alone during submit handshake; idle/empty clears it so
@@ -138,7 +144,7 @@ export default function App() {
           ? {}
           : { missionId: null }),
     });
-  }, [routingReady, workspace, selectedThreadId, missionId]);
+  }, [routingReady, workspace, opsPage, selectedThreadId, missionId]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
@@ -158,7 +164,8 @@ export default function App() {
     };
     const popstate = () => {
       const route = readRoute();
-      setWorkspace(route.workspace);
+      if (route.workspace === "ops") useShellStore.getState().openOps(route.opsPage);
+      else setWorkspace(route.workspace);
       if (route.threadId && route.threadId !== useConversationStore.getState().selectedThreadId) {
         void selectThread(route.threadId);
       } else if (!route.threadId) {
@@ -177,12 +184,16 @@ export default function App() {
     };
   }, [clearSelection, selectThread, setWorkspace, searchOpen, promptsOpen, diagnosticsOpen]);
 
+  if (workspace === "ops") {
+    return <OpsWorkspace dark={dark} onToggleTheme={() => setDark((value) => !value)} onSwitch={setWorkspace} />;
+  }
+
   if (workspace === "office") {
     return (
       <OfficeWorkspace
         dark={dark}
         onToggleTheme={() => setDark((value) => !value)}
-        onOpenConversations={() => setWorkspace("conversation")}
+        onSwitch={setWorkspace}
       />
     );
   }
@@ -203,20 +214,9 @@ export default function App() {
           title="Toggle conversations"
         ><MenuIcon /></button>
         <button className="brand-button" onClick={() => setWorkspace("conversation")} aria-label="Seleric home"><span className="brand-mark">S</span><strong>Seleric</strong></button>
-        <div className="workspace-switch" role="tablist" aria-label="Workspace">
-          <button role="tab" aria-selected={workspaceTab === "conversation"} className={workspaceTab === "conversation" ? "active" : ""} onClick={() => setWorkspace("conversation")}>Conversations</button>
-          <button role="tab" aria-selected={workspaceTab === "office"} className={workspaceTab === "office" ? "active" : ""} onClick={() => setWorkspace("office")}>Office</button>
-        </div>
+        <WorkspaceSwitch current={workspaceTab} onChange={setWorkspace} />
         {currentTitle && <span className="thread-context-title" title={currentTitle}>{currentTitle}</span>}
         <span className="header-spacer" />
-        <button
-          className="search-trigger hide-sm"
-          onClick={() => setPromptsOpen(true)}
-          aria-label="Open prompt registry"
-          title="Prompt registry"
-        >
-          <PromptsIcon size={14} /><span className="label">Prompts</span>
-        </button>
         <button className="search-trigger" onClick={() => setSearchOpen(true)}
           aria-keyshortcuts="Control+K Meta+K" aria-label="Search conversations">
           <SearchIcon size={14} /><span className="label">Search</span><kbd>⌘K</kbd>

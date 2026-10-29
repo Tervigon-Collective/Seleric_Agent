@@ -12,16 +12,17 @@ import { MissionTimeline } from "./MissionTimeline";
 import { AgentHoverCard } from "./AgentHoverCard";
 import { AgentInspector } from "./AgentInspector";
 import { DebugPanel } from "./DebugPanel";
+import type { Workspace } from "../stores/shell";
 import { readRoute, writeRoute } from "../routing";
 
 export function OfficeWorkspace({
   dark,
   onToggleTheme,
-  onOpenConversations,
+  onSwitch,
 }: {
   dark: boolean;
   onToggleTheme: () => void;
-  onOpenConversations: () => void;
+  onSwitch: (w: Workspace) => void;
 }) {
   const hydrate = useOffice((s) => s.hydrate);
   const ingestEvent = useOffice((s) => s.ingestEvent);
@@ -81,7 +82,7 @@ export function OfficeWorkspace({
 
   return (
     <div className="office-workspace">
-      <TopBar missions={missions} missionId={missionId} onPickMission={setMissionId} dark={dark} onToggleTheme={onToggleTheme} onOpenConversations={onOpenConversations} />
+      <TopBar missions={missions} missionId={missionId} onPickMission={setMissionId} dark={dark} onToggleTheme={onToggleTheme} onSwitch={onSwitch} />
       <div className="stage" onMouseMove={(event) => setPointer({ x: event.clientX, y: event.clientY })}>
         <OfficeCanvas dark={dark} /><MissionHeader /><MissionBoard />
         <AgentHoverCard x={pointer.x} y={pointer.y} /><AgentInspector />

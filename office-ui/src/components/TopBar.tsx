@@ -1,5 +1,7 @@
 import { useOffice, type ConnState } from "../store";
 import type { MissionRef } from "../types";
+import type { Workspace } from "../stores/shell";
+import { WorkspaceSwitch } from "./ops/WorkspaceSwitch";
 
 const CONN_LABEL: Record<ConnState, string> = {
   idle: "Idle",
@@ -16,14 +18,14 @@ export function TopBar({
   onPickMission,
   dark,
   onToggleTheme,
-  onOpenConversations,
+  onSwitch,
 }: {
   missions: MissionRef[];
   missionId: string | null;
   onPickMission: (id: string) => void;
   dark: boolean;
   onToggleTheme: () => void;
-  onOpenConversations: () => void;
+  onSwitch: (w: Workspace) => void;
 }) {
   const conn = useOffice((s) => s.conn);
   const query = useOffice((s) => s.query);
@@ -38,11 +40,9 @@ export function TopBar({
   ).length;
 
   return (
-    <header className="topbar">
-      <span className="brand">SELERIC OFFICE</span>
-      <button className="btn office-chat-btn" onClick={onOpenConversations}>
-        ← Chat
-      </button>
+    <header className="shell-header topbar">
+      <button className="brand-button" onClick={() => onSwitch("conversation")} aria-label="Seleric home"><span className="brand-mark">S</span><strong>Seleric</strong></button>
+      <WorkspaceSwitch current="office" onChange={onSwitch} />
 
       <select
         value={missionId ?? ""}

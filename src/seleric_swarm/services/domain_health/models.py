@@ -23,10 +23,23 @@ class ResolvedMetric(BaseModel):
     # `anomaly: true`; None otherwise. Powers the ready-store fast path.
     anomaly: dict[str, Any] | None = None
     quality_flags: list[QualityFlag] = Field(default_factory=list)
+    # Added by the monitoring panel. All optional so older snapshots on disk still load.
+    name: str | None = None            # catalogue description
+    label: str | None = None           # the user's own label, if they set one
+    unit: str | None = None
+    display: str | None = None         # percent | multiple | currency | count | seconds
+    shape: str | None = None           # additive | ratio | signed (judge.infer_shape)
+    series: list[dict[str, Any]] = Field(default_factory=list)  # last 28 daily {ts, value}
+    judgement: dict[str, Any] | None = None  # judge.Judgement.as_dict()
+    observed_on: str | None = None     # the day ``value`` belongs to; differs from the snapshot day when the source had no row
+    status: str = "no_data"            # alert | watch | good | ok | no_data
+    polarity_known: bool = False       # False: the catalogue gives no direction_bad, so no alerting
+    rule: dict[str, Any] | None = None
 
 
 class DomainStateSnapshot(BaseModel):
     domain: str
+    title: str | None = None
     brand_id: str
     as_of: str
     computed_at: str

@@ -60,7 +60,16 @@ def _snapshot_context(snapshot: DomainStateSnapshot, units: dict[str, str] | Non
             # nothing: state the levels (value, avg_7d) instead of a percent.
             entry["change_pct_vs_prior_day"] = None
             entry["change_note"] = "the day before was near zero, so no percent change is meaningful: compare value with avg_7d"
-        if m.anomaly:
+        if m.observed_on and m.observed_on != snapshot.as_of:
+            entry["note"] = f"the source had no value for {snapshot.as_of}; this is the latest one, from {m.observed_on}"
+        if m.judgement:
+            # The panel's verdict (weekday baseline, bad-direction rule, shape-aware move) replaces the older
+            # whole-window anomaly block, so the agent and the Ops tab never disagree about what needs attention.
+            j = m.judgement
+            entry["status"] = m.status
+            entry["verdict"] = j.get("reason")
+            entry["anomaly"] = {"is_anomaly": j.get("is_anomaly"), "expected": j.get("expected"), "direction": j.get("direction")}
+        elif m.anomaly:
             entry["anomaly"] = {
                 "is_anomaly": m.anomaly.get("is_anomaly"),
                 "expected": m.anomaly.get("expected"),

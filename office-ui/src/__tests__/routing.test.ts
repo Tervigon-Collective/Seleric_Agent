@@ -16,7 +16,21 @@ describe("URL routing", () => {
 
     writeRoute({ workspace: "conversation", threadId: "thread-2", missionId: null });
     expect(readRoute()).toEqual({
-      workspace: "conversation", threadId: "thread-2", missionId: null,
+      workspace: "conversation", threadId: "thread-2", missionId: null, opsPage: "dashboard",
     });
+  });
+
+  it("round-trips the ops dashboard and monitoring pages", () => {
+    writeRoute({ workspace: "ops", opsPage: "monitoring" });
+    expect(location.search).toContain("ops=monitoring");
+    expect(location.search).not.toContain("office=");
+    expect(readRoute()).toMatchObject({ workspace: "ops", opsPage: "monitoring" });
+
+    writeRoute({ workspace: "ops", opsPage: "dashboard" });
+    expect(readRoute()).toMatchObject({ workspace: "ops", opsPage: "dashboard" });
+
+    writeRoute({ workspace: "conversation" });
+    expect(location.search).not.toContain("ops=");
+    expect(readRoute().workspace).toBe("conversation");
   });
 });

@@ -40,6 +40,10 @@ class SnapshotStore:
         path = Path(raw)
         self._base = path if path.is_absolute() else repo_root() / path
 
+    @property
+    def base_dir(self) -> Path:
+        return self._base
+
     def save(self, snapshot: DomainStateSnapshot) -> Path:
         domain = _safe_path_segment(snapshot.domain, label="domain")
         as_of = _safe_path_segment(snapshot.as_of, label="as_of")
@@ -84,9 +88,9 @@ class SnapshotStore:
     ) -> tuple[ResolvedMetric, DomainStateSnapshot] | None:
         """Return a fresh ResolvedMetric and its snapshot from any domain, or None."""
         from seleric_swarm.services.business_state.formatter import is_stale
-        from seleric_swarm.services.domain_health.scheduler import ALL_DOMAINS
+        from seleric_swarm.services.domain_health.resolver import DomainHealthProfiles
 
-        for domain in ALL_DOMAINS:
+        for domain in DomainHealthProfiles().domain_ids():
             snapshot = await self.aget_latest(domain)
             if snapshot is None or snapshot.status == "UNAVAILABLE" or is_stale(snapshot, max_age_hours=max_age_hours):
                 continue

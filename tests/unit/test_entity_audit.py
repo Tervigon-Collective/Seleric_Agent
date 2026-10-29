@@ -147,3 +147,74 @@ async def test_without_a_named_list_the_spend_view_still_leads_so_no_entity_is_d
     view = await tool(Ctx(), query_ids=["qm"])
     assert view.success is True
     assert "ENTITY AUDIT over 24 entities" in view.summary and "11 of 24 entities recorded no orders" in view.summary
+
+
+# ---- live 2026-10-29 thread_b5b744 / MS3-b9d572c736: "Which ads? Our products have seen a dip ..." --------------------------------
+# audit_entities got the product result (keyed product_title) AND the page-view result (keyed product_handle). They share no
+# entity key, so the join silently fell back to the spend view alone: no orders, "no ranking is possible", and the model ranked itself.
+def _product_result(limit: int | None = None):
+    ads = {"query_id": "q_ads", "columns": ["product_title", "product_ad_spend", "product_net_roas"],
+           "provenance": {"metric_ids": ["product_ad_spend", "product_net_roas"], "currency": "INR"},
+           "rows": [{"product_ad_spend": "138953.84", "product_net_roas": "0.0688"},  # the row with no product
+                    {"product_title": "Pawveralls Pro", "product_ad_spend": "14409.17", "product_net_roas": "1.6084"},
+                    {"product_title": "WildTrail Boots", "product_ad_spend": "13331.05", "product_net_roas": "0.6726"},
+                    {"product_title": "Sofa Seat Cover", "product_ad_spend": "12884.54", "product_net_roas": "1.2659"}]}
+    profit = {"query_id": "q_profit", "columns": ["product_title", "product_orders"],
+              "provenance": {"metric_ids": ["product_orders"], "currency": "INR"},
+              "rows": [{"product_title": "Pawveralls Pro", "product_orders": "19"}, {"product_title": "WildTrail Boots", "product_orders": "10"},
+                       {"product_title": "Sofa Seat Cover", "product_orders": "9"}]}
+    return {"query_id": "q_prod", "composed": True, "parts": [ads, profit]}, {"limit": limit} if limit else {}
+
+
+def _page_views_result():
+    return {"query_id": "q_pdp", "columns": ["product_handle", "pdp_page_views"],
+            "provenance": {"metric_ids": ["pdp_page_views"], "currency": "INR"},
+            "rows": [{"product_handle": "pawveralls-pro-boots", "pdp_page_views": "481"}]}
+
+
+def _audit_tool(*payloads, args: dict | None = None):
+    state = TurnState(payloads=list(payloads))
+    state.evidence.append({"tool": "metrics_query", "query_id": "q_prod", "args": args or {}})
+    tool = next(t for t in build_local_tools(state) if t.__name__ == "audit_entities")
+
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+    catalogue = CatalogueSnapshot(metrics=tuple(
+        CatalogueMetricMeta(id=i, label=i, raw={"unit": "INR", "aggregation": "additive"})
+        for i in ("product_ad_spend", "product_net_roas", "product_orders", "pdp_page_views")))
+
+    class Ctx:
+        class deps:
+            pass
+
+    Ctx.deps.catalogue = catalogue  # type: ignore[attr-defined]
+    return tool, Ctx()
+
+
+@pytest.mark.asyncio
+async def test_results_keyed_by_different_entities_are_refused_not_silently_reduced_to_one():
+    product, args = _product_result()
+    tool, ctx = _audit_tool(product, _page_views_result(), args=args)
+    view = await tool(ctx, query_ids=["q_prod", "q_pdp"])
+    assert view.success is False and view.error_code == "INSUFFICIENT_EVIDENCE"
+    assert "product_title" in view.summary and "product_handle" in view.summary and "q_pdp" in view.summary
+
+
+@pytest.mark.asyncio
+async def test_the_product_result_alone_is_audited_with_orders_unattributed_spend_and_a_ranking():
+    product, args = _product_result()
+    tool, ctx = _audit_tool(product, args=args)
+    view = await tool(ctx, query_ids=["q_prod"])
+    assert view.success is True
+    for expected in ("ORDERS: 38 in total", "UNATTRIBUTED: ₹1,38,954", "EVIDENCED (≥5 orders) best: Pawveralls Pro",
+                     "returning less than spend: WildTrail Boots"):
+        assert expected in view.summary
+    assert "COVERAGE" not in view.summary  # 4 rows, no limit: nothing was cut
+
+
+@pytest.mark.asyncio
+async def test_a_result_that_hit_its_row_limit_says_the_portfolio_covers_only_those_rows():
+    product, args = _product_result(limit=4)  # the spend view returned exactly its limit of 4 rows
+    tool, ctx = _audit_tool(product, args=args)
+    view = await tool(ctx, query_ids=["q_prod"])
+    assert view.success is True
+    assert "COVERAGE" in view.summary and "limit of 4" in view.summary and "not in these totals" in view.summary

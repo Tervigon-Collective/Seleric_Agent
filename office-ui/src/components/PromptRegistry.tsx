@@ -32,8 +32,7 @@ function PromptChip({
 }) {
   const badges = showBadges
     ? [
-        prompt.level === "L1" ? "L1" : null,
-        prompt.tags.includes("golden") ? "Golden" : null,
+        prompt.tags.includes("exec") ? "Executive" : null,
         prompt.tags.includes("diagnosis") ? "Diagnosis" : null,
       ].filter(Boolean)
     : [];
@@ -59,7 +58,7 @@ function PromptChip({
 
 export function PromptRegistry({
   onPicked,
-  defaultChip = "L1",
+  defaultChip = "exec",
   surface = "browse",
 }: {
   onPicked?: () => void;

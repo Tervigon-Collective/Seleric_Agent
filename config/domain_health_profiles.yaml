@@ -1,4 +1,5 @@
-# Domain Health Snapshot profiles.
+# Domain Health Snapshot profiles: the shipped defaults for the Ops tab and the business snapshot.
+# Users change the selection on the Monitoring page; their choices are stored as overrides beside the snapshots, not here.
 # See docs/features/business-state-service/04_DOMAIN_HEALTH_SNAPSHOTS.md and
 # 05_SPRINT_PLAN.md Sprint 3/4. Adding a metric to a domain's snapshot, adding
 # a domain, or tuning a threshold is a YAML edit here -- resolver.py is
@@ -34,8 +35,15 @@
 # same call's window). Enabled on the 10 cross-domain headline metrics only;
 # flip it on for more metrics here if the fast path needs wider anomaly
 # coverage (business_state_ready_store.md Phase 4 "Active Anomalies").
+# `direction_bad: up|down` on an entry says which way is bad where the catalogue's own metric entry is silent. A metric
+# with no direction anywhere is watched but never alerted. The catalogue (agent_policy.yaml in Agent Core) is the proper
+# home for these; they are here because that file is not writable from this repo. The Monitoring page can override any of them.
+# `title` / `description` are what the Ops tab shows; `catalogue_domains` (default: the domain id) picks which catalogue
+# domains the Monitoring page offers metrics from.
 domains:
   commerce:
+    title: Commerce
+    description: Orders and sales as the store records them.
     agent_id: commerce_agent
     metrics:
       - { metric_id: net_sales, features: [period_delta_pct, rolling_mean_7d], anomaly: true }
@@ -53,22 +61,21 @@ domains:
       - { id: order_volume_drop, metric_id: orders, rule: period_delta_pct_below, threshold: -20 }
 
   finance:
+    title: Finance
+    description: Profit, margin, MER and the cost lines behind them.
     agent_id: finance_agent
     metrics:
       - { metric_id: net_profit, catalogue_metric: net_profit, date_axis: event_date, features: [period_delta_pct, rolling_mean_7d], anomaly: true }
-      - { metric_id: net_profit_shopify, catalogue_metric: net_profit, date_axis: event_date, features: [period_delta_pct] }
       - { metric_id: mer, catalogue_metric: mer, date_axis: event_date, features: [period_delta_pct, rolling_mean_7d], anomaly: true }
-      - { metric_id: gross_margin_pct, catalogue_metric: contribution_margin_pct, date_axis: event_date, features: [period_delta_pct] }
       - { metric_id: contribution_margin, catalogue_metric: contribution_margin, date_axis: event_date, features: [period_delta_pct] }
       - { metric_id: contribution_margin_pct, catalogue_metric: contribution_margin_pct, date_axis: event_date, features: [period_delta_pct], anomaly: true }
       - { metric_id: net_margin_pct, catalogue_metric: net_margin_pct, date_axis: event_date, features: [period_delta_pct] }
-      - { metric_id: rto_cost, catalogue_metric: rto_cost, date_axis: event_date, features: [period_delta_pct] }
-      - { metric_id: operating_cost, catalogue_metric: operating_cost, date_axis: event_date, features: [period_delta_pct] }
+      - { metric_id: rto_cost, direction_bad: up, catalogue_metric: rto_cost, date_axis: event_date, features: [period_delta_pct] }
+      - { metric_id: operating_cost, direction_bad: up, catalogue_metric: operating_cost, date_axis: event_date, features: [period_delta_pct] }
       - { metric_id: net_cogs, catalogue_metric: net_cogs, date_axis: event_date, features: [period_delta_pct] }
-      - { metric_id: shipping_cost, catalogue_metric: shipping_cost, date_axis: event_date, features: [period_delta_pct] }
-      - { metric_id: packaging_cost, catalogue_metric: packaging_cost, date_axis: event_date, features: [period_delta_pct] }
-      - { metric_id: payment_gateway_fees, catalogue_metric: payment_gateway_fees, date_axis: event_date, features: [period_delta_pct] }
-      - { metric_id: gross_profit, catalogue_metric: contribution_margin, date_axis: event_date, features: [period_delta_pct] }
+      - { metric_id: shipping_cost, direction_bad: up, catalogue_metric: shipping_cost, date_axis: event_date, features: [period_delta_pct] }
+      - { metric_id: packaging_cost, direction_bad: up, catalogue_metric: packaging_cost, date_axis: event_date, features: [period_delta_pct] }
+      - { metric_id: payment_gateway_fees, direction_bad: up, catalogue_metric: payment_gateway_fees, date_axis: event_date, features: [period_delta_pct] }
       # Order-date twins: the headline's basis (same as net sales and orders).
       - { metric_id: net_profit_order, catalogue_metric: net_profit, features: [period_delta_pct, rolling_mean_7d], anomaly: true }
       - { metric_id: mer_order, catalogue_metric: mer, features: [period_delta_pct, rolling_mean_7d], anomaly: true }
@@ -77,14 +84,16 @@ domains:
       - { id: net_profit_drop, metric_id: net_profit, rule: period_delta_pct_below, threshold: -15 }
 
   performance:
+    title: Paid media
+    description: Spend, reach and creative engagement on Meta and Google.
     agent_id: performance_agent
     metrics:
       - { metric_id: spend, catalogue_metric: ad_spend, features: [period_delta_pct, rolling_mean_7d], anomaly: true }
       - { metric_id: net_roas, features: [period_delta_pct, rolling_mean_7d], anomaly: true }
       - { metric_id: gross_roas, features: [period_delta_pct, rolling_mean_7d] }
-      - { metric_id: cac, catalogue_metric: channel_cac, features: [rolling_mean_7d, rolling_std_7d], anomaly: true }
-      - { metric_id: cpm, catalogue_metric: cpm, filters: { ad_platform: meta }, features: [period_delta_pct] }
-      - { metric_id: cpc, catalogue_metric: cpc, filters: { ad_platform: meta }, features: [period_delta_pct] }
+      - { metric_id: cac, direction_bad: up, catalogue_metric: channel_cac, features: [rolling_mean_7d, rolling_std_7d], anomaly: true }
+      - { metric_id: cpm, direction_bad: up, catalogue_metric: cpm, filters: { ad_platform: meta }, features: [period_delta_pct] }
+      - { metric_id: cpc, direction_bad: up, catalogue_metric: cpc, filters: { ad_platform: meta }, features: [period_delta_pct] }
       - { metric_id: ctr, catalogue_metric: ctr, filters: { ad_platform: meta }, features: [period_delta_pct] }
       - { metric_id: meta_spend, catalogue_metric: ad_spend, filters: { ad_platform: meta }, features: [period_delta_pct] }
       - { metric_id: google_spend, catalogue_metric: ad_spend, filters: { ad_platform: google }, features: [period_delta_pct] }
@@ -93,31 +102,33 @@ domains:
       - { metric_id: meta_clicks, catalogue_metric: clicks, filters: { ad_platform: meta }, features: [period_delta_pct] }
       - { metric_id: google_clicks, catalogue_metric: clicks, filters: { ad_platform: google }, features: [period_delta_pct] }
       - { metric_id: google_ctr, catalogue_metric: ctr, filters: { ad_platform: google }, features: [period_delta_pct] }
-      - { metric_id: google_cpc, catalogue_metric: cpc, filters: { ad_platform: google }, features: [period_delta_pct] }
-      - { metric_id: google_cpm, catalogue_metric: cpm, filters: { ad_platform: google }, features: [period_delta_pct] }
+      - { metric_id: google_cpc, direction_bad: up, catalogue_metric: cpc, filters: { ad_platform: google }, features: [period_delta_pct] }
+      - { metric_id: google_cpm, direction_bad: up, catalogue_metric: cpm, filters: { ad_platform: google }, features: [period_delta_pct] }
       - { metric_id: meta_video_completion_rate, catalogue_metric: video_completion_rate, filters: { ad_platform: meta }, features: [period_delta_pct] }
       - { metric_id: meta_landing_page_views, catalogue_metric: landing_page_views, filters: { ad_platform: meta }, features: [period_delta_pct] }
-      - { metric_id: meta_cost_per_landing_page_view, catalogue_metric: cost_per_landing_page_view, filters: { ad_platform: meta }, features: [period_delta_pct] }
+      - { metric_id: meta_cost_per_landing_page_view, direction_bad: up, catalogue_metric: cost_per_landing_page_view, filters: { ad_platform: meta }, features: [period_delta_pct] }
+      - { metric_id: hook_rate, direction_bad: down, features: [period_delta_pct] }
+      - { metric_id: hold_rate_15s, direction_bad: down, features: [period_delta_pct] }
     health_signals:
       - { id: net_roas_drop, metric_id: net_roas, rule: period_delta_pct_below, threshold: -15 }
 
   attribution:
+    title: Attribution
+    description: Order value and refunds seen through the attribution view.
     agent_id: attribution_agent
     metrics:
-      - { metric_id: attributed_net_revenue, catalogue_metric: net_sales, features: [period_delta_pct, rolling_mean_7d] }
       - { metric_id: attributed_gross_revenue, catalogue_metric: order_value_incl_tax, features: [period_delta_pct] }
       - { metric_id: attributed_refund_amount, catalogue_metric: refund_amount, features: [period_delta_pct] }
-      - { metric_id: attributed_orders, catalogue_metric: orders, features: [period_delta_pct] }
-      - { metric_id: attributed_new_customer_orders, catalogue_metric: new_customers, features: [period_delta_pct] }
       - { metric_id: attributed_aov, catalogue_metric: net_aov, features: [period_delta_pct] }
       # meta_attr_* (orders/net_revenue/gross_revenue/aov) are in the registry but
       # NOT in the live Cube catalogue ("unknown metric") — dropped until the
       # catalogue exposes them, else every attribution snapshot degrades. Re-add
       # here when catalogue_get_metric resolves them.
-    health_signals:
-      - { id: attributed_revenue_drop, metric_id: attributed_net_revenue, rule: period_delta_pct_below, threshold: -15 }
+    health_signals: []
 
   funnel:
+    title: Website and funnel
+    description: Traffic, product pages and the steps to checkout.
     agent_id: funnel_agent
     metrics:
       - { metric_id: sessions, features: [period_delta_pct, rolling_mean_7d] }
@@ -127,34 +138,42 @@ domains:
       - { metric_id: pdp_view_rate, catalogue_metric: product_view_rate, features: [period_delta_pct] }
       - { metric_id: atc_to_purchase_rate, catalogue_metric: checkout_to_purchase_rate, features: [period_delta_pct] }
       - { metric_id: bounce_rate, features: [period_delta_pct] }
-      - { metric_id: funnel_conversion_rate, catalogue_metric: conversion_rate, features: [period_delta_pct] }
       - { metric_id: funnel_purchases, features: [period_delta_pct] }
+      - { metric_id: pdp_page_views, features: [period_delta_pct] }
+      - { metric_id: pdp_engaged_rate, features: [period_delta_pct] }
+      - { metric_id: pdp_add_to_cart_rate, features: [period_delta_pct] }
     health_signals:
       - { id: traffic_drop, metric_id: sessions, rule: period_delta_pct_below, threshold: -20 }
 
   product:
+    title: Product
+    description: Units and margin by product.
     agent_id: product_agent
     metrics:
       - { metric_id: product_net_revenue, catalogue_metric: product_order_net_sales, features: [period_delta_pct, rolling_mean_7d] }
       - { metric_id: product_gross_margin_pct, catalogue_metric: product_contribution_margin_pct, features: [period_delta_pct] }
       - { metric_id: units_sold, features: [period_delta_pct] }
-      - { metric_id: product_orders, catalogue_metric: orders, features: [period_delta_pct] }
     health_signals:
       - { id: product_revenue_drop, metric_id: product_net_revenue, rule: period_delta_pct_below, threshold: -15 }
 
   customer:
+    title: Customers
+    description: Repeat buying and customer counts.
     agent_id: customer_agent
     metrics:
       - { metric_id: repeat_rate, feature_class: windowed_point, features: [] }
       - { metric_id: customers, features: [period_delta_pct] }
       - { metric_id: repeat_customers, features: [period_delta_pct] }
-      - { metric_id: first_orders, catalogue_metric: new_customers, features: [period_delta_pct] }
     health_signals: []
 
   operations:
+    title: Operations and inventory
+    description: Refunds, stock on hand and inventory sync.
     agent_id: operations_agent
     metrics:
-      - { metric_id: refunded_amount_excl_tax, features: [period_delta_pct] }
+      - { metric_id: refunded_amount_excl_tax, direction_bad: up, features: [period_delta_pct] }
+      - { metric_id: available_units, features: [period_delta_pct] }
+      - { metric_id: inventory_sync_errors, direction_bad: up, features: [period_delta_pct] }
     health_signals:
       - { id: refund_spike, metric_id: refunded_amount_excl_tax, rule: period_delta_pct_above, threshold: 30 }
 

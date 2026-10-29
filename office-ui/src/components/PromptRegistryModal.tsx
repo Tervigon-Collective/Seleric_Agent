@@ -39,7 +39,7 @@ export function PromptRegistryModal({
         <header className="prompt-registry-modal-head">
           <div>
             <h2 id="prompt-registry-title">Prompt registry</h2>
-            <p>Browse L1, golden, diagnosis, and domain questions — click to edit in the input.</p>
+            <p>Browse executive, diagnosis, and domain questions — click to edit in the input.</p>
           </div>
           <button
             ref={closeRef}
@@ -52,7 +52,7 @@ export function PromptRegistryModal({
             <XIcon size={16} />
           </button>
         </header>
-        <PromptRegistry onPicked={onClose} defaultChip="golden" />
+        <PromptRegistry onPicked={onClose} defaultChip="exec" />
       </section>
     </div>
   );

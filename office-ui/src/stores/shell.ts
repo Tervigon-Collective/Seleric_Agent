@@ -1,7 +1,8 @@
 import { create } from "zustand";
 
 export type DetailTab = "Causal" | "Debug" | "Memory";
-export type Workspace = "conversation" | "office";
+export type Workspace = "conversation" | "office" | "ops";
+export type OpsPage = "dashboard" | "monitoring";
 
 const DETAIL_TABS: readonly DetailTab[] = ["Debug", "Causal", "Memory"];
 const DETAILS_OPEN_KEY = "seleric.detailsOpen";
@@ -37,14 +38,27 @@ function persistDetails(detailsOpen: boolean, detailTab: DetailTab) {
   }
 }
 
+function initialWorkspace(): Workspace {
+  const params = new URLSearchParams(location.search);
+  if (params.get("office") === "1") return "office";
+  return params.has("ops") ? "ops" : "conversation";
+}
+
+function initialOpsPage(): OpsPage {
+  return new URLSearchParams(location.search).get("ops") === "monitoring" ? "monitoring" : "dashboard";
+}
+
 interface ShellState {
   detailTab: DetailTab;
   workspace: Workspace;
+  opsPage: OpsPage;
   sidebarOpen: boolean;
   detailsOpen: boolean;
   selectedArtifact: Record<string, unknown> | null;
   setDetailTab: (tab: DetailTab) => void;
   setWorkspace: (workspace: Workspace) => void;
+  /** Open the Ops workspace on one of its pages (dashboard, or the monitoring configuration). */
+  openOps: (page: OpsPage) => void;
   toggleSidebar: () => void;
   toggleDetails: () => void;
   /** Open the inspector at a specific tab (evidence on demand). */
@@ -54,7 +68,8 @@ interface ShellState {
 
 export const useShellStore = create<ShellState>((set, get) => ({
   detailTab: readStoredDetailTab(),
-  workspace: new URLSearchParams(location.search).get("office") === "1" ? "office" : "conversation",
+  workspace: initialWorkspace(),
+  opsPage: initialOpsPage(),
   // Sidebar visible on desktop; inspector restores the last open/closed choice.
   sidebarOpen: true,
   detailsOpen: readStoredDetailsOpen(),
@@ -64,6 +79,7 @@ export const useShellStore = create<ShellState>((set, get) => ({
     persistDetails(get().detailsOpen, detailTab);
   },
   setWorkspace: (workspace) => set({ workspace }),
+  openOps: (opsPage) => set({ workspace: "ops", opsPage }),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   toggleDetails: () => {
     const detailsOpen = !get().detailsOpen;

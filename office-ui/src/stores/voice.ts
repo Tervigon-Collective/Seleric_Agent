@@ -17,7 +17,7 @@ interface VoiceState {
   /** Audio streams the voice screen analyses to animate the orb. */
   micStream: MediaStream | null;
   agentStream: MediaStream | null;
-  start: () => Promise<void>;
+  start: (expanded?: boolean) => Promise<void>;
   stop: () => Promise<void>;
   toggleMute: () => Promise<void>;
 }
@@ -43,7 +43,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   micStream: null,
   agentStream: null,
 
-  start: async () => {
+  start: async (expanded = false) => {
     if (get().status !== "idle" && get().status !== "error") return;
     if (!navigator?.mediaDevices?.getUserMedia) {
       set({
@@ -53,7 +53,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       return;
     }
     const generation = ++attempt;
-    set({ status: "connecting", muted: false, error: null, expanded: false, captions: { user: "", assistant: "" } });
+    set({ status: "connecting", muted: false, error: null, expanded, captions: { user: "", assistant: "" } });
     const conversation = useConversationStore.getState();
     try {
       if (!conversation.selectedThreadId) await conversation.createThread();

@@ -1,0 +1,108 @@
+%% Seleric Agent - high-level system design, derived from the code (not from docs).
+%% Sources: docker-compose.yml, main.py, bootstrap.py, runtime.py, recovery.py, api/*, agent/*, config/mcp_servers.yaml.
+%% Legend: red dashed = known gap (G#, see SYSTEM_DESIGN_LOW_LEVEL.mmd for detail), green = fixed locally (uncommitted),
+%%         grey = outside this repo (not verified here).
+flowchart TB
+    subgraph CLIENTS["Clients"]
+        UI["office-ui<br/>React app, threads and missions, SSE events"]
+        VOICE["voice worker<br/>livekit-agents, Azure STT and TTS<br/>compose profile: voice"]
+        EXT["API consumers<br/>x-api-key"]
+    end
+
+    subgraph API["api container - FastAPI main.py"]
+        MW["Middleware<br/>RequestId, API-key principal, rate limit, CORS"]
+        ROUTES["Routers<br/>/v1 conversations, phase7, emails<br/>/v1/office, /v1/missions<br/>business_state, monitoring, health and ready"]
+        SUBMIT["Submit run<br/>persist run and outbox, enqueue notify"]
+    end
+
+    subgraph EXEC["recovery container - seleric-recover"]
+        WORKER["RunRecoveryWorker<br/>claims runs, lease and heartbeat<br/>drain on SIGTERM"]
+        RUN["run_v3_mission<br/>one reasoning loop per turn"]
+    end
+
+    subgraph AGENT["Agent runtime - agent/"]
+        CTX["Context builder<br/>history, memories, thread summary,<br/>earlier query ids and figures"]
+        LOOP["run_turn - PydanticAI Agent<br/>step, tool-call and time budgets"]
+        TOOLS["Tools<br/>Core MCP read tools + local helpers<br/>diagnose, break down, forecast, explore,<br/>run_python, audit_entities, email drafts"]
+        GROUND["Answer checks<br/>figure grounding, one corrective pass,<br/>answer cleanup, visual attach"]
+    end
+
+    subgraph ANALYTICS["Analysis engines - in repo"]
+        CAUSAL["causal/ and toolsets/diagnosis<br/>decomposition, segments, DoWhy<br/>forkserver process pool"]
+        FORECAST["forecasting/<br/>Chronos service client"]
+        EXPLORE["exploration/<br/>catalogue-driven screening"]
+        SANDBOX["sandbox child process<br/>no network, limited files, hard timeout"]
+    end
+
+    subgraph DATA["Data plane"]
+        GATEWAY["MCPGateway<br/>streamable_http, SELERIC_MCP_URL"]
+        CORE["Seleric Core MCP server<br/>catalogue, metrics_query, drilldown, insights_explain"]
+        CUBE["Cube and warehouse<br/>behind Core"]
+        CATBOOT["CatalogueBootstrap<br/>warms and caches the catalogue snapshot"]
+        QDRANT["Qdrant<br/>catalogue concept embeddings"]
+    end
+
+    subgraph STATE["State - this repo"]
+        PG[("Postgres 16<br/>threads, messages, runs, artifacts,<br/>memories, summaries, feedback,<br/>episodic events, missions, evidence")]
+        REDIS[("Redis<br/>cancellation flags, mail approval records")]
+        BLOB[("Blob store<br/>MinIO or local + ClamAV scan")]
+        FILES[("Local files<br/>domain-health snapshots, forecast reports")]
+    end
+
+    subgraph MODEL["Model layer"]
+        LLM["LLMGateway + MeteredLLMPort<br/>azure_openai_compatible adapter<br/>circuit breaker, metering"]
+    end
+
+    subgraph SIDE["Side services"]
+        CRON["business-state-cron<br/>domain_health scheduler, forecast scoring<br/>every 60s"]
+        MAIL["MailService<br/>draft, approval, send, MailTransport"]
+    end
+
+    UI --> MW
+    VOICE --> MW
+    EXT --> MW
+    MW --> ROUTES --> SUBMIT
+    SUBMIT --> PG
+    SUBMIT -. notify .-> REDIS
+    PG --> WORKER --> RUN --> CTX --> LOOP
+    LOOP <--> LLM
+    LOOP --> TOOLS
+    TOOLS --> GATEWAY --> CORE --> CUBE
+    TOOLS --> CAUSAL
+    TOOLS --> FORECAST
+    TOOLS --> EXPLORE
+    TOOLS --> SANDBOX
+    CATBOOT --> GATEWAY
+    CATBOOT --> QDRANT
+    CAUSAL --> GATEWAY
+    LOOP --> GROUND --> PG
+    GROUND -. events .-> ROUTES
+    ROUTES -. SSE and polling .-> UI
+    TOOLS --> MAIL
+    MAIL --> REDIS
+    UI -. uploads .-> BLOB
+    CRON --> FILES
+    CRON --> GATEWAY
+    ROUTES --> FILES
+    CTX --> PG
+
+    %% ---- gaps (details in SYSTEM_DESIGN_LOW_LEVEL.mmd) ----
+    GAP_ROUTE["G5 G9: tool routing and premise check<br/>exist only as prompt text"]
+    GAP_CLAIM["G6: grounding checks figures,<br/>not the claims around them"]
+    GAP_REMOTE["G3 G4: remote totals sum capped rows,<br/>multi-view parts limited separately"]
+    GAP_BRIDGE["G8: no entity bridge<br/>title to handle, campaign to product"]
+    GAP_ROLES["G7: metric roles hardcoded<br/>in policy_config and composition"]
+    GAP_VEC["G10 G11: semantic port default off,<br/>no pgvector in the compose image"]
+    LOOP -.- GAP_ROUTE
+    GROUND -.- GAP_CLAIM
+    CORE -.- GAP_REMOTE
+    TOOLS -.- GAP_BRIDGE
+    TOOLS -.- GAP_ROLES
+    PG -.- GAP_VEC
+
+    classDef gap fill:#fdecea,stroke:#c62828,stroke-width:2px,stroke-dasharray:5 3,color:#7f0000
+    classDef ext fill:#eceff1,stroke:#607d8b,color:#37474f
+    classDef store fill:#e8f1fb,stroke:#1565c0
+    class GAP_ROUTE,GAP_CLAIM,GAP_REMOTE,GAP_BRIDGE,GAP_ROLES,GAP_VEC gap
+    class CORE,CUBE,QDRANT ext
+    class PG,REDIS,BLOB,FILES store
