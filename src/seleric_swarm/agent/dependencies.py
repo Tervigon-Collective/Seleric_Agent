@@ -7,7 +7,7 @@ models), one instance per mission run, immutable for the run's lifetime.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
@@ -98,6 +98,9 @@ class SelericDeps:
     # The date axis the user picked for this chat ("order_date" | "event_date"); None leaves it to Core's default.
     # Applied to MCP calls by the tool layer (mcp_toolset, toolsets/_data), never written into the prompt.
     date_axis: str | None = None
+    # The period the previous turn worked on (agent/analysis_context.last_window); a diagnosis with no window of its
+    # own reads this before falling back to yesterday (business_model policy diagnosis_window: from_context).
+    context_window: tuple[date, date] | None = None
     # Real per-mission execution-limit enforcement (agent/limits.py). Not a
     # dataclass default_factory: ExecutionBudgetTracker needs this same
     # instance's own `limits`, so it's built in __post_init__ instead — every

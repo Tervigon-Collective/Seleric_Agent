@@ -25,13 +25,14 @@ from typing import Any
 from pydantic import BaseModel, Field
 from pydantic_ai import RunContext
 
-from seleric_swarm.agent import present
+from seleric_swarm.agent import analysis_context, present
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.email_tools import build_email_tools
 from seleric_swarm.agent.grounding import answer_numbers
 from seleric_swarm.agent.mcp_toolset import TurnState
 from seleric_swarm.agent.model import LOOP_ESCALATED_EFFORT, LOOP_WRITEUP_EFFORT, set_loop_effort
 from seleric_swarm.agent.output import ToolResult
+from seleric_swarm.mail import evidence as mail_evidence
 from seleric_swarm.toolsets import (
     analytics,
     composition,
@@ -53,9 +54,17 @@ def query_id_of(payload: dict[str, Any]) -> str:
     return str(payload.get("query_id") or (prov.get("query_id") if isinstance(prov, dict) else "") or "")
 
 
+def _whole(payload: dict[str, Any]) -> bool:
+    """No list in the kept result was cut (compact_value marks a cut list with a '... N more items' string)."""
+    return not any(isinstance(x, str) and x.startswith("... ") for v in (payload, *(payload.get("parts") or []))
+                   if isinstance(v, dict) for rows in v.values() if isinstance(rows, list) for x in rows)
+
+
 def _payload_for(state: TurnState, query_id: str) -> dict[str, Any] | None:
-    """The fetched result with this query id: a whole result, or one part of a multi-view result."""
-    for p in state.payloads:
+    """The fetched result with this query id: a whole result, or one part of a multi-view result. A result of an
+    earlier turn is used when it was kept whole (its rows were not cut)."""
+    earlier = [p for p in state.prior_payloads if isinstance(p, dict) and _whole(p)]
+    for p in [*state.payloads, *earlier]:
         if not isinstance(p, dict):
             continue
         if query_id_of(p) == query_id:
@@ -76,6 +85,25 @@ def _no_table(state: TurnState, query_id: str, *, found: bool) -> str:
                 "then call show_table with the new query_id.")
     return (f"No fetched result has query_id {query_id!r}. Fetched this turn: {sorted(state.by_query) or 'nothing yet'}. "
             "Fetch the rows with metrics_query first, or pass the table id that break_down_metric printed for its lines.")
+
+
+def _rehydrate(deps: SelericDeps | None, state: TurnState, query_ids: list[str] | None) -> None:
+    """Query ids from earlier turns of the thread: their rows are stored as evidence under the query id (a multi-view
+    parent under its parts' ids). Map them so a follow-up computes on, charts or tabulates them without re-fetching."""
+    missing = [q for q in query_ids or [] if q not in state.by_query]
+    if not missing or not callable(getattr(getattr(deps, "artifact_store", None), "list_for_mission", None)):
+        return
+    try:
+        wanted = {q: {q, *mail_evidence._part_ids(deps, q)} for q in missing}
+        for mission in mail_evidence._mission_ids(deps):
+            for a in deps.artifact_store.list_for_mission(mission):
+                if a.artifact_type != "evidence":
+                    continue
+                for q, versions in wanted.items():
+                    if a.provenance.query_version in versions:
+                        state.by_query.setdefault(q, []).append(a.id)
+    except Exception:  # a store that cannot be read leaves the 'not fetched' answer in place
+        _log.warning("rehydrate_failed", exc_info=True)
 
 
 def _evidence_for(state: TurnState, query_ids: list[str] | None, evidence_ids: list[str] | None = None) -> list[str] | None:
@@ -141,6 +169,7 @@ def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False, quotable
         summary = getattr(result, "summary", None)
         if summary is None:
             summary = result if isinstance(result, str) else json.dumps(result, default=str)
+        state.context.append(analysis_context.entry(fn.__name__, kwargs, result if isinstance(result, dict) else None, ok=not failed))
         state.steps.append({"kind": "tool_call", "tool": fn.__name__, "args": {k: str(v)[:200] for k, v in kwargs.items()}})
         step = {"kind": "tool_return", "tool": fn.__name__, "ok": not failed, "ms": ms, "result": str(summary)}
         source = getattr(getattr(result, "provenance", None), "source_metadata", None)
@@ -191,6 +220,7 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None, is_cance
         every number in it is recorded so it can be cited. No network, no eval/exec, no imports beyond the stdlib set
         above. A code error returns the traceback and the first row: fix it and retry.
         """
+        _rehydrate(getattr(ctx, "deps", None), state, query_ids)
         ids = _evidence_for(state, query_ids)
         if query_ids and ids is None:
             known = sorted(state.by_query)
@@ -214,6 +244,7 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None, is_cance
         parts over time, donut/treemap share of a whole, grouped_bar or scatter two measures per entity, combo one
         volume + one rate over time, funnel stages, waterfall signed steps, heatmap, radar.
         """
+        _rehydrate(getattr(ctx, "deps", None), state, query_ids)
         return await analytics.generate_visualization(
             ctx, _evidence_for(state, query_ids) or [], intent, title, chart_type
         )

@@ -1090,8 +1090,8 @@ async def _diagnose(
     drivers: list[str] | None = None,
 ) -> ToolResult:
     """Explain why a metric changed: event size, where it sat, evidence-ranked causes. Use for any "why did X
-    rise/fall/change" question (metric_id = catalogue id). event_start/event_end default to the question's
-    period (else yesterday); claimed_direction is what the user asserts ("down"/"up"), checked against the data;
+    rise/fall/change" question (metric_id = catalogue id). event_start/event_end default to the period the
+    conversation was looking at (else yesterday); claimed_direction is what the user asserts ("down"/"up"), checked against the data;
     filters scope the outcome. Returns the event size vs a same-weekday reference, an exact decomposition,
     segment localisation (incl. Simpson's paradox) and DoWhy-estimated drivers labelled supported_cause /
     likely_contributor / correlation / insufficient_evidence (report faithfully, never upgrade). Period
@@ -1110,6 +1110,11 @@ async def _diagnose(
     today = ctx.deps.as_of.date()
     notes: list[str] = []
     default = ctx.deps.as_of - timedelta(days=1)
+    window = getattr(ctx.deps, "context_window", None)
+    if event_start is None and event_end is None and window is not None:
+        # the conversation's period (the user is looking at it), not "yesterday vs usual"
+        event_start, event_end = (datetime.combine(d, datetime.min.time(), tzinfo=tz) for d in window)
+        notes.append(f"no period was named, so the period of the conversation ({window[0]} to {window[1]}) was used")
     start_dt, end_dt = event_start or event_end or default, event_end or event_start or default
     ev_start, ev_end = _inclusive_days(start_dt, end_dt)
     if ev_end < ev_start:

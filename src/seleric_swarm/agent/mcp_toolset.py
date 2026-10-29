@@ -27,6 +27,7 @@ import jsonschema
 from pydantic_ai import RunContext
 from pydantic_ai.tools import Tool
 
+from seleric_swarm.agent import analysis_context
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
@@ -432,7 +433,10 @@ class TurnState:
     steps: list[dict[str, Any]] = field(default_factory=list)
     parts: list[dict[str, Any]] = field(default_factory=list)  # structured answer parts (TABLE) the helpers attach
     tables: dict[str, dict[str, Any]] = field(default_factory=dict)  # table id -> TABLE content a helper offers (break_down_metric)
-    prior_queries: list[str] = field(default_factory=list)  # 'query_id: tool args' of earlier turns (rows are not kept)
+    prior_queries: list[str] = field(default_factory=list)  # 'query_id: tool args' of earlier turns
+    prior_payloads: list[dict[str, Any]] = field(default_factory=list)  # earlier turns' kept results (compacted)
+    prior_context: list[dict[str, Any]] = field(default_factory=list)  # the analysis records of the last turn
+    context: list[dict[str, Any]] = field(default_factory=list)  # this turn's analysis records, one per tool call
     errors: list[str] = field(default_factory=list)
     seen: dict[str, asyncio.Future[Any]] = field(default_factory=dict)
     tool_calls: int = 0
@@ -534,6 +538,7 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
             ms = int((time.perf_counter() - started) * 1000)
             state.tool_ms += ms
             if not dup:
+                state.context.append(analysis_context.entry(name, args, payload, ok=not is_err))
                 if is_err:
                     state.seen.pop(key, None)  # a failure is not cached: the model's retry must run again
                     state.errors.append(f"{name}: {compact(payload)[:300]}")

@@ -196,3 +196,14 @@ def test_any_window_length_is_diagnosed_as_a_period_comparison():
     assert event["reference_kind"] == "the comparison period"
     refs = sorted({r for v in event["reference_days"].values() for r in v})
     assert refs[0] == "2026-08-04" and refs[-1] == "2026-09-02"
+
+
+def test_a_diagnosis_with_no_window_reads_the_conversations_period_and_says_so():
+    """Plan Phase 4 (bug 13 / r54): "is that the reason?" after a September answer diagnoses September, not yesterday."""
+    from dataclasses import replace
+
+    ctx = Ctx(replace(_deps(FakeMcp()), context_window=(date(2026, 9, 3), date(2026, 10, 2))))
+    res = asyncio.run(diagnosis.diagnose_metric_change(ctx, "zz_revenue"))  # type: ignore[arg-type]
+    report = res.provenance.source_metadata["diagnosis"]
+    assert report["event_window"][0] == "2026-09-03" and report["event_window"][-1] == "2026-10-02"
+    assert any("period of the conversation" in n for n in report["data_quality"])

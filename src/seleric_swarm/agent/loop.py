@@ -9,6 +9,7 @@ model request.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -210,6 +211,7 @@ def _instructions(
     prior_queries: list[str],
     budget: _Budget,
     *,
+    prior_context: list[dict[str, Any]] | None = None,
     thread_summary: str = "",
     workspace_notes: str = "",
 ) -> list[Any]:
@@ -226,10 +228,16 @@ def _instructions(
         return ("Queries already run in this conversation (use as parent_query_id when drilling down):\n"
                 + "\n".join(prior_queries)) if prior_queries else ""
 
+    def context_block(_: RunContext[SelericDeps]) -> str:
+        # data, not prose: the metrics, period, filters, dimensions and result ids the previous turn worked with
+        return ("What the previous turn analysed (one record per tool call; a follow-up is about these unless the user "
+                "says otherwise, and its query_ids can be passed to run_python / show_table / show_chart):\n"
+                + json.dumps(prior_context, separators=(",", ":"), ensure_ascii=False, default=str)) if prior_context else ""
+
     def budget_block(_: RunContext[SelericDeps]) -> str:
         return BUDGET_NOTICE if budget.forced else ""
 
-    return [system_prompt, summary_block, memory_block, config_block, prior_block, budget_block]
+    return [system_prompt, summary_block, memory_block, config_block, prior_block, context_block, budget_block]
 
 
 async def run_turn(
@@ -244,6 +252,7 @@ async def run_turn(
     memories: list[str] | None = None,
     prior_queries: list[str] | None = None,
     prior_payloads: list[Any] | None = None,
+    prior_context: list[dict[str, Any]] | None = None,
     thread_summary: str = "",
     workspace_notes: str = "",
     is_cancelled: Callable[[], bool] = lambda: False,
@@ -252,7 +261,9 @@ async def run_turn(
 ) -> LoopResult:
     begin_loop_effort()
     started = time.perf_counter()
-    state = TurnState(today=datetime.now(deps.as_of.tzinfo or UTC).date(), prior_queries=list(prior_queries or []))
+    state = TurnState(today=datetime.now(deps.as_of.tzinfo or UTC).date(), prior_queries=list(prior_queries or []),
+                      prior_payloads=[p for p in prior_payloads or [] if isinstance(p, dict)],
+                      prior_context=list(prior_context or []))
     budget = _Budget(state, is_cancelled=is_cancelled, started=started)
     usage = RunUsage()
     mission_id = deps.mission_id
@@ -283,6 +294,7 @@ async def run_turn(
             memories or [],
             prior_queries or [],
             budget,
+            prior_context=prior_context,
             thread_summary=thread_summary,
             workspace_notes=workspace_notes,
         ),

@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from openai import APITimeoutError as OpenAIAPITimeoutError
 from pydantic_ai.exceptions import ModelHTTPError
 
+from seleric_swarm.agent import analysis_context
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
 from seleric_swarm.agent.loop import LoopResult, history_messages, run_turn
 from seleric_swarm.agent.mcp_toolset import compact_value, tool_defs
@@ -295,14 +296,16 @@ def _payload_ref(payload: dict[str, Any], *, index: int) -> dict[str, Any]:
 
 def _thread_memory(
     store: Any, workspace_id: str, thread_id: str
-) -> tuple[list[str], list[Any], list[dict[str, Any]]]:
-    """Prior queries, compact payloads for grounding, and payload refs for the composition audit."""
+) -> tuple[list[str], list[Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Prior queries, compact payloads for grounding, payload refs for the composition audit, and the analysis
+    records of the latest turn (newest artifacts come first)."""
     queries: list[str] = []
     payloads: list[Any] = []
     refs: list[dict[str, Any]] = []
+    context: list[dict[str, Any]] | None = None
     list_fn = getattr(store, "list_for_context", None)
     if not callable(list_fn):
-        return queries, payloads, refs
+        return queries, payloads, refs, []
     try:
         for artifact in list_fn(workspace_id, thread_id):
             body = getattr(artifact, "payload", None)
@@ -310,6 +313,8 @@ def _thread_memory(
                 continue
             kind = getattr(artifact, "artifact_type", None)
             artifact_id = getattr(artifact, "id", None) or getattr(artifact, "artifact_id", None)
+            if kind == "turn_record" and context is None:
+                context = [e for e in body.get("context") or [] if isinstance(e, dict)]
             if kind == "turn_record" and len(queries) < 40:
                 queries += [str(q) for q in body.get("queries") or []]
             elif kind == "turn_payload_refs" and len(refs) < KEEP_PAYLOADS * 2:
@@ -323,7 +328,7 @@ def _thread_memory(
                         payloads.append(payload)
     except Exception:
         _log.warning("thread_memory_load_failed", exc_info=True)
-    return queries[:40], payloads[:KEEP_PAYLOADS], refs[: KEEP_PAYLOADS * 2]
+    return queries[:40], payloads[:KEEP_PAYLOADS], refs[: KEEP_PAYLOADS * 2], context or []
 
 
 def _persist_turn(
@@ -340,7 +345,8 @@ def _persist_turn(
             workspace_id=workspace_id, artifact_type="turn_record", classification="ui", mission_id=mission_id,
             thread_id=thread_id,
             payload={"query": query, "mission_id": mission_id, "as_of": as_of_dt.date().isoformat(),
-                     "evidence_ids": loop_result.state.evidence_ids[:8], "queries": digest}))
+                     "evidence_ids": loop_result.state.evidence_ids[:8], "queries": digest,
+                     "context": list(getattr(loop_result.state, "context", []))[-analysis_context.MAX_ENTRIES:]}))
         raw = [p for p in loop_result.state.payloads if isinstance(p, dict)]
         keep = [compact_value(p) for p in raw][-KEEP_PAYLOADS:]
         if keep:
@@ -487,7 +493,7 @@ async def run_v3_mission(
             catalogue, defs, guide = await asyncio.gather(
                 _catalogue_snapshot(runtime), _tool_definitions(mcp), _server_guide(mcp)
             )
-            prior_queries, prior_payloads, prior_payload_refs = _thread_memory(
+            prior_queries, prior_payloads, prior_payload_refs, prior_context = _thread_memory(
                 artifact_store, workspace_id, thread_id
             )
             history_turns = _history(bundle, query)
@@ -519,6 +525,7 @@ async def run_v3_mission(
                     agent_retries=int(getattr(runtime.settings, "agent_retries", 2)),
                 ),
                 catalogue=catalogue, metrics=getattr(runtime, "metrics", None), date_axis=date_axis,
+                context_window=analysis_context.last_window(prior_context),
             )
             loop_result = await asyncio.wait_for(
                 run_turn(
@@ -532,6 +539,7 @@ async def run_v3_mission(
                     memories=memory_lines,
                     prior_queries=prior_queries,
                     prior_payloads=prior_payloads,
+                    prior_context=prior_context,
                     thread_summary=thread_summary,
                     workspace_notes=workspace_notes,
                     is_cancelled=lambda: is_cancel_requested(mission_id, runtime),
