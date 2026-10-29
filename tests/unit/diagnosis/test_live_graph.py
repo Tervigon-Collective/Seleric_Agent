@@ -315,3 +315,12 @@ def test_the_priors_carry_the_business_model_the_agent_reads():
     assert all(t["daily"] != t["hourly"] and t["metrics"] for t in bm["grain_twins"])
     assert all(set(e["keys_by_view"]) for e in bm["entities"].values())
     assert bm["policies"]["periods"]["state_window"]
+
+
+def test_customers_is_the_orders_counted_another_way_and_is_never_offered_as_its_cause(definitions):
+    """r74 (2026-10-29): 'Customers is a cause of orders, all refuters pass'. The pair is a reviewed co-measure."""
+    if "customers" not in definitions:
+        pytest.skip("the fixture catalogue has no customers metric")
+    sub = build_subgraph(build_live_graph(definitions).graph, "orders")
+    assert not any(c.metric == "customers" for c in sub.candidates)
+    assert ("customers", "co_measure") in {(p.peer, p.kind) for p in sub.peers}
