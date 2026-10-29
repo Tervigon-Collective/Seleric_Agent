@@ -421,9 +421,20 @@ async def test_a_subgraph_that_cannot_be_built_is_reported_and_does_not_fail_the
     assert failed and failed[0]["error_type"] == "RuntimeError"
 
 
-async def test_a_metric_the_graph_gives_no_candidates_for_falls_back_to_the_lineage_and_says_so(cube_world):
+async def test_a_metric_no_reviewed_edge_reaches_reads_its_causes_through_its_unit_count_and_says_so(cube_world):
+    """discounts has no cause in the reviewed graph; it is recorded on orders, so the causes of orders are offered."""
+    result, record, _ = await _diagnose(cube_world, "discounts")
+    plan = GatherPlan.from_dict(record.request["plan"])
+    assert result.success and plan.subgraph is not None and plan.subgraph.outcome == "orders" and plan.subgraph.candidates
+    assert plan.drivers_from_graph
+    assert any("its causes were read through orders" in n for n in result.provenance.source_metadata["diagnosis"]["data_quality"])
+
+
+async def test_a_metric_the_graph_gives_no_candidates_for_falls_back_to_the_lineage_and_says_so(cube_world, monkeypatch):
+    from seleric_swarm.causal import diagnosis as engine
     from seleric_swarm.diagnosis.trace.run import replay
 
+    monkeypatch.setattr(engine, "unit_count_metric", lambda *a, **k: None)  # no unit count to read the causes through
     result, record, _ = await _diagnose(cube_world, "discounts")
     plan = GatherPlan.from_dict(record.request["plan"])
     assert result.success and plan.subgraph is not None and not plan.subgraph.candidates
