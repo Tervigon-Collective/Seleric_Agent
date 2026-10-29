@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import date, timedelta
 from pathlib import Path
@@ -26,7 +27,7 @@ from tests.unit.diagnosis import engine_world as world
 pytestmark = pytest.mark.filterwarnings("ignore")
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = ROOT / "eval" / "diag" / "fixtures" / "brand20_daily_2026-10.json"
-CORE_GRAPH = Path("/opt/seleric/Seleric_Agent_Core/doc/dependency_graph/dependency_graph.json")
+CORE_GRAPH = Path(os.environ.get("SELERIC_CORE_GRAPH") or "/opt/seleric/Seleric_Agent_Core/doc/dependency_graph/dependency_graph.json")
 
 
 @pytest.fixture(scope="module")
@@ -303,3 +304,14 @@ def test_an_ordinary_day_or_a_disagreeing_measurement_names_no_root():
     ordinary = replace(part.event.analysis, unusual=False, notable=False)  # type: ignore[union-attr]
     drivers = {d.driver: d for d in run_why_event(ordinary, part.what, cfg=env.config, estimator=env.estimator).drivers}  # type: ignore[arg-type]
     assert drivers["m_spend"].classification == "correlation"
+
+
+def test_the_priors_carry_the_business_model_the_agent_reads():
+    bm = load_priors()["business_model"]
+    funnel = next(iter(bm["processes"].values()))
+    stages = [s["id"] for s in funnel["stages"]]
+    assert len(stages) >= 3 and stages[0] != stages[-1]
+    assert all({"events", "session_share", "step_rate", "ledger"} & set(s) for s in funnel["stages"])
+    assert all(t["daily"] != t["hourly"] and t["metrics"] for t in bm["grain_twins"])
+    assert all(set(e["keys_by_view"]) for e in bm["entities"].values())
+    assert bm["policies"]["periods"]["state_window"]

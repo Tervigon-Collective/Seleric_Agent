@@ -1,5 +1,6 @@
 """Write the lean reviewed priors the diagnosis engine reads (plan D-55): mechanism and feedback edges, pairs of metrics
-that are the same quantity, and the funnel tiers of the metrics on a mechanism edge.
+that are the same quantity, the funnel tiers of the metrics on a mechanism edge, and (version 2) the business model:
+entity keys, process stages, hourly twins, measured availability and period policies.
 
 The input is Agent Core's generated graph (read-only here; Core is never edited from this repo). Arithmetic edges
 (composition, ratio, declared input) are NOT copied: the engine reads them from the live catalogue definitions. Twin
@@ -13,13 +14,31 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
-CORE_GRAPH = Path("/opt/seleric/Seleric_Agent_Core/doc/dependency_graph/dependency_graph.json")
+# SELERIC_CORE_GRAPH points at a Core worktree's graph (a branch not merged yet); the default is live Core.
+CORE_GRAPH = Path(os.environ.get("SELERIC_CORE_GRAPH") or "/opt/seleric/Seleric_Agent_Core/doc/dependency_graph/dependency_graph.json")
 OUT = Path(__file__).resolve().parents[1] / "src" / "seleric_swarm" / "diagnosis" / "data" / "priors.json"
 PRODUCT_VIEWS = {"product", "product_pnl"}
 PAIR_KINDS = ("co_measure", "subset", "allocation", "twin")
+
+
+def _business_model(bm: dict) -> dict:
+    """The semantic layer the agent reads (plan 2026-10-29): entity keys per view, process stages, hourly twins,
+    measured availability and the period / definition policies. Joins are not copied: two views join on the keys
+    they share in keys_by_view (same_key lists names of one identifier)."""
+    av = bm.get("availability") or {}
+    return {
+        "entities": {n: {"keys_by_view": e["keys_by_view"], "same_key": e.get("same_key", [])}
+                     for n, e in (bm.get("entities") or {}).items()},
+        "processes": bm.get("processes") or {},
+        "grain_twins": bm.get("grain_twins") or [],
+        "availability": {"measured_on": av.get("measured_on"), "window": av.get("window"),
+                         "views": {v: x for v, x in (av.get("views") or {}).items() if x.get("unavailable") or x.get("last_day_with_data")}},
+        "policies": bm.get("policies") or {},
+    }
 
 
 def build(raw: dict, source_sha: str) -> dict:
@@ -34,7 +53,8 @@ def build(raw: dict, source_sha: str) -> dict:
             continue
         pairs.append({"a": e["from"], "b": e["to"], "kind": e["kind"], "expected": e.get("expected", "")})
     return {
-        "version": 1,
+        "version": 2,
+        "business_model": _business_model(raw.get("business_model") or {}),
         "source": {"file": "doc/dependency_graph/dependency_graph.json", "sha256": source_sha, "graph_digest": raw.get("generated_by", "")},
         "tiers": {str(k): v["name"] if isinstance(v, dict) else v for k, v in raw["tiers"].items()},
         "metric_tiers": {m: nodes[m]["tier"] for m in on_mechanism},
