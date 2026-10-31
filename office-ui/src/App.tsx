@@ -106,7 +106,7 @@ export default function App() {
     localStorage.setItem("seleric.theme", dark ? "dark" : "light");
     document.querySelector('meta[name="theme-color"]')?.setAttribute(
       "content",
-      dark ? "#1b1b1e" : "#ffffff",
+      dark ? "#17181c" : "#ffffff",
     );
   }, [dark]);
   const workspace = useShellStore((s) => s.workspace);

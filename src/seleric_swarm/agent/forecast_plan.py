@@ -26,6 +26,10 @@ async def compile_forecast_plan(
     horizon_days: int = 14,
     entity_dimension: str | None = None,
     entity_values: Sequence[str] = (),
+    combine_entities: bool = False,
+    threshold: float | None = None,
+    period_start: str | date | None = None,
+    period_end: str | date | None = None,
     policies: ForecastPolicies | None = None,
     timezone: str = "Asia/Kolkata",
     canonical: Any | None = None,
@@ -50,6 +54,16 @@ async def compile_forecast_plan(
         if mid not in resolved_ids:
             resolved_ids.append(mid)
 
+    p_end = _iso_date(period_end)
+    if p_end is not None and p_end < as_of_d:
+        raise ValueError(
+            f"period ended {p_end.isoformat()}, before today {as_of_d.isoformat()}: "
+            "a forecast only looks forward, so report the actuals for it instead"
+        )
+    asked_days = horizon_days
+    if p_end is not None:
+        # forecast through the end of the period asked about (calendar month, quarter, ...)
+        horizon_days = (p_end - as_of_d).days + 1
     horizon = resolve_horizon(
         {"n": horizon_days, "unit": "day", "period_word": "next_n"},
         as_of=as_of_d,
@@ -81,6 +95,12 @@ async def compile_forecast_plan(
         else:
             if mid not in expanded:
                 expanded.append(mid)
+
+    if p_end is None and horizon.n_days < asked_days:
+        plan_notes.append(
+            f"horizon_clamped: asked {asked_days} days, policy maximum is {horizon.n_days}; "
+            f"only {horizon.n_days} days are forecast"
+        )
 
     # Entity policy may clamp horizon (platform/channel first).
     entity_max_h: int | None = None
@@ -186,10 +206,17 @@ async def compile_forecast_plan(
     from seleric_swarm.forecasting.assembler import compute_cutoff
 
     cutoff = compute_cutoff(as_of=as_of_d, maturity_days=max_maturity)
+    w_start = max(_iso_date(period_start) or horizon.start, horizon.start)
+    w_end = min(p_end or horizon.end, horizon.end)
+    windowed = (w_start, w_end) != (horizon.start, horizon.end) and w_start <= w_end
     return ForecastPlan(
+        window_start=w_start if windowed else None,
+        window_end=w_end if windowed else None,
         targets=targets_out,
         entity_dimension=entity_dimension,
         entity_values=entity_values,
+        combine_entities=combine_entities and len(entity_values) > 1,
+        threshold=threshold,
         horizon=horizon,
         as_of=as_of_d,
         cutoff=cutoff,
@@ -203,9 +230,18 @@ def render_forecast_plan(plan: ForecastPlan) -> str:
     lines = [
         "Forecast plan:",
         f"- as_of: {plan.as_of.isoformat()}  cutoff: {plan.cutoff.isoformat()}",
-        (f"- horizon: {plan.horizon.start.isoformat()} .. {plan.horizon.end.isoformat()} "
-        f"({plan.horizon.n_days} days, {plan.horizon.period_word})"),
+        (f"- horizon: {plan.horizon.start.isoformat()}"
+         f"{' (today, a partial day)' if plan.horizon.start == plan.as_of else ''} .. "
+         f"{plan.horizon.end.isoformat()} ({plan.horizon.n_days} days, {plan.horizon.period_word})"),
     ]
+    lines += [f"- LIMIT (tell the user): {n}" for n in plan.notes if n.startswith("horizon_clamped")]
+    if plan.window_start and plan.window_end:
+        lines.append(
+            f"- totals window: {plan.window_start.isoformat()} .. {plan.window_end.isoformat()}"
+        )
+    lines.append("- grain: daily only (no hourly or sub-daily forecast exists)")
+    if not plan.entity_dimension:
+        lines.append("- scope: whole account (no entity filter applied)")
     if plan.entity_dimension:
         lines.append(
             f"- entity: {plan.entity_dimension}"
@@ -219,8 +255,18 @@ def render_forecast_plan(plan: ForecastPlan) -> str:
             f" engine={t.engine or 'auto'}{extra}"
         )
     for note in plan.notes:
-        lines.append(f"- note: {note}")
+        if not note.startswith("horizon_clamped"):
+            lines.append(f"- note: {note}")
     return "\n".join(lines)
+
+
+def _iso_date(value: str | date | None) -> date | None:
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10]) if value else None
+    except ValueError:
+        return None
 
 
 def _bare(metric_id: str) -> str:

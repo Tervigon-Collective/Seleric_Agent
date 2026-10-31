@@ -35,12 +35,26 @@ async def forecast_metrics(
     horizon_days: int = 14,
     entity_dimension: str | None = None,
     entity_values: list[str] | None = None,
+    combine_entities: bool = False,
+    threshold: float | None = None,
+    period_start: str | None = None,
+    period_end: str | None = None,
 ) -> ToolResult:
     """Forecast certified targets for ``horizon_days`` with optional entity slice.
 
     Follow-ups such as "and Meta only?" call this with the same targets and an
     ``entity_dimension`` / ``entity_values`` filter. Refuse rather than guess
-    when a gate blocks.
+    when a gate blocks. Set ``combine_entities`` to forecast several values as ONE
+    summed series (a named group = all values matching it).
+    For "will we reach/cross X" questions pass ``threshold`` as a plain number in the
+    metric's unit (1 lakh = 100000, 1 crore = 10000000; subtract actuals already booked
+    when the question is about a period that has started) and the skeleton reports the
+    probability the horizon total reaches it.
+    The forecast always starts today (as_of): for "tomorrow", "next week" or any window that
+    does not start today, pass ``period_start`` / ``period_end`` too.
+    For a named calendar period ("November", "rest of the month", "Q4") pass ISO
+    ``period_start`` / ``period_end``: the forecast runs through ``period_end`` and the
+    totals and threshold cover only that window (days already past are not forecast).
     """
     if not targets:
         return _refuse("forecast_metrics requires at least one target metric id")
@@ -64,6 +78,10 @@ async def forecast_metrics(
             horizon_days=h,
             entity_dimension=entity_dimension,
             entity_values=entity_values or (),
+            combine_entities=combine_entities,
+            threshold=threshold,
+            period_start=period_start,
+            period_end=period_end,
             policies=policies,
             timezone=getattr(getattr(ctx.deps, "context", None), "timezone", None) or "Asia/Kolkata",
             canonical=getattr(ctx.deps, "canonical_metric_id", None),

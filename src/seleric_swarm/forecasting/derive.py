@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from seleric_swarm.models.service import Z_80
 from seleric_swarm.forecasting.types import DailyPoint, TargetForecast
 
 
@@ -12,26 +13,56 @@ def horizon_totals(
     *,
     total_error_quantiles: dict[str, list[float]] | None = None,
     horizon_key: str | None = None,
+    total_sd: float | None = None,
+    empirical: tuple[float, float, int] | None = None,
 ) -> tuple[float, float, float, list[str]]:
     """Return (total_mean, total_p10, total_p90, warnings).
 
-    When calibrated relative-error quantiles exist for the horizon, interval =
-    point × (1 + q). Otherwise use the comonotonic sum of daily quantiles
-    (conservative) and warn.
+    Best: the series' own rolling-origin errors at this horizon (``empirical``). Else, when
+    calibrated relative-error quantiles exist for the horizon, interval =
+    point × (1 + q) (nearest backtested horizon when this one has none). Else the engine's own total SD (shared-shock aware). Last
+    resort: the comonotonic sum of daily quantiles (very conservative) with a warning.
     """
     warnings: list[str] = []
     if not days:
         return 0.0, 0.0, 0.0, ["empty_horizon"]
     total_mean = sum(d.mean for d in days)
-    key = horizon_key or f"h{len(days)}"
-    calibrated = (total_error_quantiles or {}).get(key)
+    n = len(days)
+    floor = 0.0 if all(d.mean >= 0 for d in days) else float("-inf")  # a non-negative metric has no negative total
+    if empirical is not None:
+        q_lo, q_hi, windows = empirical
+        warnings.append(f"total_interval_backtested:{windows}_windows")
+        return total_mean, max(floor, total_mean * (1 + q_lo)), max(floor, total_mean * (1 + q_hi)), warnings
+    key = horizon_key or f"h{n}"
+    errors = total_error_quantiles or {}
+    calibrated = errors.get(key)
+    scale = 1.0
+    if not calibrated:
+        # Nearest backtested horizon. Shorter horizons average less daily noise, so widen
+        # by sqrt(h_cal / n); longer ones keep the measured relative error (level misses persist).
+        near = sorted(
+            ((abs(int(k[1:]) - n), int(k[1:]), v) for k, v in errors.items()
+             if k[1:].isdigit() and isinstance(v, list) and len(v) >= 2)
+        )
+        if near:
+            _, h_cal, calibrated = near[0]
+            scale = max(1.0, (h_cal / n) ** 0.5)
+            warnings.append(f"total_interval_scaled_from_h{h_cal}")
     if calibrated and len(calibrated) >= 2:
         # calibrated = [q_lo, q_hi] relative errors
-        q_lo, q_hi = calibrated[0], calibrated[-1]
+        q_lo, q_hi = calibrated[0] * scale, calibrated[-1] * scale
         return (
             total_mean,
-            total_mean * (1.0 + q_lo),
-            total_mean * (1.0 + q_hi),
+            max(floor, total_mean * (1.0 + q_lo)),
+            max(floor, total_mean * (1.0 + q_hi)),
+            warnings,
+        )
+    if total_sd is not None:
+        z = Z_80  # same 80% band the daily P10/P90 carry
+        return (
+            total_mean,
+            max(floor, total_mean - z * total_sd),
+            max(floor, total_mean + z * total_sd),
             warnings,
         )
     total_p10 = sum(d.p10 for d in days)

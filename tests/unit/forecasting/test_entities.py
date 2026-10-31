@@ -47,7 +47,29 @@ async def test_select_entities_top_n_by_volume():
 
 
 @pytest.mark.asyncio
-async def test_select_entities_refuses_unsupported_dimension():
+async def test_named_entities_forecast_despite_low_share():
+    rows = [
+        {"orders.day": f"2026-09-{i + 1:02d}", "lt_platform": ent, "net_sales": vol}
+        for ent, vol in [("meta", 1000.0), ("tiny", 1.0)]
+        for i in range(10)
+    ]
+    mcp = AsyncMock()
+    mcp.call = AsyncMock(return_value={"rows": rows, "provenance": {}})
+    sel = await select_entities(
+        mcp_client=mcp,
+        metric_id="net_sales",
+        dimension="lt_platform",
+        as_of=date(2026, 10, 9),
+        policies=load_forecast_policies(),
+        requested_values=["tiny", "ghost"],
+    )
+    assert sel.values == ["tiny"]  # named + has volume; "ghost" has none
+    assert [r[0] for r in sel.refused] == ["ghost"]
+
+
+@pytest.mark.asyncio
+async def test_select_entities_unlisted_dimension_defers_to_catalogue():
+    """Whether a metric can be sliced is the catalogue's call; the policy list only tunes limits."""
     policies = load_forecast_policies()
     mcp = AsyncMock()
     sel = await select_entities(
@@ -58,7 +80,8 @@ async def test_select_entities_refuses_unsupported_dimension():
         policies=policies,
     )
     assert sel.values == []
-    assert sel.refused and sel.refused[0][1] == "T_ENTITY_UNSUPPORTED"
+    assert "T_ENTITY_UNSUPPORTED" not in sel.warnings
+    assert sel.policy is not None
 
 
 def test_entity_filter_shape():
@@ -88,3 +111,29 @@ def test_q_sparse_entity_gate():
         account_total=1000.0,
     )
     assert any(v.code == "Q_SPARSE_ENTITY" and v.action == "refuse" for v in verdicts)
+
+
+@pytest.mark.asyncio
+async def test_named_entity_resolves_partial_and_recased_names():
+    rows = [
+        {"orders.day": f"2026-09-{i + 1:02d}", "product_title": t, "net_sales": v}
+        for t, v in [("Acme Widget Pro", 50.0), ("Zenith Gadget", 80.0)]
+        for i in range(10)
+    ]
+    mcp = AsyncMock()
+    mcp.call = AsyncMock(return_value={"rows": rows, "provenance": {}})
+    sel = await select_entities(
+        mcp_client=mcp, metric_id="net_sales", dimension="product_title",
+        as_of=date(2026, 10, 9), policies=load_forecast_policies(),
+        requested_values=["widget pro", "ZENITH gadget"],
+    )
+    assert sel.values == ["Acme Widget Pro", "Zenith Gadget"]
+    assert not sel.refused
+
+
+def test_breakdown_read_through_conformed_sibling_column():
+    from seleric_swarm.forecasting.entities import _breakdown_value
+
+    row = {"order_date.day": "2026-10-01T00:00:00.000", "sibling_title": "Acme Widget Pro", "gross_sales": "5"}
+    assert _breakdown_value(row, "product_title", "gross_sales") == "Acme Widget Pro"
+    assert _breakdown_value({"product_title": "X", "gross_sales": "1"}, "product_title", "gross_sales") == "X"

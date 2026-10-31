@@ -70,6 +70,7 @@ class TargetForecast(BaseModel):
     total_mean: float | None = None
     total_p10: float | None = None
     total_p90: float | None = None
+    total_kind: Literal["total", "average"] = "total"  # a ratio/level measure is averaged, never summed
     reason_codes: list[str] = Field(default_factory=list)
 
 
@@ -92,6 +93,7 @@ class FeatureFrame(BaseModel):
     content_hash: str = ""
     gate_decisions: list[GateDecision] = Field(default_factory=list)
     quality_verdicts: list[QualityVerdict] = Field(default_factory=list)
+    signed_targets: list[str] = Field(default_factory=list)  # series with material negatives
 
 
 class ForecastPlanTarget(BaseModel):
@@ -120,6 +122,10 @@ class ForecastPlan(BaseModel):
     targets: list[ForecastPlanTarget] = Field(default_factory=list)
     entity_dimension: str | None = None
     entity_values: list[str] = Field(default_factory=list)
+    combine_entities: bool = False
+    threshold: float | None = None
+    window_start: date | None = None  # totals/threshold cover this slice of the horizon
+    window_end: date | None = None
     horizon: HorizonWindow
     as_of: date
     cutoff: date

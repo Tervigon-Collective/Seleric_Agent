@@ -115,14 +115,27 @@ def test_outage_zero_run_masked():
     assert out[20] is None and out[21] is None and out[22] is None
 
 
-def test_negative_blocks():
+def test_material_negative_is_a_signed_measure_not_a_refusal():
     idx = _index(15)
     values = [1.0] * 15
     values[7] = -3.0
     _, verdicts = assess_series(
         "orders", values, idx, role="target", min_history_days=10, nonnegative=True
     )
-    assert any(v.code == "Q_NEGATIVE" and v.action == "block" for v in verdicts)
+    assert any(v.code == "Q_SIGNED" and v.action == "warn" for v in verdicts)
+    assert not any(v.action in {"block", "refuse"} for v in verdicts)
+
+
+def test_tiny_negative_is_clipped_not_blocked():
+    idx = _index(15)
+    values = [100.0] * 15
+    values[7] = -0.05
+    out, verdicts = assess_series(
+        "net_sales", values, idx, role="target", min_history_days=10, nonnegative=True
+    )
+    assert out[7] == 0.0
+    assert any(v.code == "Q_NEGATIVE" and v.action == "warn" for v in verdicts)
+    assert not any(v.action == "block" for v in verdicts)
 
 
 def test_short_history_blocks_target():

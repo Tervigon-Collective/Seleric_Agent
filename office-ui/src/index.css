@@ -12,18 +12,18 @@
   /* Base (recedes) */
   --bg: #ffffff; /* systemBackground light */
   --panel: #ffffff; /* tertiarySystemBackground light — foreground cards */
-  --sidebar: #f2f2f7; /* secondarySystemBackground light — grouped */
-  --surface-2: #f2f2f7;
-  --hover: #e5e5ea; /* systemGray5 light */
+  --sidebar: #f1f2f9; /* secondarySystemBackground light — grouped */
+  --surface-2: #f1f2f9;
+  --hover: #e3e3ee; /* systemGray5 light */
   --panel-2: #f2f2f7; /* legacy alias: sidebar / secondary surface */
-  --line: #e5e5ea; /* hairline on white */
-  --line-strong: #c6c6c8; /* opaqueSeparator light */
-  --text: #202022; /* label light, softened from pure black */
-  --text-dim: rgba(60, 60, 67, 0.6); /* secondaryLabel light */
-  --text-faint: rgba(60, 60, 67, 0.38); /* tertiary/placeholder light */
+  --line: #dcdce3; /* hairline on white */
+  --line-strong: #bcbcc4; /* opaqueSeparator light */
+  --text: #141416; /* label light, softened from pure black */
+  --text-dim: rgba(60, 60, 67, 0.7); /* secondaryLabel light */
+  --text-faint: rgba(60, 60, 67, 0.46); /* tertiary/placeholder light */
   --brand: #007aff; /* systemBlue light */
   --brand-hover: #0062cc;
-  --brand-soft: rgba(0, 122, 255, 0.12);
+  --brand-soft: rgba(0, 122, 255, 0.14);
   --success: #34c759; /* systemGreen light */
   --success-soft: rgba(52, 199, 89, 0.12);
   --warning: #ff9500; /* systemOrange light */
@@ -66,20 +66,20 @@
   color-scheme: dark;
   /* Low-contrast dark: a soft charcoal base (not true black) with gently
      stepped surfaces and off-white text (about 12:1, was 21:1). */
-  --bg: #1b1b1e;
-  --panel: #242427;
-  --sidebar: #212124;
-  --surface-2: #2c2c30;
-  --hover: #36363b;
-  --panel-2: #212124;
-  --line: #303034;
-  --line-strong: #404046;
-  --text: #d6d6db;
-  --text-dim: #a2a2aa;
-  --text-faint: #86868f;
-  --brand: #2f8fff; /* systemBlue dark, a touch lighter to stay AA on the softer surfaces */
-  --brand-hover: #5eb1ff;
-  --brand-soft: rgba(10, 132, 255, 0.18);
+  --bg: #17181c;
+  --panel: #202226;
+  --sidebar: #1c1d21;
+  --surface-2: #292b30;
+  --hover: #33353b;
+  --panel-2: #1c1d21;
+  --line: #31333a;
+  --line-strong: #43464e;
+  --text: #e8e8ed;
+  --text-dim: #b2b2bc;
+  --text-faint: #94949f;
+  --brand: #3d96ff; /* systemBlue dark, a touch lighter to stay AA on the softer surfaces */
+  --brand-hover: #6dbbff;
+  --brand-soft: rgba(10, 132, 255, 0.22);
   --success: #30d158; /* systemGreen dark */
   --success-soft: rgba(48, 209, 88, 0.14);
   --warning: #ff9f0a; /* systemOrange dark */
@@ -99,8 +99,8 @@
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.4);
 
   /* iOS dark materials: translucent + vibrant, blur over content. */
-  --material-header: rgba(27, 27, 30, 0.72);
-  --material-elevated: rgba(36, 36, 39, 0.72);
+  --material-header: rgba(23, 24, 28, 0.72);
+  --material-elevated: rgba(32, 34, 38, 0.72);
   --material-backdrop: saturate(180%) blur(20px);
 }
 

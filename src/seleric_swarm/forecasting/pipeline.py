@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import math
 import time
 from dataclasses import dataclass, field, replace
 from datetime import date
@@ -17,9 +19,11 @@ from seleric_swarm.forecasting.assembler import assemble_feature_frame, compute_
 from seleric_swarm.forecasting.bakeoff import run_bakeoff
 from seleric_swarm.forecasting.chart import build_forecast_chart_spec
 from seleric_swarm.forecasting.dataset import describe_dataset
+from seleric_swarm.models.service import Z_80
+from seleric_swarm.forecasting.calibration import empirical_total_error
 from seleric_swarm.forecasting.derive import horizon_totals, ratio_from_components
 from seleric_swarm.forecasting.driver import apply_driver_level, fetch_candidates
-from seleric_swarm.forecasting.engines import route_and_forecast
+from seleric_swarm.forecasting.engines import impute_series, route_and_forecast
 from seleric_swarm.forecasting.entities import entity_filter, select_entities, sum_mismatch_warning
 from seleric_swarm.forecasting.features import candidate_features
 from seleric_swarm.forecasting.insights import build_insight_facts, render_insight_facts
@@ -132,9 +136,15 @@ async def run_forecast(
                 stats=_finish(stats, started),
                 warnings=warnings or [reason],
             )
-        slices = [
-            (v, entity_filter(plan.entity_dimension, v)) for v in selection.values
-        ]
+        if plan.combine_entities:
+            slices = [(
+                f"{len(selection.values)} {plan.entity_dimension} values",
+                [{"dimension": plan.entity_dimension, "operator": "equals", "values": list(selection.values)}],
+            )]
+        else:
+            slices = [
+                (v, entity_filter(plan.entity_dimension, v)) for v in selection.values
+            ]
         plan = plan.model_copy(update={"entity_values": list(selection.values)})
         stats["entities"] = {
             "dimension": plan.entity_dimension,
@@ -160,6 +170,9 @@ async def run_forecast(
     t0 = time.perf_counter()
     assemble_ms = 0.0
     engines_ms = 0.0
+    additive_ids = {
+        m for m in [*target_ids, *past_cov] if deps.catalogue.aggregation_for(m) == "additive"
+    }
     for entity_value, filters in slices:
         t_assemble = time.perf_counter()
         try:
@@ -176,6 +189,8 @@ async def run_forecast(
                 nonnegative_targets={t.metric_id for t in active if t.nonnegative},
                 min_history_days=policies.defaults.min_history_days,
                 filters=brand_filters(brand_id, filters),
+                zero_fill_ids=additive_ids if filters else None,
+                additive_ids=additive_ids,
             )
         except Exception as exc:
             _log.warning("forecast_assemble_failed entity=%s", entity_value, exc_info=True)
@@ -276,7 +291,7 @@ async def run_forecast(
                     preferred_engine=t.engine,
                     chronos_url=chronos_url,
                     ets_model_id=ets_id,
-                    nonnegative=t.nonnegative,
+                    nonnegative=t.nonnegative and t.metric_id not in frame.signed_targets,
                     provisional=provisional,
                     features=choice,
                 )
@@ -330,12 +345,33 @@ async def run_forecast(
                     _log.warning("forecast_feature_selection_failed metric=%s", key, exc_info=True)
                     warnings.append(f"{key}:feature_selection_failed")
 
+            in_window = [
+                d for d in eng.days
+                if (plan.window_start is None or d.date >= plan.window_start.isoformat())
+                and (plan.window_end is None or d.date <= plan.window_end.isoformat())
+            ]
+            empirical = None
+            if eng.engine == "ets" and in_window:
+                clean, lead = impute_series(frame.targets.get(t.metric_id) or [])
+                first = eng.days.index(in_window[0])
+                empirical = await asyncio.to_thread(
+                    empirical_total_error, clean, lead=lead, first=first, n=len(in_window),
+                    nonnegative=t.nonnegative and t.metric_id not in frame.signed_targets,
+                )
             total_mean, total_p10, total_p90, tw = horizon_totals(
-                eng.days,
+                in_window,
                 total_error_quantiles=_error_quantiles(policies, t.metric_id),
-                horizon_key=f"h{len(eng.days)}",
+                horizon_key=f"h{len(in_window)}",
+                total_sd=eng.total_sd if len(in_window) == len(eng.days) else None,
+                empirical=empirical,
             )
             warnings.extend(tw)
+            agg = deps.catalogue.aggregation_for(t.metric_id)
+            total_kind = "total"
+            if agg and agg != "additive" and in_window:  # summing daily ratios/levels is meaningless
+                k = len(in_window)
+                total_mean, total_p10, total_p90 = total_mean / k, total_p10 / k, total_p90 / k
+                total_kind = "average"
             status = t.status if t.status != "refused" else "provisional"
             if provisional and status == "validated":
                 status = "provisional"
@@ -352,6 +388,7 @@ async def run_forecast(
                 total_mean=total_mean,
                 total_p10=total_p10,
                 total_p90=total_p90,
+                total_kind=total_kind,
                 reason_codes=list(t.reason_codes),
             )
             engine_meta[key] = {
@@ -888,11 +925,21 @@ def _answer_skeleton(
             lines.append(f"refused: {', '.join(fc.reason_codes) or 'n/a'}")
             continue
         lines.append(
-            f"horizon total: mean={_plain(fc.total_mean)} "
+            f"{'window' if plan.window_start else 'horizon'} {'average per day' if fc.total_kind == 'average' else 'total'}: mean={_plain(fc.total_mean)} "
             f"p10={_plain(fc.total_p10)} p90={_plain(fc.total_p90)}"
             if fc.total_p10 is not None and fc.total_p90 is not None
-            else f"horizon total: mean={_plain(fc.total_mean)}"
+            else f"{'window' if plan.window_start else 'horizon'} {'average per day' if fc.total_kind == 'average' else 'total'}: mean={_plain(fc.total_mean)}"
         )
+        if plan.threshold is not None and fc.total_p10 is not None and fc.total_p90 is not None:
+            sd = (fc.total_p90 - fc.total_p10) / (2 * Z_80)
+            z = (plan.threshold - fc.total_mean) / sd if sd > 0 else math.copysign(math.inf, plan.threshold - fc.total_mean)
+            prob = 0.5 * math.erfc(z / math.sqrt(2))
+            lines.append(
+                f"threshold {_plain(plan.threshold)}: P(horizon total >= threshold) ~ {prob:.0%} "
+                f"(normal approximation of the P10-P90 band); mean is "
+                f"{_plain(abs(fc.total_mean - plan.threshold))} "
+                f"{'above' if fc.total_mean >= plan.threshold else 'below'} it"
+            )
         if not charted:  # no chart widget: fall back to a compact day list
             lines.append("date | p10 | p50 | p90")
             for d in fc.days[:14]:

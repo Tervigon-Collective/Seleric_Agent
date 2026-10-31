@@ -214,8 +214,8 @@ export function Composer() {
     <div className="shrink-0 bg-background px-6 pb-4 max-md:px-3 max-md:pb-[max(12px,env(safe-area-inset-bottom))]">
       <VoiceDock />
       {/* Hidden, not unmounted: keeps the draft and the autocorrect listeners alive. */}
-      <div className="mx-auto max-w-[800px]" hidden={voiceLive}>
-        <ComposerPrimitive.Root aria-label="Message composer" className="flex flex-col gap-1 rounded-xl border bg-background p-2 transition-shadow focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+      <div className="mx-auto max-w-[880px]" hidden={voiceLive}>
+        <ComposerPrimitive.Root aria-label="Message composer" className="flex flex-col gap-1 rounded-lg border bg-background p-2 transition-shadow focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
           <div className="relative">
             <div className={cn(FIELD, "pointer-events-none absolute inset-0 overflow-hidden break-words whitespace-pre-wrap text-transparent")} aria-hidden="true" ref={backdropRef}>
               {renderBackdrop(text, activeCorrections)}

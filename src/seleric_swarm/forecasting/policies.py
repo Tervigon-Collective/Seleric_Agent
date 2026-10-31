@@ -189,9 +189,8 @@ class ForecastPolicies(BaseModel):
             return "refused", ["T_POLICY_MISSING"]
         status = policy.eligibility.status
         policy_reasons: list[str] = []
-        if entity and entity not in policy.entities and policy.entities:
-            policy_reasons.append("T_ENTITY_UNSUPPORTED")
-            return "refused", policy_reasons
+        # Whether a metric can be sliced by `entity` is the catalogue's call (forecast_plan
+        # checks `carries`); the YAML entity list only tunes limits for dimensions it names.
         return status, policy_reasons
 
     def target(self, metric_id: str) -> TargetPolicy | None:

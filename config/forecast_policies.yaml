@@ -5,7 +5,7 @@ version: 1
 defaults:
   grain: day
   context_days: 1095      # maximum history available, up to 3 years
-  min_history_days: 270   # fewer observed days than this refuses the forecast
+  min_history_days: 120   # fewer observed days than this refuses (>= 17 weekly cycles; a gap in one source must not veto)
   cutoff_lag_days: 2      # context ends 2 days before the forecast date
   max_horizon_days: 90
   quantiles: [0.1, 0.5, 0.9]

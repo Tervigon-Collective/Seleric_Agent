@@ -91,6 +91,22 @@ class ForecastPathResult:
     history_points: int
     method: str
     warnings: list[str] = field(default_factory=list)
+    sigma: float = 0.0
+    alpha: float = 0.0
+
+    def total_sd(self, first: int, last: int) -> float:
+        """SD of the summed forecast error over steps ``first..last`` (0-based, inclusive).
+
+        Level-ETS errors are cumulative: e_h = alpha * sum(eps_k, k < h) + eps_h, so
+        summing days shares shocks and the total is far tighter than the comonotonic
+        sum of daily quantiles (which assumes every day misses in the same direction).
+        """
+        window = range(first, last + 1)
+        var = sum(
+            ((1.0 if k in window else 0.0) + self.alpha * sum(1 for h in window if h > k)) ** 2
+            for k in range(last + 1)
+        )
+        return self.sigma * math.sqrt(var)
 
 
 def forecast_series(
@@ -199,6 +215,8 @@ def forecast_path(
         history_points=len(values),
         method=method,
         warnings=warnings,
+        sigma=sigma,
+        alpha=alpha,
     )
 
 
