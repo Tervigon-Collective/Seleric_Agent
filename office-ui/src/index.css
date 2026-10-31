@@ -10,47 +10,47 @@
 :root {
   color-scheme: light;
   /* Base (recedes) */
-  --bg: #ffffff; /* systemBackground light */
-  --panel: #ffffff; /* tertiarySystemBackground light — foreground cards */
-  --sidebar: #f1f2f9; /* secondarySystemBackground light — grouped */
-  --surface-2: #f1f2f9;
-  --hover: #e3e3ee; /* systemGray5 light */
-  --panel-2: #f2f2f7; /* legacy alias: sidebar / secondary surface */
-  --line: #dcdce3; /* hairline on white */
-  --line-strong: #bcbcc4; /* opaqueSeparator light */
-  --text: #141416; /* label light, softened from pure black */
-  --text-dim: rgba(60, 60, 67, 0.7); /* secondaryLabel light */
-  --text-faint: rgba(60, 60, 67, 0.46); /* tertiary/placeholder light */
-  --brand: #007aff; /* systemBlue light */
-  --brand-hover: #0062cc;
-  --brand-soft: rgba(0, 122, 255, 0.14);
-  --success: #34c759; /* systemGreen light */
-  --success-soft: rgba(52, 199, 89, 0.12);
-  --warning: #ff9500; /* systemOrange light */
-  --warning-soft: rgba(255, 149, 0, 0.12);
-  --danger: #ff3b30; /* systemRed light */
-  --danger-soft: rgba(255, 59, 48, 0.08);
+  --bg: #f6f7fb;
+  --panel: #ffffff;
+  --sidebar: #eceef5;
+  --surface-2: #eceef5;
+  --hover: #e2e5f0;
+  --panel-2: #eceef5;
+  --line: #e0e3ee;
+  --line-strong: #c9cee0;
+  --text: #161a26;
+  --text-dim: #585f75;
+  --text-faint: #7d8398;
+  --brand: #3b5bdb; /* the voice orb's blue (hue 222) */
+  --brand-hover: #2f49b8;
+  --brand-soft: rgba(59, 91, 219, 0.12);
+  --success: #1f8a5b;
+  --success-soft: rgba(31, 138, 91, 0.12);
+  --warning: #a56a00;
+  --warning-soft: rgba(165, 106, 0, 0.13);
+  --danger: #c42d3c;
+  --danger-soft: rgba(196, 45, 60, 0.1);
 
-  --st-neutral: #8e8e93; /* systemGray */
-  --st-working: #007aff; /* systemBlue */
-  --st-thinking: #af52de; /* systemPurple */
-  --st-waiting: #ff9500; /* systemOrange */
-  --st-failed: #ff3b30; /* systemRed */
-  --st-done: #34c759; /* systemGreen */
-  --st-collab: #32ade6; /* systemCyan */
+  --st-neutral: #8a90a5;
+  --st-working: #3b5bdb;
+  --st-thinking: #7c5cd6;
+  --st-waiting: #c27a00;
+  --st-failed: #c42d3c;
+  --st-done: #1f8a5b;
+  --st-collab: #0e8fb8;
 
   --radius-xs: 4px;  /* kbd, inline code */
   --radius-sm: 6px;  /* chips, small tags */
   --radius-md: 8px;  /* buttons, inputs */
-  --radius: 10px;    /* cards, panels */
-  --radius-lg: 12px; /* menus, modals */
-  --radius-xl: 16px; /* composer, voice dock */
+  --radius: 12px;    /* cards, panels */
+  --radius-lg: 14px; /* menus, modals */
+  --radius-xl: 20px; /* composer, voice dock */
   --on-accent: #fff; /* text on accent / danger fills */
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
-  --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.16);
+  --shadow: 0 1px 2px rgba(20, 30, 70, 0.06), 0 2px 8px rgba(20, 30, 70, 0.05);
+  --shadow-lg: 0 12px 36px rgba(20, 30, 70, 0.18);
 
   /* SF-first stack per HIG Typography; Inter kept as web fallback. */
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", "Geist", ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   --motion-fast: 120ms;
@@ -66,37 +66,37 @@
   color-scheme: dark;
   /* Low-contrast dark: a soft charcoal base (not true black) with gently
      stepped surfaces and off-white text (about 12:1, was 21:1). */
-  --bg: #17181c;
-  --panel: #202226;
-  --sidebar: #1c1d21;
-  --surface-2: #292b30;
-  --hover: #33353b;
-  --panel-2: #1c1d21;
-  --line: #31333a;
-  --line-strong: #43464e;
-  --text: #e8e8ed;
-  --text-dim: #b2b2bc;
-  --text-faint: #94949f;
-  --brand: #3d96ff; /* systemBlue dark, a touch lighter to stay AA on the softer surfaces */
-  --brand-hover: #6dbbff;
-  --brand-soft: rgba(10, 132, 255, 0.22);
-  --success: #30d158; /* systemGreen dark */
-  --success-soft: rgba(48, 209, 88, 0.14);
-  --warning: #ff9f0a; /* systemOrange dark */
-  --warning-soft: rgba(255, 159, 10, 0.14);
-  --danger: #ff453a; /* systemRed dark */
-  --danger-soft: rgba(255, 69, 58, 0.14);
+  --bg: #0f1219;
+  --panel: #171b25;
+  --sidebar: #0b0e14;
+  --surface-2: #1d2230;
+  --hover: #1f2431;
+  --panel-2: #0b0e14;
+  --line: #242a38;
+  --line-strong: #353c4f;
+  --text: #e8ebf5;
+  --text-dim: #a4abc0;
+  --text-faint: #8087a0;
+  --brand: #7c9cff;
+  --brand-hover: #9bb4ff;
+  --brand-soft: rgba(124, 156, 255, 0.18);
+  --success: #5fd3a0;
+  --success-soft: rgba(95, 211, 160, 0.14);
+  --warning: #f0b34a;
+  --warning-soft: rgba(240, 179, 74, 0.14);
+  --danger: #ff7b87;
+  --danger-soft: rgba(255, 123, 135, 0.14);
 
   --st-neutral: #8e8e93;
-  --st-working: #0a84ff;
-  --st-thinking: #bf5af2; /* systemPurple dark */
-  --st-waiting: #ff9f0a;
-  --st-failed: #ff453a;
-  --st-done: #30d158;
-  --st-collab: #64d2ff; /* systemCyan dark */
+  --st-working: #7c9cff;
+  --st-thinking: #b39bff;
+  --st-waiting: #f0b34a;
+  --st-failed: #ff7b87;
+  --st-done: #5fd3a0;
+  --st-collab: #6cd4f2;
 
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6);
 
   /* iOS dark materials: translucent + vibrant, blur over content. */
   --material-header: rgba(23, 24, 28, 0.72);
@@ -114,7 +114,7 @@ html {
   overscroll-behavior-y: none;
 }
 ::selection { background: var(--brand-soft); }
-[data-theme="dark"] ::selection { background: rgba(10, 132, 255, 0.32); }
+[data-theme="dark"] ::selection { background: rgba(124, 156, 255, 0.32); }
 
 /* Thin iOS-style scrollbars in both appearances — fixes the stark white
    scrollbar gutter seen in dark-mode screenshots on desktop Chrome. */
@@ -139,7 +139,7 @@ body {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  font-feature-settings: "cv11", "ss01";
+  font-feature-settings: "cv11", "ss03";
 }
 
 button, input, textarea, select { font: inherit; color: inherit; }
