@@ -18,17 +18,17 @@ const fire = (name: string) => window.dispatchEvent(new Event(name));
 
 const THEME_LABEL: Record<ThemeMode, string> = { light: "Light", system: "System", dark: "Dark" };
 
-function NavItem({ icon, label, current, onClick, trailing }: {
-  icon: ReactNode; label: string; current?: boolean; onClick: () => void; trailing?: ReactNode;
+function NavItem({ icon, label, current, onClick, trailing, tone = "blue" }: {
+  icon: ReactNode; tone?: "blue" | "pink"; label: string; current?: boolean; onClick: () => void; trailing?: ReactNode;
 }) {
   return (
     <Button
       variant="ghost"
       onClick={onClick}
       aria-current={current ? "page" : undefined}
-      className={cn("h-8 w-full justify-start gap-2.5 rounded-lg px-2.5 text-[13.5px] font-normal text-foreground/90 transition-colors duration-150", current && "bg-accent font-medium text-foreground")}
+      className={cn("h-10 w-full justify-start gap-2.5 rounded-xl px-2 text-[13.5px] font-normal text-foreground/90", current && "font-medium text-foreground")}
     >
-      <span className="text-muted-foreground">{icon}</span>
+      <span className={cn("nav-chip", tone === "pink" ? "nav-chip-pink" : "nav-chip-blue")}>{icon}</span>
       <span className="truncate">{label}</span>
       {trailing && <span className="ml-auto text-xs text-muted-foreground">{trailing}</span>}
     </Button>
@@ -48,8 +48,8 @@ function SettingsMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-[13.5px] font-normal" aria-label="Settings">
-          <SettingsIcon className="text-muted-foreground" /><span>Settings</span>
+        <Button variant="ghost" className="h-10 w-full justify-start gap-2.5 rounded-xl px-2 text-[13.5px] font-normal" aria-label="Settings">
+          <span className="nav-chip nav-chip-pink"><SettingsIcon /></span><span>Settings</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="w-56">
@@ -109,18 +109,18 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
         <aside aria-label={sidebarLabel} data-slot="app-sidebar" className="flex h-full min-h-0 w-full flex-col gap-1 border-r bg-sidebar px-2 pt-2 pb-2 animate-in fade-in-0 slide-in-from-left-2 duration-200 lg:w-64 lg:shrink-0">
           <div className="flex items-center justify-between px-1 pb-1">
             <Button variant="ghost" className="h-8 gap-2 px-1.5" onClick={go(() => setWorkspace("conversation"))} aria-label="Seleric home">
-              <span className="grid size-6 place-items-center rounded-md bg-brand text-xs font-semibold text-sidebar-primary-foreground">S</span>
+              <span className="nav-chip nav-chip-blue size-7 text-xs font-semibold">S</span>
               <strong className="text-[15px] font-semibold tracking-tight">Seleric</strong>
             </Button>
             <Button variant="ghost" size="icon-sm" className="lg:hidden" aria-label="Close navigation" onClick={toggleSidebar}><XIcon /></Button>
           </div>
           <NavItem icon={<PlusIcon />} label="New chat" onClick={go(() => { setWorkspace("conversation"); void createThread(); })} />
-          <NavItem icon={<SearchIcon />} label="Search" onClick={() => fire(APP_EVENTS.search)} trailing={<Kbd>⌘K</Kbd>} />
+          <NavItem tone="pink" icon={<SearchIcon />} label="Search" onClick={() => fire(APP_EVENTS.search)} trailing={<Kbd>⌘K</Kbd>} />
           <nav aria-label="Workspace" className="flex flex-col gap-0.5 pt-2">
             <NavItem icon={<ChatIcon />} label="Chat" current={workspace === "conversation"} onClick={go(() => setWorkspace("conversation"))} />
-            <NavItem icon={<ActivityIcon />} label="Ops" current={workspace === "ops" && opsPage === "dashboard"} onClick={go(() => openOps("dashboard"))} />
+            <NavItem tone="pink" icon={<ActivityIcon />} label="Ops" current={workspace === "ops" && opsPage === "dashboard"} onClick={go(() => openOps("dashboard"))} />
             <NavItem icon={<BellRingIcon />} label="Monitoring" current={workspace === "ops" && opsPage === "monitoring"} onClick={go(() => openOps("monitoring"))} />
-            <NavItem icon={<OfficeIcon />} label="Office" current={workspace === "office"} onClick={go(() => setWorkspace("office"))} />
+            <NavItem tone="pink" icon={<OfficeIcon />} label="Office" current={workspace === "office"} onClick={go(() => setWorkspace("office"))} />
           </nav>
           <div className="mt-2 flex min-h-0 flex-1 flex-col">{sidebarBody}</div>
           <div className="border-t pt-2"><SettingsMenu /></div>

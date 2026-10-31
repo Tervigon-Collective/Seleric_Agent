@@ -2,6 +2,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { useMonitoringStore } from "../../stores/monitoring";
 import type { DomainView } from "../../api/monitoring";
 import { useShellStore } from "../../stores/shell";
@@ -29,7 +30,7 @@ function DomainHeader({ domain }: { domain: DomainView }) {
         {snap && snap.status !== "OK" && <Badge variant="secondary">Some metrics could not be read</Badge>}
         {domain.pending && <Badge variant="secondary">Selection changed, waiting for numbers</Badge>}
         <Button variant="outline" size="sm" onClick={() => void refresh(domain.id)} disabled={!!busy || !domain.enabled}>
-          {busy === "refreshing" ? "Refreshing…" : "Refresh"}
+          {busy === "refreshing" ? <><Spinner className="size-3.5" />Refreshing…</> : "Refresh"}
         </Button>
       </div>
     </header>

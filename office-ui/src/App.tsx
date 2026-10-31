@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { cn } from "cn";
 import { Composer } from "./components/Composer";
 import { DetailPanel } from "./components/DetailPanel";
 import { PanelErrorBoundary } from "./components/ErrorBoundary";
@@ -56,7 +57,7 @@ function ShareButton({ threadId, className }: { threadId: string | null; classNa
     <Button
       variant="outline"
       size="sm"
-      className={className}
+      className={cn(className, copied && "is-success")}
       aria-label={copied ? "Link copied" : "Copy link to this conversation"}
       title="Copy link to this conversation"
       onClick={copy}
@@ -89,7 +90,7 @@ export default function App() {
     // data-theme is always light or dark, so the CSS and the shadcn dark variant keep one switch.
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
-    document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute("content", dark ? "#17181a" : "#fafafa");
+    document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute("content", dark ? "#26282c" : "#e8e8e8");
     firstTheme.current = false;
   }, [dark]);
   useEffect(() => {

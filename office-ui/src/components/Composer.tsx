@@ -246,7 +246,7 @@ export function Composer() {
             <span className="flex-1" />
             <VoiceControls text={text} />
             <AuiIf condition={(state) => !state.thread.isRunning}>
-              <ComposerPrimitive.Send className={cn(buttonVariants({ size: "icon-sm" }), "pop-in rounded-full bg-brand text-sidebar-primary-foreground hover:bg-brand-hover transition-colors")} aria-label="Send message" title="Send (Enter)">
+              <ComposerPrimitive.Send className={cn(buttonVariants({ size: "icon-sm" }), "neu-primary pop-in size-9 rounded-full")} aria-label="Send message" title="Send (Enter)">
                 <SendIcon />
               </ComposerPrimitive.Send>
             </AuiIf>

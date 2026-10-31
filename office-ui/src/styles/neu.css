@@ -1,0 +1,122 @@
+/* Neumorphism + micro-interactions.
+   Raised = light shadow top-left, dark shadow bottom-right, same colour as the page. Inset = pressed, selected, or an input.
+   Data (tables, charts, evidence, markdown) stays flat so numbers keep their contrast. The voice dock and stage are left alone.
+   Hover feedback is 100ms, press and toggles 150ms, and everything is neutralised by the reduced-motion rules below. */
+
+@keyframes pop { 50% { transform: scale(1.18); } }
+@keyframes shake { 25%, 75% { transform: translateX(-4px); } 50% { transform: translateX(4px); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* surfaces */
+[data-slot="card"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="item"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="alert"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="empty-content"] [data-slot="card"]:not(.voice-dock *):not(.voice-screen *) {
+  background: var(--bg); border: 0; box-shadow: var(--neu-raised-sm);
+}
+[data-slot="app-sidebar"] { background: var(--bg); border-right: 0; box-shadow: 8px 0 16px -8px var(--neu-dark); }
+[data-slot="dropdown-menu-content"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="dialog-content"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="sheet-content"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="drawer-content"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="tooltip-content"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="command"]:not(.voice-dock *):not(.voice-screen *) {
+  background: var(--bg); border: 0; box-shadow: var(--shadow-lg);
+}
+
+/* buttons: raised at rest, inset when pressed */
+[data-slot="button"]:not(.voice-dock *):not(.voice-screen *) {
+  transition: transform 100ms ease, box-shadow 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+[data-slot="button"][data-variant="outline"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="button"][data-variant="secondary"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="button"][data-variant="destructive"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="button"][data-variant="default"]:not(.neu-primary):not(.voice-dock *):not(.voice-screen *) {
+  background: var(--bg); color: var(--text); border-color: transparent; box-shadow: var(--neu-raised-xs);
+}
+[data-slot="button"][data-variant="destructive"]:not(.voice-dock *):not(.voice-screen *) { color: var(--danger); }
+[data-slot="button"][data-variant="ghost"]:hover:not(.voice-dock *):not(.voice-screen *),
+[data-slot="button"][data-variant="ghost"][aria-expanded="true"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-raised-xs); }
+[data-slot="button"]:not([data-variant="link"]):hover:not(.voice-dock *):not(.voice-screen *) { transform: scale(1.03); }
+[data-slot="button"][data-size^="icon"]:hover:not(.voice-dock *):not(.voice-screen *) { transform: scale(1.1); }
+[data-slot="button"]:active:not(.voice-dock *):not(.voice-screen *),
+[data-slot="button"][aria-pressed="true"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="button"][aria-current="page"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="toggle-group-item"][data-state="on"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="tabs-trigger"][data-state="active"]:not(.voice-dock *):not(.voice-screen *) {
+  background: var(--bg); box-shadow: var(--neu-inset-sm); transform: scale(0.97);
+}
+[data-slot="button"][aria-current="page"]:not(.voice-dock *):not(.voice-screen *) { transform: none; }
+[data-slot="button"]:focus-visible:not(.voice-dock *):not(.voice-screen *),
+[data-slot="toggle-group-item"]:focus-visible:not(.voice-dock *):not(.voice-screen *),
+[data-slot="tabs-trigger"]:focus-visible:not(.voice-dock *):not(.voice-screen *),
+[data-slot="switch"]:focus-visible:not(.voice-dock *):not(.voice-screen *) {
+  outline: 3px solid var(--zi-violet); outline-offset: 3px; border-color: transparent;
+}
+/* the main action is a raised brand disc */
+.neu-primary {
+  background: var(--brand); color: var(--on-accent); box-shadow: var(--neu-raised-sm);
+}
+.neu-primary:hover { background: var(--brand-hover); box-shadow: 0 10px 24px rgba(99, 102, 241, 0.3); }
+.neu-primary:active { box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.3); }
+
+/* inputs are inset */
+[data-slot="input"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="textarea"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="native-select"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="command-input-wrapper"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="input-group"]:not(.voice-dock *):not(.voice-screen *) {
+  background: var(--bg); border-color: transparent; box-shadow: var(--neu-inset);
+  transition: box-shadow 150ms ease;
+}
+[aria-label="Message composer"]:not(.voice-dock *):not(.voice-screen *) {
+  background: var(--bg); border-color: transparent; box-shadow: var(--neu-inset);
+}
+[aria-label="Message composer"]:focus-within { box-shadow: var(--neu-inset), 0 0 0 3px color-mix(in oklab, var(--zi-violet) 45%, transparent); }
+[data-slot="tabs-list"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="toggle-group"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-inset-sm); }
+[data-slot="toggle-group-item"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); border-color: transparent; box-shadow: var(--neu-raised-xs); margin: 2px; transition: box-shadow 150ms ease, transform 100ms ease; }
+[data-slot="toggle-group-item"][data-state="on"]:not(.voice-dock *):not(.voice-screen *) { animation: pop 150ms ease; }
+[data-slot="kbd"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-inset-sm); }
+[data-slot="bubble"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="bubble-content"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-inset-sm); }
+
+/* switch: inset track, raised thumb, pop when turned on */
+[data-slot="switch"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg) !important; box-shadow: var(--neu-inset-sm); }
+[data-slot="switch-thumb"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg) !important; box-shadow: var(--neu-raised-xs); }
+[data-slot="switch"][data-state="checked"] [data-slot="switch-thumb"]:not(.voice-dock *):not(.voice-screen *) { background: var(--brand) !important; animation: pop 150ms ease; }
+
+/* progress */
+[data-slot="progress"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-inset-sm); }
+[data-slot="progress-indicator"]:not(.voice-dock *):not(.voice-screen *) { background: linear-gradient(145deg, #6366f1, #8b5cf6); box-shadow: 0 0 10px rgba(99, 102, 241, 0.4); }
+
+/* pastel chips: small badges only, never large surfaces */
+[data-slot="badge"]:not(.voice-dock *):not(.voice-screen *) { border-color: transparent; box-shadow: var(--neu-raised-xs); }
+[data-slot="badge"][data-variant="secondary"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="badge"][data-variant="outline"]:not(.voice-dock *):not(.voice-screen *) { background: var(--neu-blue); color: var(--text); }
+[data-slot="badge"][data-variant="destructive"]:not(.voice-dock *):not(.voice-screen *) { background: var(--neu-pink); color: var(--danger); }
+.nav-chip { display: inline-grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 0.6rem; color: var(--text); box-shadow: var(--neu-raised-xs); transition: transform 100ms ease; }
+.nav-chip-blue { background: var(--neu-blue); }
+.nav-chip-pink { background: var(--neu-pink); }
+button:hover > .nav-chip { transform: scale(1.1); }
+
+/* conversation rows and ops cards */
+[data-slot="thread-row"]:hover:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-raised-xs); }
+[data-slot="thread-row"]:has([aria-current="page"]):not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-inset-sm); }
+[data-slot="ops-card"]:not(.voice-dock *):not(.voice-screen *),
+[data-slot="ops-row"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-raised-sm); }
+[data-slot="ops-card"]:hover:not(.voice-dock *):not(.voice-screen *) { transform: translateY(-4px); box-shadow: var(--neu-raised); }
+
+/* feedback after an action: add the class, remove it on animationend */
+.is-success { animation: pop 300ms ease; color: var(--success); }
+.is-error { animation: shake 300ms ease; color: var(--danger); }
+[data-slot="alert"][data-variant="destructive"] { animation: shake 300ms ease; }
+[data-slot="spinner"] { color: #6366f1; animation: spin 700ms linear infinite; }
+[aria-pressed="true"].pop-on { animation: pop 300ms ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="button"]:hover, [data-slot="ops-card"]:hover, .nav-chip, button:hover > .nav-chip { transform: none !important; }
+  .is-success, .is-error, [data-slot="alert"][data-variant="destructive"], [data-slot="toggle-group-item"][data-state="on"],
+  [data-slot="switch"][data-state="checked"] [data-slot="switch-thumb"] { animation: none !important; }
+  [data-slot="spinner"] { animation-duration: 2s; }
+}
