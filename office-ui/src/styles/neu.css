@@ -1,5 +1,5 @@
-/* Neumorphism + micro-interactions.
-   Raised = light shadow top-left, dark shadow bottom-right, same colour as the page. Inset = pressed, selected, or an input.
+/* Light neumorphism on the Zero palette + micro-interactions.
+   Depth is a hint, not a statement: hairline borders carry structure and the paired shadows are barely there.
    Data (tables, charts, evidence, markdown) stays flat so numbers keep their contrast. The voice dock and stage are left alone.
    Hover feedback is 100ms, press and toggles 150ms, and everything is neutralised by the reduced-motion rules below. */
 
@@ -12,16 +12,16 @@
 [data-slot="item"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="alert"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="empty-content"] [data-slot="card"]:not(.voice-dock *):not(.voice-screen *) {
-  background: var(--bg); border: 0; box-shadow: var(--neu-raised-sm);
+  background: var(--panel); box-shadow: var(--shadow);
 }
-[data-slot="app-sidebar"] { background: var(--bg); border-right: 0; box-shadow: 8px 0 16px -8px var(--neu-dark); }
+[data-slot="app-sidebar"] { background: var(--sidebar); }
 [data-slot="dropdown-menu-content"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="dialog-content"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="sheet-content"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="drawer-content"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="tooltip-content"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="command"]:not(.voice-dock *):not(.voice-screen *) {
-  background: var(--bg); border: 0; box-shadow: var(--shadow-lg);
+  background: var(--panel); box-shadow: var(--shadow-lg);
 }
 
 /* buttons: raised at rest, inset when pressed */
@@ -32,19 +32,19 @@
 [data-slot="button"][data-variant="secondary"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="button"][data-variant="destructive"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="button"][data-variant="default"]:not(.neu-primary):not(.voice-dock *):not(.voice-screen *) {
-  background: var(--bg); color: var(--text); border-color: transparent; box-shadow: var(--neu-raised-xs);
+  background: var(--panel); color: var(--text); box-shadow: var(--neu-raised-xs);
 }
 [data-slot="button"][data-variant="destructive"]:not(.voice-dock *):not(.voice-screen *) { color: var(--danger); }
 [data-slot="button"][data-variant="ghost"]:hover:not(.voice-dock *):not(.voice-screen *),
-[data-slot="button"][data-variant="ghost"][aria-expanded="true"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-raised-xs); }
-[data-slot="button"]:not([data-variant="link"]):hover:not(.voice-dock *):not(.voice-screen *) { transform: scale(1.03); }
-[data-slot="button"][data-size^="icon"]:hover:not(.voice-dock *):not(.voice-screen *) { transform: scale(1.1); }
+[data-slot="button"][data-variant="ghost"][aria-expanded="true"]:not(.voice-dock *):not(.voice-screen *) { background: var(--hover); }
+[data-slot="button"]:not([data-variant="link"]):hover:not(.voice-dock *):not(.voice-screen *) { transform: scale(1.02); }
+[data-slot="button"][data-size^="icon"]:hover:not(.voice-dock *):not(.voice-screen *) { transform: scale(1.06); }
 [data-slot="button"]:active:not(.voice-dock *):not(.voice-screen *),
 [data-slot="button"][aria-pressed="true"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="button"][aria-current="page"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="toggle-group-item"][data-state="on"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="tabs-trigger"][data-state="active"]:not(.voice-dock *):not(.voice-screen *) {
-  background: var(--bg); box-shadow: var(--neu-inset-sm); transform: scale(0.97);
+  background: var(--hover); box-shadow: var(--neu-inset-sm); transform: scale(0.97);
 }
 [data-slot="button"][aria-current="page"]:not(.voice-dock *):not(.voice-screen *) { transform: none; }
 [data-slot="button"]:focus-visible:not(.voice-dock *):not(.voice-screen *),
@@ -66,28 +66,28 @@
 [data-slot="native-select"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="command-input-wrapper"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="input-group"]:not(.voice-dock *):not(.voice-screen *) {
-  background: var(--bg); border-color: transparent; box-shadow: var(--neu-inset);
+  background: var(--panel); box-shadow: var(--neu-inset);
   transition: box-shadow 150ms ease;
 }
 [aria-label="Message composer"]:not(.voice-dock *):not(.voice-screen *) {
-  background: var(--bg); border-color: transparent; box-shadow: var(--neu-inset);
+  background: var(--panel); box-shadow: var(--shadow);
 }
-[aria-label="Message composer"]:focus-within { box-shadow: var(--neu-inset), 0 0 0 3px color-mix(in oklab, var(--zi-violet) 45%, transparent); }
+[aria-label="Message composer"]:focus-within { box-shadow: var(--shadow), 0 0 0 3px color-mix(in oklab, var(--zi-violet) 45%, transparent); }
 [data-slot="tabs-list"]:not(.voice-dock *):not(.voice-screen *),
-[data-slot="toggle-group"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-inset-sm); }
-[data-slot="toggle-group-item"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); border-color: transparent; box-shadow: var(--neu-raised-xs); margin: 2px; transition: box-shadow 150ms ease, transform 100ms ease; }
+[data-slot="toggle-group"]:not(.voice-dock *):not(.voice-screen *) { background: var(--surface-2); box-shadow: none; }
+[data-slot="toggle-group-item"]:not(.voice-dock *):not(.voice-screen *) { background: var(--panel); box-shadow: var(--neu-raised-xs); margin: 2px; transition: box-shadow 150ms ease, transform 100ms ease; }
 [data-slot="toggle-group-item"][data-state="on"]:not(.voice-dock *):not(.voice-screen *) { animation: pop 150ms ease; }
-[data-slot="kbd"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-inset-sm); }
+[data-slot="kbd"]:not(.voice-dock *):not(.voice-screen *) { background: var(--surface-2); box-shadow: none; }
 [data-slot="bubble"]:not(.voice-dock *):not(.voice-screen *),
-[data-slot="bubble-content"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-inset-sm); }
+[data-slot="bubble-content"]:not(.voice-dock *):not(.voice-screen *) { background: var(--surface-2); box-shadow: none; }
 
 /* switch: inset track, raised thumb, pop when turned on */
-[data-slot="switch"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg) !important; box-shadow: var(--neu-inset-sm); }
-[data-slot="switch-thumb"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg) !important; box-shadow: var(--neu-raised-xs); }
+[data-slot="switch"]:not(.voice-dock *):not(.voice-screen *) { background: var(--line-strong) !important; box-shadow: none; }
+[data-slot="switch-thumb"]:not(.voice-dock *):not(.voice-screen *) { background: var(--panel) !important; box-shadow: var(--neu-raised-xs); }
 [data-slot="switch"][data-state="checked"] [data-slot="switch-thumb"]:not(.voice-dock *):not(.voice-screen *) { background: var(--brand) !important; animation: pop 150ms ease; }
 
 /* progress */
-[data-slot="progress"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-inset-sm); }
+[data-slot="progress"]:not(.voice-dock *):not(.voice-screen *) { background: var(--surface-2); box-shadow: none; }
 [data-slot="progress-indicator"]:not(.voice-dock *):not(.voice-screen *) { background: linear-gradient(145deg, #6366f1, #8b5cf6); box-shadow: 0 0 10px rgba(99, 102, 241, 0.4); }
 
 /* pastel chips: small badges only, never large surfaces */
@@ -95,17 +95,17 @@
 [data-slot="badge"][data-variant="secondary"]:not(.voice-dock *):not(.voice-screen *),
 [data-slot="badge"][data-variant="outline"]:not(.voice-dock *):not(.voice-screen *) { background: var(--neu-blue); color: var(--text); }
 [data-slot="badge"][data-variant="destructive"]:not(.voice-dock *):not(.voice-screen *) { background: var(--neu-pink); color: var(--danger); }
-.nav-chip { display: inline-grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 0.6rem; color: var(--text); box-shadow: var(--neu-raised-xs); transition: transform 100ms ease; }
+.nav-chip { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 0.5rem; color: var(--text); transition: transform 100ms ease; }
 .nav-chip-blue { background: var(--neu-blue); }
 .nav-chip-pink { background: var(--neu-pink); }
-button:hover > .nav-chip { transform: scale(1.1); }
+button:hover > .nav-chip { transform: scale(1.06); }
 
 /* conversation rows and ops cards */
-[data-slot="thread-row"]:hover:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-raised-xs); }
-[data-slot="thread-row"]:has([aria-current="page"]):not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-inset-sm); }
+[data-slot="thread-row"]:hover:not(.voice-dock *):not(.voice-screen *) { background: var(--hover); }
+[data-slot="thread-row"]:has([aria-current="page"]):not(.voice-dock *):not(.voice-screen *) { background: var(--surface-2); box-shadow: none; }
 [data-slot="ops-card"]:not(.voice-dock *):not(.voice-screen *),
-[data-slot="ops-row"]:not(.voice-dock *):not(.voice-screen *) { background: var(--bg); box-shadow: var(--neu-raised-sm); }
-[data-slot="ops-card"]:hover:not(.voice-dock *):not(.voice-screen *) { transform: translateY(-4px); box-shadow: var(--neu-raised); }
+[data-slot="ops-row"]:not(.voice-dock *):not(.voice-screen *) { background: var(--panel); box-shadow: var(--shadow); }
+[data-slot="ops-card"]:hover:not(.voice-dock *):not(.voice-screen *) { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
 
 /* feedback after an action: add the class, remove it on animationend */
 .is-success { animation: pop 300ms ease; color: var(--success); }
