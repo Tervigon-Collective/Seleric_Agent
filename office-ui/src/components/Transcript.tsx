@@ -308,7 +308,7 @@ function DetailsButton() {
 
 function UserMessage() {
   return (
-    <MessagePrimitive.Root data-slot="chat-message" data-role="user" className="mb-5 min-w-0 last:mb-2" aria-label="user message">
+    <MessagePrimitive.Root data-slot="chat-message" data-role="user" className="mb-6 min-w-0 last:mb-2 animate-in fade-in slide-in-from-bottom-1 duration-200" aria-label="user message">
       <Message align="end">
         <MessageContent>
           <Bubble variant="muted">
@@ -400,7 +400,7 @@ function ThinkingBubble() {
 
 function AssistantMessage() {
   return (
-    <MessagePrimitive.Root data-slot="chat-message" data-role="assistant" className="mb-5 min-w-0 last:mb-2" aria-label="assistant message">
+    <MessagePrimitive.Root data-slot="chat-message" data-role="assistant" className="mb-6 min-w-0 last:mb-2 animate-in fade-in slide-in-from-bottom-1 duration-200" aria-label="assistant message">
       <Message>
         <MessageContent>
         <MessageHeader>Seleric</MessageHeader>
@@ -487,9 +487,9 @@ export function Transcript() {
   const showSkeleton = loading && !!threadId && cachedCount === 0;
   return (
     <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
-      <ThreadPrimitive.Viewport className="min-h-0 flex-1 overflow-y-auto scroll-smooth px-6 pt-7 pb-4 max-md:px-3.5 max-md:pt-5" aria-label="Conversation transcript" aria-busy={loading}>
+      <ThreadPrimitive.Viewport className="min-h-0 flex-1 overflow-y-auto scroll-smooth px-6 pt-4 pb-4 max-md:px-3.5 max-md:pt-3" aria-label="Conversation transcript" aria-busy={loading}>
         {/* Key re-triggers the view-enter fade so browsing conversations feels fluid. */}
-        <div className="mx-auto w-full max-w-[880px] pb-3 animate-in fade-in duration-200" key={threadId ?? "empty"}>
+        <div className="mx-auto w-full max-w-[736px] pb-3 animate-in fade-in duration-200" key={threadId ?? "empty"}>
           {showSkeleton && <LoadingSkeleton />}
           {!threadId && (
             <Empty>

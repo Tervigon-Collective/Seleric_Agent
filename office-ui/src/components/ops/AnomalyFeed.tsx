@@ -21,7 +21,7 @@ function Row({ a }: { a: Anomaly }) {
   const j = m.judgement;
   const title = m.label || m.name || m.metric_id;
   return (
-    <Collapsible id={`feed-${a.id}`} data-slot="ops-row" data-status={m.status} className={cn("scroll-mt-3 rounded-md border bg-card", STATUS_ACCENT[m.status])}>
+    <Collapsible id={`feed-${a.id}`} data-slot="ops-row" data-status={m.status} className={cn("scroll-mt-3 rounded-xl border bg-card transition-colors duration-150", STATUS_ACCENT[m.status])}>
       <CollapsibleTrigger className="grid w-full cursor-pointer grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.4fr)_120px] items-center gap-x-4 gap-y-1 rounded-md p-3 text-left hover:bg-accent max-md:grid-cols-[minmax(0,1fr)_auto]">
         <span className="flex min-w-0 flex-wrap items-center gap-2">
           <strong className="text-sm font-medium break-words">{title}</strong>
@@ -49,7 +49,7 @@ export function AnomalyFeed({ domains }: { domains: DomainView[] }) {
   return (
     <section data-slot="ops-feed" aria-label="Anomalies" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="m-0 text-base font-medium">Anomalies</h3>
+        <h3 className="m-0 text-lg font-semibold tracking-tight">Anomalies</h3>
         <ToggleGroup type="single" variant="outline" size="sm" className="flex-wrap" aria-label="Show" value={tab} onValueChange={(value) => value && setTab(value as MetricStatus)}>
           {TABS.map((t) => (
             <ToggleGroupItem key={t.status} value={t.status}>

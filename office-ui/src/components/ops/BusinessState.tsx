@@ -27,7 +27,7 @@ export function BusinessState({ domains }: { domains: DomainView[] }) {
         <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
           <span className={cn("mt-1.5 size-2.5 shrink-0 rounded-full", DOT[alerts ? "alert" : n("watch") ? "watch" : "ok"])} aria-hidden />
           <div className="min-w-0 flex-[1_1_260px]">
-            <h3 className="m-0 text-base font-medium">{alerts ? `${alerts} ${alerts === 1 ? "metric needs" : "metrics need"} attention` : "No metric needs attention"}</h3>
+            <h3 className="m-0 text-xl font-semibold tracking-tight">{alerts ? `${alerts} ${alerts === 1 ? "metric needs" : "metrics need"} attention` : "No metric needs attention"}</h3>
             <p className="m-0 text-sm text-muted-foreground">
               {n("watch")} watching · {n("good")} better than usual · {n("ok")} normal{noVerdict ? ` · ${noVerdict} without a verdict yet` : ""}
               {" · "}{metrics.length} metrics in {live.length} {live.length === 1 ? "domain" : "domains"}
@@ -51,7 +51,7 @@ export function BusinessState({ domains }: { domains: DomainView[] }) {
               <a key={id} href={`#${id}`} className="min-w-0 text-inherit no-underline">
                 <Item variant="outline" size="sm" className={cn("h-full flex-col items-start gap-0.5", STATUS_ACCENT[m.status])}>
                   <ItemDescription className="w-full truncate">{m.label || m.name || m.metric_id}</ItemDescription>
-                  <b className="text-lg font-semibold tabular-nums">{formatValue(m.value, m.unit, m.display)}</b>
+                  <b className="text-xl font-medium tracking-tight tabular-nums">{formatValue(m.value, m.unit, m.display)}</b>
                   <small className="text-xs text-muted-foreground">{domain.title}</small>
                 </Item>
               </a>

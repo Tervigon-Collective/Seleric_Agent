@@ -17,13 +17,13 @@ export function MetricCard({ metric, domainId }: { metric: MetricView; domainId:
         ? formatMove(j?.worse_by, j?.unit, metric.display)
         : "Direction not set in the catalogue, so this is watched, not alerted";
   return (
-    <Card size="sm" data-slot="ops-card" data-status={metric.status} id={metricAnchor(domainId, metric.metric_id)} aria-label={title} className={cn("scroll-mt-3", STATUS_ACCENT[metric.status])}>
+    <Card size="sm" data-slot="ops-card" data-status={metric.status} id={metricAnchor(domainId, metric.metric_id)} aria-label={title} className={cn("scroll-mt-3 transition-shadow duration-200 hover:shadow-md", STATUS_ACCENT[metric.status])}>
       <CardHeader>
         <CardTitle className="break-words" title={metric.metric_id}>{title}</CardTitle>
         <CardAction><StatusBadge status={metric.status} /></CardAction>
       </CardHeader>
       <CardContent className="flex flex-col gap-1">
-        <div className="text-2xl font-semibold tabular-nums">{formatValue(metric.value, metric.unit, metric.display)}</div>
+        <div className="text-2xl font-medium tracking-tight tabular-nums">{formatValue(metric.value, metric.unit, metric.display)}</div>
         {j && j.expected !== null && (
           <div className="text-xs text-muted-foreground">
             expected {formatValue(j.expected, metric.unit, metric.display)}

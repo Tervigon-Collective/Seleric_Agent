@@ -319,7 +319,7 @@ select{
 /* Docked voice bar — same card as the composer, in whichever theme is active. */
 .voice-dock {
   --level: 0; --hue: 222;
-  max-width: 800px; margin: 0 auto; background: var(--panel); border: 1px solid var(--line-strong);
+  max-width: 736px; margin: 0 auto; background: var(--panel); border: 1px solid var(--line-strong);
   border-radius: var(--radius-xl); box-shadow: var(--shadow); overflow: hidden; animation: dock-in var(--motion) ease-out;
 }
 

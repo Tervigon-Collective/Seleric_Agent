@@ -17,7 +17,7 @@ function DomainHeader({ domain }: { domain: DomainView }) {
   return (
     <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
       <div>
-        <h3 className="m-0 text-base font-medium">{domain.title}</h3>
+        <h3 className="m-0 text-lg font-semibold tracking-tight">{domain.title}</h3>
         <p className="m-0 text-sm text-muted-foreground">{domain.description}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -51,7 +51,7 @@ export function OpsDashboard() {
     return <div className="py-8 text-muted-foreground">{error ? <p role="alert">{error}</p> : "No data yet."}</div>;
   }
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-10">
       <BusinessState domains={state.domains} />
       <AnomalyFeed domains={state.domains} />
       {state.domains.map((d) => (
@@ -67,7 +67,7 @@ export function OpsDashboard() {
               {d.snapshot.signals.length > 0 && (
                 <ul className="m-0 grid list-none gap-1 p-0 text-sm text-destructive">{d.snapshot.signals.map((s) => <li key={s}>{s}</li>)}</ul>
               )}
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
                 {d.snapshot.metrics.map((m) => <MetricCard key={m.metric_id} metric={m} domainId={d.id} />)}
               </div>
               {d.snapshot.metrics.length === 0 && <p className="text-sm text-muted-foreground">No metrics selected. Choose some in Monitoring.</p>}

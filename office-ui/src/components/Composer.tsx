@@ -211,11 +211,11 @@ export function Composer() {
   }, [corrections, text]);
 
   return (
-    <div className="shrink-0 bg-background px-6 pb-4 max-md:px-3 max-md:pb-[max(12px,env(safe-area-inset-bottom))]">
+    <div className="shrink-0 bg-background px-6 pb-3 max-md:px-3 max-md:pb-[max(12px,env(safe-area-inset-bottom))]">
       <VoiceDock />
       {/* Hidden, not unmounted: keeps the draft and the autocorrect listeners alive. */}
-      <div className="mx-auto max-w-[880px]" hidden={voiceLive}>
-        <ComposerPrimitive.Root aria-label="Message composer" className="flex flex-col gap-1 rounded-lg border bg-background p-2 transition-shadow focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+      <div className="mx-auto max-w-[736px]" hidden={voiceLive}>
+        <ComposerPrimitive.Root aria-label="Message composer" className="flex flex-col gap-1 rounded-[20px] border border-input bg-card p-2.5 shadow-[var(--shadow)] transition-[box-shadow,border-color] duration-200 focus-within:border-ring/60 focus-within:ring-3 focus-within:ring-ring/20">
           <div className="relative">
             <div className={cn(FIELD, "pointer-events-none absolute inset-0 overflow-hidden break-words whitespace-pre-wrap text-transparent")} aria-hidden="true" ref={backdropRef}>
               {renderBackdrop(text, activeCorrections)}
@@ -246,12 +246,12 @@ export function Composer() {
             <span className="flex-1" />
             <VoiceControls text={text} />
             <AuiIf condition={(state) => !state.thread.isRunning}>
-              <ComposerPrimitive.Send className={buttonVariants({ size: "icon-sm" })} aria-label="Send message" title="Send (Enter)">
+              <ComposerPrimitive.Send className={cn(buttonVariants({ size: "icon-sm" }), "rounded-full bg-brand text-sidebar-primary-foreground hover:bg-brand-hover transition-colors")} aria-label="Send message" title="Send (Enter)">
                 <SendIcon />
               </ComposerPrimitive.Send>
             </AuiIf>
             <AuiIf condition={(state) => state.thread.isRunning}>
-              <ComposerPrimitive.Cancel className={buttonVariants({ variant: "destructive", size: "icon-sm" })} aria-label="Cancel run" title="Stop generating">
+              <ComposerPrimitive.Cancel className={cn(buttonVariants({ variant: "destructive", size: "icon-sm" }), "rounded-full")} aria-label="Cancel run" title="Stop generating">
                 <StopIcon />
               </ComposerPrimitive.Cancel>
             </AuiIf>
