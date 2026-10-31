@@ -2,12 +2,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import App from "../App";
-import { DetailPanel, groupActivityPhases } from "../components/DetailPanel";
+import { groupActivityPhases } from "../components/DetailPanel";
 import { ThreadSidebar, isEvalThread } from "../components/ThreadSidebar";
 import type { SwarmUIEvent } from "../types";
 import { useConversationStore } from "../stores/conversation";
 import { useShellStore } from "../stores/shell";
-import { useOffice } from "../store";
 
 let container: HTMLDivElement;
 let root: Root;

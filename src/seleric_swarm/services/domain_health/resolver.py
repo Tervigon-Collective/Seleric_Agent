@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import statistics
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-
-import asyncio
-import statistics
 
 import yaml
 

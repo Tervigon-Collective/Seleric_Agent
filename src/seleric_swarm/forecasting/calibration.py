@@ -48,6 +48,6 @@ def empirical_total_error(
     if len(errors) < MIN_ORIGINS:
         return None
     cuts = statistics.quantiles(errors, n=20, method="inclusive")  # 5% steps
-    lo = cuts[int(round(quantiles[0] * 20)) - 1]
-    hi = cuts[int(round(quantiles[1] * 20)) - 1]
+    lo = cuts[round(quantiles[0] * 20) - 1]
+    hi = cuts[round(quantiles[1] * 20) - 1]
     return lo, hi, len(errors)
