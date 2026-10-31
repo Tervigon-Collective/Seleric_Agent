@@ -7,6 +7,7 @@ import {
   PaperclipIcon as Paperclip, PencilIcon as Pencil, PlusIcon as Plus, RotateCcwIcon as RotateCcw, SearchIcon as Search,
   SendHorizontalIcon as SendHorizontal, SlidersHorizontalIcon as SlidersHorizontal, SparklesIcon as Sparkles,
   SquareIcon as Square, SunIcon as Sun, ThumbsDownIcon as ThumbsDown, ThumbsUpIcon as ThumbsUp, XIcon as X,
+  BellRingIcon as BellRing, SettingsIcon as Settings,
   type LucideIcon,
 } from "lucide-react";
 
@@ -20,6 +21,8 @@ const wrap = (Icon: LucideIcon) => ({ size, className, ariaHidden = true }: Icon
   <Icon size={size} className={className} aria-hidden={ariaHidden} focusable="false" />;
 
 export const MenuIcon = wrap(Menu);
+export const BellRingIcon = wrap(BellRing);
+export const SettingsIcon = wrap(Settings);
 export const MoreIcon = wrap(Ellipsis);
 export const PanelRightIcon = wrap(PanelRight);
 export const SearchIcon = wrap(Search);

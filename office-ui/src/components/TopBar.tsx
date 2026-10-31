@@ -3,8 +3,6 @@ import { Button } from "@/components/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useOffice, type ConnState } from "../store";
 import type { MissionRef } from "../types";
-import type { Workspace } from "../stores/shell";
-import { ShellHeader } from "./ShellHeader";
 
 const CONN_LABEL: Record<ConnState, string> = {
   idle: "Idle",
@@ -19,16 +17,10 @@ export function TopBar({
   missions,
   missionId,
   onPickMission,
-  dark,
-  onToggleTheme,
-  onSwitch,
 }: {
   missions: MissionRef[];
   missionId: string | null;
   onPickMission: (id: string) => void;
-  dark: boolean;
-  onToggleTheme: () => void;
-  onSwitch: (w: Workspace) => void;
 }) {
   const conn = useOffice((s) => s.conn);
   const query = useOffice((s) => s.query);
@@ -43,7 +35,7 @@ export function TopBar({
   ).length;
 
   return (
-    <ShellHeader workspace="office" onSwitch={onSwitch} dark={dark} onToggleTheme={onToggleTheme} className="overflow-x-auto">
+    <>
 
       <NativeSelect
         className="max-w-64"
@@ -71,7 +63,7 @@ export function TopBar({
       <Button variant="outline" size="sm" onClick={toggleDebug}>Debug</Button>
 
       <Badge variant={conn === "live" ? "secondary" : "outline"}>{CONN_LABEL[conn]}</Badge>
-    </ShellHeader>
+    </>
   );
 }
 

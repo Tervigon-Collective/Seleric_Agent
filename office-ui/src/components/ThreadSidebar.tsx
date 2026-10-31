@@ -7,7 +7,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "cn";
-import { ArchiveIcon, PencilIcon, PlusIcon, XIcon } from "./icons";
+import { ArchiveIcon, PencilIcon } from "./icons";
 
 function groupLabel(date: Date, now: Date): string {
   const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -25,16 +25,6 @@ export function isEvalThread(title: string | null | undefined): boolean {
   return /^\s*golden[\s\-_]*q\d+/i.test(title) || /eval(uation)?\s*(run|set|suite)/i.test(title);
 }
 
-function shortDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const now = new Date();
-  const sameYear = date.getFullYear() === now.getFullYear();
-  return date.toLocaleDateString(undefined, sameYear
-    ? { month: "short", day: "numeric" }
-    : { month: "short", day: "numeric", year: "numeric" });
-}
-
 function ThreadRow({ thread, selected, onChoose, onRename, onArchive }: {
   thread: Thread;
   selected: boolean;
@@ -44,19 +34,19 @@ function ThreadRow({ thread, selected, onChoose, onRename, onArchive }: {
 }) {
   const title = thread.title || "Untitled conversation";
   return (
-    <div data-slot="thread-row" className={cn("group flex items-center gap-1 rounded-md", selected && "bg-accent")}>
+    <div data-slot="thread-row" className={cn("group relative flex items-center gap-1 rounded-lg transition-colors duration-150 hover:bg-accent/60", selected && "bg-accent")}>
       <Button
         variant="ghost"
         size="sm"
-        className="h-auto min-w-0 flex-1 justify-between gap-2 py-1.5 font-normal"
+        className="h-8 min-w-0 flex-1 justify-between gap-2 rounded-lg px-2.5 text-[13.5px] font-normal transition-colors duration-150"
         onClick={() => onChoose(thread.id)}
         aria-current={selected ? "page" : undefined}
         title={title}
       >
         <span className="truncate">{title}</span>
-        <small className="shrink-0 text-xs text-muted-foreground">{shortDate(thread.updated_at)}</small>
+        
       </Button>
-      <div className="flex shrink-0 opacity-0 focus-within:opacity-100 group-hover:opacity-100 max-lg:opacity-100">
+      <div className="absolute right-0.5 flex shrink-0 rounded-lg bg-accent opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100 max-lg:opacity-100">
         <Button variant="ghost" size="icon-sm" aria-label={`Rename ${thread.title || "conversation"}`} title="Rename" onClick={() => onRename(thread)}><PencilIcon /></Button>
         <Button variant="ghost" size="icon-sm" aria-label={`Archive ${thread.title || "conversation"}`} title="Archive" onClick={() => onArchive(thread.id)}><ArchiveIcon /></Button>
       </div>
@@ -69,8 +59,7 @@ export function ThreadSidebar() {
   const selected = useConversationStore((s) => s.selectedThreadId);
   const search = useConversationStore((s) => s.search);
   const setSearch = useConversationStore((s) => s.setSearch);
-  const createThread = useConversationStore((s) => s.createThread);
-  const selectThread = useConversationStore((s) => s.selectThread);
+    const selectThread = useConversationStore((s) => s.selectThread);
   const renameThread = useConversationStore((s) => s.renameThread);
   const archiveThread = useConversationStore((s) => s.archiveThread);
   const toggleSidebar = useShellStore((s) => s.toggleSidebar);
@@ -114,20 +103,13 @@ export function ThreadSidebar() {
   };
 
   return (
-    <aside aria-label="Conversations" className="flex h-full min-h-0 w-full flex-col gap-3 border-r bg-sidebar p-3 lg:w-60 lg:shrink-0">
-      <div className="flex items-center justify-between gap-2">
-        <strong className="text-sm font-medium text-muted-foreground">Conversations</strong>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Close conversations" onClick={toggleSidebar}><XIcon /></Button>
-          <Button size="sm" onClick={() => void createThread()}><PlusIcon /> New</Button>
-        </div>
-      </div>
-      <Input type="search" aria-label="Search conversations" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search conversations" />
+    <div data-slot="thread-sidebar" className="flex min-h-0 flex-1 flex-col gap-2">
+      <Input type="search" className="h-8 border-transparent bg-background/60 text-[13.5px] shadow-none transition-colors focus-visible:bg-background" aria-label="Search conversations" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search conversations" />
       <ScrollArea className="min-h-0 flex-1">
         <nav aria-label="Conversation list" className="flex flex-col gap-1">
           {groups.map((group) => (
             <div key={group.label} className="flex flex-col gap-0.5">
-              <div className="px-2 pt-2 text-xs font-medium text-muted-foreground" aria-hidden="true">{group.label}</div>
+              <div className="px-2.5 pt-3 pb-1 text-xs font-medium text-muted-foreground" aria-hidden="true">{group.label}</div>
               {group.items.map((thread) => (
                 <ThreadRow
                   key={thread.id}
@@ -162,7 +144,6 @@ export function ThreadSidebar() {
           )}
         </nav>
       </ScrollArea>
-      <p className="text-xs text-muted-foreground">Ask about sales, marketing, products, or operations. Evidence stays with every answer.</p>
-    </aside>
+    </div>
   );
 }
