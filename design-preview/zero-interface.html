@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seleric Zero Interface Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Zero Interface: one centred focus (prompt, listening, thinking, answer), everything else tucked behind disclosure.
+   Surfaces are the three warm/cool off-whites; blue and violet are used for the orb, borders and large type. Text uses darker shades for AA. */
+:root{
+  --bg:#fafafa; --surface:#f0f0f0; --warm:#f5f1e8; --line:#e2e0d9; --line-strong:#cbc8be;
+  --text:#1f2125; --dim:#575b63; --faint:#777b84;
+  --blue:#3b82f6; --blue-text:#1d4ed8; --violet:#9333ea; --violet-text:#7e22ce; --blue-soft:#e6efff; --violet-soft:#f3e8ff;
+  --good:#166534; --bad:#b91c1c; --warn:#92400e;
+  --font:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --ease:cubic-bezier(.2,.7,.2,1);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17181a;--surface:#222326;--warm:#26241f;--line:#34332f;--line-strong:#4a4943;--text:#ecebe6;--dim:#b3b1a8;--faint:#8f8d85;--blue:#60a5fa;--blue-text:#93c5fd;--violet:#a855f7;--violet-text:#d8b4fe;--blue-soft:#1c2a45;--violet-soft:#2e2142;--good:#4ade80;--bad:#f87171;--warn:#fbbf24;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#17181a;--surface:#222326;--warm:#26241f;--line:#34332f;--line-strong:#4a4943;--text:#ecebe6;--dim:#b3b1a8;--faint:#8f8d85;--blue:#60a5fa;--blue-text:#93c5fd;--violet:#a855f7;--violet-text:#d8b4fe;--blue-soft:#1c2a45;--violet-soft:#2e2142;--good:#4ade80;--bad:#f87171;--warn:#fbbf24;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:400 16px/1.6 var(--font);-webkit-font-smoothing:antialiased;overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+h1,h2,p{margin:0}
+:focus-visible{outline:3px solid var(--violet);outline-offset:3px;border-radius:8px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* tucked chrome: only a menu button and a state label are visible */
+.bar{position:fixed;inset:0 0 auto 0;height:56px;display:flex;align-items:center;gap:8px;padding:0 16px;z-index:20}
+.ghost{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:var(--dim);transition:background .15s,color .15s,transform .12s var(--ease)}
+.ghost:hover{background:var(--surface);color:var(--text)}
+.ghost:active{transform:scale(.94)}
+.ghost svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.brand{font-weight:600;font-size:15px;letter-spacing:-.01em;opacity:0;transition:opacity .2s}
+.bar:hover .brand,.bar:focus-within .brand{opacity:1}
+.bar .grow{flex:1}
+.drawer{position:fixed;top:0;bottom:0;left:0;width:280px;background:var(--warm);border-right:1px solid var(--line);padding:68px 12px 12px;display:flex;flex-direction:column;gap:2px;transform:translateX(-102%);transition:transform .22s var(--ease);z-index:30}
+.drawer.open{transform:none;box-shadow:0 20px 50px rgba(30,25,15,.18)}
+.drawer h2{font-size:12px;font-weight:500;color:var(--faint);padding:14px 12px 4px}
+.drawer .item{display:block;width:100%;text-align:left;padding:8px 12px;border-radius:10px;font-size:14.5px;color:var(--text)}
+.drawer .item:hover{background:var(--surface)}
+.drawer .item[aria-current="page"]{background:var(--surface);font-weight:500}
+.drawer .seg{display:flex;gap:2px;background:var(--surface);padding:3px;border-radius:10px;margin:4px 8px}
+.drawer .seg button{flex:1;padding:5px;border-radius:7px;font-size:13px;color:var(--dim)}
+.drawer .seg button[aria-pressed="true"]{background:var(--bg);color:var(--text)}
+.scrim{position:fixed;inset:0;background:rgba(30,25,15,.25);opacity:0;pointer-events:none;transition:opacity .2s;z-index:25}
+.scrim.on{opacity:1;pointer-events:auto}
+.close-x{position:absolute;top:8px;left:12px}
+
+/* one centred focus */
+main{height:100%;display:grid;place-items:center;padding:72px 20px 24px}
+.stage{width:100%;max-width:640px;display:flex;flex-direction:column;align-items:center;gap:22px;text-align:center}
+.view{display:none;width:100%;flex-direction:column;align-items:center;gap:22px}
+.view.on{display:flex;animation:rise .28s var(--ease) both}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}}
+h1{font-size:clamp(28px,5vw,38px);line-height:1.2;font-weight:500;letter-spacing:-.02em;text-wrap:balance}
+.sub{color:var(--dim);max-width:46ch}
+.orb{width:168px;height:168px;position:relative}
+.orb canvas{width:100%;height:100%;display:block}
+.orb.small{width:96px;height:96px}
+.state{font-size:15px;color:var(--dim);min-height:24px}
+.state b{color:var(--text);font-weight:500}
+.wave{display:flex;gap:4px;align-items:center;height:36px}
+.wave i{width:4px;height:8px;border-radius:2px;background:linear-gradient(var(--blue),var(--violet));animation:wave 900ms ease-in-out infinite}
+.wave i:nth-child(2n){animation-delay:-.3s}.wave i:nth-child(3n){animation-delay:-.6s}.wave i:nth-child(5n){animation-delay:-.15s}
+@keyframes wave{50%{height:30px}}
+.say{font-size:clamp(20px,3.4vw,26px);line-height:1.4;font-weight:400;letter-spacing:-.01em;min-height:36px}
+
+/* prompt: typed input is always present next to the mic */
+.prompt{width:100%;display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 6px 6px 20px;transition:border-color .15s,box-shadow .15s}
+.prompt:focus-within{border-color:var(--blue);box-shadow:0 0 0 4px var(--blue-soft)}
+.prompt input{flex:1;min-width:0;border:0;outline:0;background:none;color:var(--text);font:inherit;font-size:16px;padding:8px 0}
+.prompt input::placeholder{color:var(--faint)}
+.mic{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--text);color:var(--bg);transition:transform .12s var(--ease),background .15s}
+.mic:hover{background:var(--blue-text)}.mic:active{transform:scale(.92)}
+.mic[aria-pressed="true"]{background:var(--violet);color:#fff}
+.mic svg,.go svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.go{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:var(--dim)}
+.go:hover{background:var(--bg);color:var(--text)}
+
+.chips{display:flex;flex-direction:column;gap:8px;width:100%;align-items:center}
+.chips .label{font-size:12.5px;color:var(--faint)}
+.chip{max-width:100%;padding:9px 16px;border-radius:999px;border:1px solid var(--line-strong);background:var(--bg);font-size:14.5px;color:var(--text);text-align:left;transition:border-color .15s,background .15s,transform .12s var(--ease)}
+.chip:hover{border-color:var(--blue);background:var(--blue-soft)}.chip:active{transform:scale(.98)}
+.chip.v:hover{border-color:var(--violet);background:var(--violet-soft)}
+.row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.hint{font-size:12.5px;color:var(--faint)}
+.err{font-size:13.5px;color:var(--bad);min-height:20px}
+
+/* answer: one result in focus, evidence on request */
+.answer{width:100%;text-align:left;display:flex;flex-direction:column;gap:14px}
+.q{font-size:14px;color:var(--faint)}
+.answer h2{font-size:clamp(22px,3.6vw,28px);line-height:1.3;font-weight:500;letter-spacing:-.015em;text-wrap:balance}
+.answer p.body{font-size:17px;line-height:1.7;color:var(--text)}
+.disclose{align-self:flex-start;font-size:14px;color:var(--blue-text);padding:6px 4px;display:flex;gap:6px;align-items:center}
+.disclose::after{content:"";width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);transition:transform .18s}
+.disclose[aria-expanded="true"]::after{transform:rotate(-135deg)}
+.evidence{display:none;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--bg)}
+.evidence.on{display:block;animation:rise .24s var(--ease) both}
+table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+th{text-align:left;font-weight:500;color:var(--dim);padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px}
+td{padding:10px 14px;border-bottom:1px solid var(--line)}tr:last-child td{border-bottom:0}
+.n{text-align:right}
+.src{padding:8px 14px;font-size:12.5px;color:var(--faint);border-top:1px solid var(--line)}
+.next{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.next .label{font-size:12.5px;color:var(--faint)}
+
+/* ops: one sentence first */
+.ops-sentence{font-size:clamp(26px,4.4vw,36px);line-height:1.25;font-weight:500;letter-spacing:-.02em;text-wrap:balance}
+.ops-sentence em{font-style:normal;color:var(--bad)}
+.metrics{display:none;width:100%;text-align:left;border-top:1px solid var(--line)}
+.metrics.on{display:block;animation:rise .24s var(--ease) both}
+.m{display:grid;grid-template-columns:1fr auto auto;gap:16px;align-items:center;padding:14px 4px;border-bottom:1px solid var(--line)}
+.m small{display:block;color:var(--faint);font-size:12.5px}
+.pill{font-size:12.5px;font-weight:500;padding:2px 10px;border-radius:999px}
+.pill.alert{background:#fde8e8;color:#991b1b}.pill.watch{background:#fdf0d5;color:#854d0e}.pill.ok{background:var(--surface);color:var(--dim)}
+:root[data-theme="dark"] .pill.alert,:root:not([data-theme="light"]) .pill.alert{--x:0}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .pill.alert{background:#3b1d1d;color:#fca5a5}:root:not([data-theme="light"]) .pill.watch{background:#3a2e12;color:#fcd34d}}
+:root[data-theme="dark"] .pill.alert{background:#3b1d1d;color:#fca5a5}:root[data-theme="dark"] .pill.watch{background:#3a2e12;color:#fcd34d}
+
+/* undo toast */
+.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);opacity:0;pointer-events:none;background:var(--text);color:var(--bg);padding:10px 12px 10px 18px;border-radius:999px;display:flex;gap:14px;align-items:center;font-size:14px;transition:opacity .2s,transform .22s var(--ease);z-index:40;max-width:calc(100% - 32px)}
+.toast.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.toast button{color:var(--blue);font-weight:500;padding:4px 10px;border-radius:999px}
+:root[data-theme="dark"] .toast button{color:#1d4ed8}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .toast button{color:#1d4ed8}}
+
+/* mock-only: lets a reviewer step through states without a microphone */
+.mock{position:fixed;right:12px;top:8px;display:flex;gap:4px;align-items:center;background:var(--warm);border:1px solid var(--line);border-radius:999px;padding:4px 6px 4px 12px;font-size:12px;color:var(--dim);z-index:20}
+.mock button{padding:4px 10px;border-radius:999px;font-size:12px;color:var(--text)}
+.mock button:hover{background:var(--surface)}
+.mock button[aria-pressed="true"]{background:var(--text);color:var(--bg)}
+@media (max-width:620px){.mock{top:auto;bottom:8px;left:12px;right:12px;justify-content:space-between;flex-wrap:wrap;border-radius:16px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.wave i{height:18px}}
+</style>
+</head>
+<body>
+<header class="bar">
+  <button class="ghost" id="menuBtn" aria-label="Open menu" aria-expanded="false" aria-controls="drawer"><svg viewBox="0 0 24 24"><path d="M4 8h16M4 16h16"/></svg></button>
+  <span class="brand">Seleric</span><span class="grow"></span>
+</header>
+<div class="scrim" id="scrim"></div>
+<nav class="drawer" id="drawer" aria-label="Main menu">
+  <button class="ghost close-x" id="closeBtn" aria-label="Close menu"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <button class="item" data-view="idle" aria-current="page">New chat</button>
+  <button class="item" data-view="search">Search <span style="float:right;color:var(--faint);font-size:12px">⌘K</span></button>
+  <h2>Workspaces</h2>
+  <button class="item" data-view="idle">Chat</button>
+  <button class="item" data-view="ops">Ops</button>
+  <button class="item" data-view="ops">Monitoring</button>
+  <button class="item" data-view="office">Office</button>
+  <h2>Conversations</h2>
+  <button class="item" data-view="answer">Why did repeat purchases drop last week</button>
+  <button class="item" data-view="answer">Top products by margin</button>
+  <h2>Settings</h2>
+  <button class="item" data-view="prompts">Prompts</button>
+  <button class="item" data-view="diag">Diagnostics</button>
+  <div class="seg" role="group" aria-label="Theme"><button data-theme-set="light" aria-pressed="false">Light</button><button data-theme-set="system" aria-pressed="true">System</button><button data-theme-set="dark" aria-pressed="false">Dark</button></div>
+</nav>
+
+<main><div class="stage">
+
+  <!-- IDLE: one prompt in focus -->
+  <section class="view on" id="v-idle" aria-label="Ask">
+    <div class="orb"><canvas data-orb aria-hidden="true"></canvas></div>
+    <h1>Where should we begin?</h1>
+    <p class="sub">Ask about marketing, sales, products, or operations. Seleric investigates your metrics and shows its evidence.</p>
+    <form class="prompt" id="form">
+      <label class="sr" for="q">Message</label>
+      <input id="q" type="text" autocomplete="off" placeholder="Ask about sales, marketing, products…">
+      <button type="button" class="mic" id="micBtn" aria-pressed="false" aria-label="Start voice input"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></button>
+      <button class="go" aria-label="Send message"><svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+    </form>
+    <div class="err" id="err" role="status"></div>
+    <div class="chips" aria-label="Suggested questions">
+      <span class="label">Suggested</span>
+      <button class="chip" data-ask="How are we doing this week compared to last week? Give me the one-minute version.">How are we doing this week compared to last week?</button>
+      <button class="chip v" data-ask="Are my customers coming back, or is it all first-time buyers?">Are my customers coming back, or is it all first-time buyers?</button>
+      <button class="chip" data-ask="Which Meta campaigns should I scale and which should I kill this week?">Which Meta campaigns should I scale and which should I kill?</button>
+    </div>
+    <p class="hint">Say it or type it. Press Space on the mic button, or swipe right to open the menu.</p>
+  </section>
+
+  <!-- LISTENING -->
+  <section class="view" id="v-listening" aria-label="Listening">
+    <div class="orb"><canvas data-orb aria-hidden="true"></canvas></div>
+    <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <p class="state" aria-live="polite"><b>Listening</b> · say a question, or type below</p>
+    <p class="say" id="heard" aria-live="polite">Why did repeat purchases drop last week</p>
+    <div class="row"><button class="chip" id="stopBtn">Stop listening</button></div>
+  </section>
+
+  <!-- THINKING -->
+  <section class="view" id="v-thinking" aria-label="Thinking">
+    <div class="orb"><canvas data-orb aria-hidden="true"></canvas></div>
+    <p class="state" aria-live="polite"><b>Investigating</b> · comparing repeat purchase rate with the same weekday over the last 4 weeks</p>
+    <div class="row"><button class="chip" id="cancelBtn">Cancel</button></div>
+  </section>
+
+  <!-- ANSWER: one result, evidence on request -->
+  <section class="view" id="v-answer" aria-label="Answer">
+    <div class="answer">
+      <p class="q">Why did repeat purchases drop last week</p>
+      <h2>Repeat purchases fell because fewer returning customers were emailed</h2>
+      <p class="body">The repeat purchase rate was 18.4% last week, against 24.1% expected. The drop sits in customers who bought 30 to 60 days ago, and the win-back campaign that normally reaches them sent 61% fewer emails than usual.</p>
+      <button class="disclose" id="evBtn" aria-expanded="false" aria-controls="ev">Show evidence</button>
+      <div class="evidence" id="ev">
+        <table><thead><tr><th>Cohort</th><th class="n">Last week</th><th class="n">Expected</th><th class="n">Change</th></tr></thead>
+        <tbody><tr><td>Bought 0–30 days ago</td><td class="n">31.2%</td><td class="n">30.8%</td><td class="n">+0.4 pts</td></tr>
+        <tr><td>Bought 30–60 days ago</td><td class="n">12.6%</td><td class="n">22.9%</td><td class="n" style="color:var(--bad)">−10.3 pts</td></tr>
+        <tr><td>Bought 60+ days ago</td><td class="n">6.1%</td><td class="n">6.4%</td><td class="n">−0.3 pts</td></tr></tbody></table>
+        <div class="src">Source: orders, email_sends · 14 to 20 Oct</div>
+      </div>
+      <div class="next"><span class="label">Suggested next</span>
+        <div class="row" style="justify-content:flex-start">
+          <button class="chip" data-prefill="Re-send the win-back campaign to 4,812 customers">Re-send the win-back campaign</button>
+          <button class="chip v" data-prefill="Compare repeat purchases by channel">Compare by channel</button>
+          <button class="chip" id="newBtn">Ask something else</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- OPS: one sentence first -->
+  <section class="view" id="v-ops" aria-label="Ops">
+    <p class="ops-sentence"><em>2 metrics</em> need attention.</p>
+    <p class="sub">3 watching · 4 better than usual · 31 normal. Data to 30 Oct, oldest check 12 minutes ago.</p>
+    <button class="disclose" id="mBtn" aria-expanded="false" aria-controls="metrics">Show the 9 that matter</button>
+    <div class="metrics" id="metrics">
+      <div class="m"><span>Repeat purchase rate<small>Commerce · expected 24.1%</small></span><b>18.4%</b><span class="pill alert">Needs attention</span></div>
+      <div class="m"><span>Email sends<small>Marketing · expected 4,880</small></span><b>1,904</b><span class="pill alert">Needs attention</span></div>
+      <div class="m"><span>Average order value<small>Commerce · expected ₹1,380</small></span><b>₹1,420</b><span class="pill watch">Watching</span></div>
+      <div class="m"><span>Revenue<small>Commerce</small></span><b>₹41.2 L</b><span class="pill ok">Normal</span></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-office" aria-label="Office"><h1>Office</h1><p class="sub">The mission board and agent view keep their current layout and pick up the new colours and spacing.</p></section>
+  <section class="view" id="v-search" aria-label="Search"><h1>Search conversations</h1><p class="sub">Opens the existing command search as a single centred field.</p></section>
+  <section class="view" id="v-prompts" aria-label="Prompts"><h1>Prompts</h1><p class="sub">The prompt registry opens as a centred list, one filter row at a time.</p></section>
+  <section class="view" id="v-diag" aria-label="Diagnostics"><h1>Diagnostics</h1><p class="sub">Connection, API and worker health for administrators.</p></section>
+</div></main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span><button id="undoBtn">Undo</button></div>
+
+<div class="mock" role="group" aria-label="Mock only: step through states"><span>Mock only</span>
+  <button data-go="idle" aria-pressed="true">Idle</button><button data-go="listening" aria-pressed="false">Listening</button><button data-go="thinking" aria-pressed="false">Thinking</button><button data-go="answer" aria-pressed="false">Answer</button><button data-go="ops" aria-pressed="false">Ops</button>
+</div>
+
+<script>
+(function(){
+  var $=function(s,r){return (r||document).querySelector(s)},$$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+  var cur="idle",orbState="idle",timers=[];
+  function clearT(){timers.forEach(clearTimeout);timers=[]}
+  function show(id){
+    cur=id;clearT();
+    $$(".view").forEach(function(v){v.classList.toggle("on",v.id==="v-"+id)});
+    $$("[data-go]").forEach(function(b){b.setAttribute("aria-pressed",b.getAttribute("data-go")===id)});
+    orbState=id==="listening"?"listening":id==="thinking"?"thinking":"idle";
+    $("#evBtn").setAttribute("aria-expanded","false");$("#ev").classList.remove("on");
+    closeDrawer();
+    if(history.replaceState)history.replaceState(null,"","#"+id);
+  }
+  /* menu: hidden until asked for, or until it receives focus */
+  function openDrawer(){$("#drawer").classList.add("open");$("#scrim").classList.add("on");$("#menuBtn").setAttribute("aria-expanded","true");$("#closeBtn").focus()}
+  function closeDrawer(){$("#drawer").classList.remove("open");$("#scrim").classList.remove("on");$("#menuBtn").setAttribute("aria-expanded","false")}
+  $("#menuBtn").onclick=openDrawer;$("#closeBtn").onclick=function(){closeDrawer();$("#menuBtn").focus()};$("#scrim").onclick=closeDrawer;
+  document.addEventListener("keydown",function(e){if(e.key==="Escape")closeDrawer();if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();show("search")}});
+  $$("#drawer [data-view]").forEach(function(b){b.onclick=function(){$$("#drawer .item").forEach(function(i){i.removeAttribute("aria-current")});b.setAttribute("aria-current","page");show(b.getAttribute("data-view"))}});
+  $$("[data-go]").forEach(function(b){b.onclick=function(){show(b.getAttribute("data-go"))}});
+  function setTheme(t){var r=document.documentElement;if(t==="system")r.removeAttribute("data-theme");else r.setAttribute("data-theme",t);$$("[data-theme-set]").forEach(function(b){b.setAttribute("aria-pressed",b.getAttribute("data-theme-set")===t)})}
+  $$("[data-theme-set]").forEach(function(b){b.onclick=function(){setTheme(b.getAttribute("data-theme-set"))}});
+
+  /* gestures: swipe right from the left edge opens the menu; swipe up on an answer reveals evidence. Buttons do the same. */
+  var sx=0,sy=0;
+  document.addEventListener("pointerdown",function(e){sx=e.clientX;sy=e.clientY});
+  document.addEventListener("pointerup",function(e){
+    var dx=e.clientX-sx,dy=e.clientY-sy;
+    if(sx<28&&dx>70&&Math.abs(dy)<60)openDrawer();
+    else if(cur==="answer"&&dy<-70&&Math.abs(dx)<60&&!$("#ev").classList.contains("on"))toggleEv();
+    else if(cur==="answer"&&dy>70&&Math.abs(dx)<60&&$("#ev").classList.contains("on"))toggleEv();
+  });
+  function toggleEv(){var on=$("#ev").classList.toggle("on");$("#evBtn").setAttribute("aria-expanded",on);$("#evBtn").textContent=on?"Hide evidence":"Show evidence"}
+  $("#evBtn").onclick=toggleEv;
+  $("#mBtn").onclick=function(){var on=$("#metrics").classList.toggle("on");this.setAttribute("aria-expanded",on);this.textContent=on?"Hide":"Show the 9 that matter"};
+
+  /* asking: chips and typed input fill the field, nothing is sent without a deliberate action */
+  function ask(text){$("#heard").textContent=text;show("thinking");timers.push(setTimeout(function(){show("answer")},2200))}
+  $$("[data-ask]").forEach(function(b){b.onclick=function(){$("#q").value=b.getAttribute("data-ask");$("#q").focus()}});
+  $("#form").onsubmit=function(e){e.preventDefault();var v=$("#q").value.trim();if(v)ask(v);else $("#q").focus()};
+  $("#cancelBtn").onclick=function(){show("idle")};$("#newBtn").onclick=function(){show("idle");$("#q").focus()};
+
+  /* undoable pre-fill from a suggested next action */
+  var prev="";
+  $$("[data-prefill]").forEach(function(b){b.onclick=function(){prev=$("#q").value;$("#q").value=b.getAttribute("data-prefill");$("#toastText").textContent="Suggested question added to the prompt";$("#toast").classList.add("on");show("idle");$("#toast").classList.add("on");timers.push(setTimeout(function(){$("#toast").classList.remove("on")},6000));}});
+  $("#undoBtn").onclick=function(){$("#q").value=prev;$("#toast").classList.remove("on")};
+
+  /* voice: real Web Speech API when present; typed input always remains */
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition,rec=null,listening=false;
+  function stopVoice(){listening=false;$("#micBtn").setAttribute("aria-pressed","false");$("#micBtn").setAttribute("aria-label","Start voice input");try{rec&&rec.stop()}catch(e){}}
+  function startVoice(){
+    $("#err").textContent="";
+    if(!SR){$("#err").textContent="Voice input isn't available in this browser. Type your question instead.";return}
+    rec=new SR();rec.lang="en-IN";rec.interimResults=true;rec.continuous=false;
+    rec.onstart=function(){listening=true;$("#micBtn").setAttribute("aria-pressed","true");$("#micBtn").setAttribute("aria-label","Stop voice input");$("#heard").textContent="…";show("listening")};
+    rec.onresult=function(e){var t="";for(var i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;$("#heard").textContent=t;$("#q").value=t;if(e.results[e.results.length-1].isFinal)ask(t)};
+    rec.onerror=function(e){stopVoice();show("idle");$("#err").textContent=e.error==="not-allowed"||e.error==="service-not-allowed"?"Microphone access is blocked. Type your question instead.":"Couldn't hear that. Try again or type your question."};
+    rec.onend=function(){if(listening){stopVoice();if(cur==="listening")show("idle")}};
+    try{rec.start()}catch(e){$("#err").textContent="Voice input couldn't start. Type your question instead."}
+  }
+  $("#micBtn").onclick=function(){listening?(stopVoice(),show("idle")):startVoice()};
+  $("#stopBtn").onclick=function(){stopVoice();show("idle")};
+
+  /* orb: particle sphere on canvas; colour and motion follow the state */
+  var orbs=$$("canvas[data-orb]"),N=900,pts=[];
+  for(var i=0;i<N;i++){var y=1-2*(i+.5)/N,a=i*2.39996,r=Math.sqrt(1-y*y);pts.push([Math.cos(a)*r,y,Math.sin(a)*r])}
+  var reduce=window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function draw(t){
+    var dark=getComputedStyle(document.documentElement).colorScheme.indexOf("dark")===0&&true;
+    var amp=orbState==="listening"?.14:orbState==="thinking"?.07:.03,speed=orbState==="thinking"?1400:2800;
+    orbs.forEach(function(c){
+      if(!c.offsetWidth)return;var s=c.offsetWidth,dpr=window.devicePixelRatio||1;if(c.width!==s*dpr){c.width=c.height=s*dpr}
+      var x=c.getContext("2d");x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,s,s);
+      var rot=reduce?0:t/speed,cr=Math.cos(rot),sr=Math.sin(rot),R=s*.38;
+      for(var i=0;i<N;i++){var p=pts[i],px=p[0]*cr+p[2]*sr,pz=-p[0]*sr+p[2]*cr,w=1+(reduce?0:amp*Math.sin(t/240+p[1]*5+i*.01)),d=(pz+1)/2;
+        var mix=(p[1]+1)/2,hue=215+mix*68; /* blue (217) to violet (283) */
+        x.fillStyle="hsla("+hue+",80%,"+(dark?62:46)+"%,"+(.18+d*.72)+")";
+        x.fillRect(s/2+px*R*w,s/2+p[1]*R*w,s>120?1.8:1.3,s>120?1.8:1.3)}
+    });requestAnimationFrame(draw)}
+  requestAnimationFrame(draw);
+  window.addEventListener("hashchange",function(){var h=location.hash.slice(1).replace(/[^a-z]/g,"");if(h&&h!==cur&&$("#v-"+h))show(h)});
+  show((location.hash||"#idle").slice(1).replace(/[^a-z]/g,"")||"idle");
+  if(!$("#v-"+cur))show("idle");
+})();
+</script>
+</body>
+</html>
