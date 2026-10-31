@@ -109,7 +109,7 @@ export function PromptRegistry({
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground" role="status">No prompts match these filters.</p>
       ) : front ? (
-        <div className="flex w-full max-w-xl flex-col gap-2" role="list">
+        <div className="stagger flex w-full max-w-xl flex-col gap-2" role="list">
           {filtered.map((prompt) => (
             <PromptChip key={prompt.id} prompt={prompt} onSelect={selectPrompt} showBadges={false} />
           ))}

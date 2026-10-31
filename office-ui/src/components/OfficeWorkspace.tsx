@@ -80,7 +80,7 @@ export function OfficeWorkspace({ dark }: { dark: boolean; onToggleTheme?: () =>
       toggleLabel="Toggle navigation"
       header={<TopBar missions={missions} missionId={missionId} onPickMission={setMissionId} />}
     >
-    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto]">
+    <div className="page-enter grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto]">
       <div data-slot="stage" className="relative overflow-hidden bg-[#12181e]" onMouseMove={(event) => setPointer({ x: event.clientX, y: event.clientY })}>
         <OfficeCanvas dark={dark} /><MissionHeader /><MissionBoard />
         <AgentHoverCard x={pointer.x} y={pointer.y} /><AgentInspector />

@@ -75,11 +75,22 @@ export default function App() {
   const [routingReady, setRoutingReady] = useState(false);
   const dark = useThemeStore((s) => s.dark);
   const syncSystemTheme = useThemeStore((s) => s.syncSystem);
+  const firstTheme = useRef(true);
+  useEffect(() => {
+    // A brief crossfade on a real theme change, not on first paint.
+    const root = document.documentElement;
+    if (!firstTheme.current) {
+      root.classList.add("theme-fade");
+      const timer = window.setTimeout(() => root.classList.remove("theme-fade"), 320);
+      return () => window.clearTimeout(timer);
+    }
+  }, [dark]);
   useEffect(() => {
     // data-theme is always light or dark, so the CSS and the shadcn dark variant keep one switch.
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
     document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute("content", dark ? "#0f1219" : "#f6f7fb");
+    firstTheme.current = false;
   }, [dark]);
   useEffect(() => {
     const query = window.matchMedia?.("(prefers-color-scheme: dark)");

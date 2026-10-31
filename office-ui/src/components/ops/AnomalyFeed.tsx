@@ -58,7 +58,7 @@ export function AnomalyFeed({ domains }: { domains: DomainView[] }) {
           ))}
         </ToggleGroup>
       </div>
-      {rows.length === 0 ? <p className="text-sm text-muted-foreground">{current.empty}</p> : <div className="flex flex-col gap-2">{rows.map((a) => <Row key={a.id} a={a} />)}</div>}
+      {rows.length === 0 ? <p className="text-sm text-muted-foreground">{current.empty}</p> : <div key={tab} className="stagger flex flex-col gap-2">{rows.map((a) => <Row key={a.id} a={a} />)}</div>}
       <p className="text-xs text-muted-foreground">How verdicts are made: each metric is compared with the median of its same weekday over the last 4 weeks, normal range is 3 spreads either side.</p>
     </section>
   );

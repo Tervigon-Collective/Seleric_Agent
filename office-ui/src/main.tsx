@@ -5,6 +5,7 @@ import { AppErrorBoundary } from "./components/ErrorBoundary";
 import "@fontsource-variable/inter";
 import "./styles/shadcn.css";
 import "./index.css";
+import "./styles/motion.css";
 
 // A deploy replaces the hashed lazy chunks; a tab opened before it must reload to find them.
 // The 10 s guard stops a reload loop when the chunk is genuinely unreachable.

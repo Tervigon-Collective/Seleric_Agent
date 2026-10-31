@@ -52,7 +52,7 @@ export function OpsWorkspace(_props: { dark?: boolean } = {}) {
       header={<span className="min-w-0 flex-1 truncate px-1 text-sm text-muted-foreground">{page === "dashboard" ? "Ops dashboard" : "Monitoring"}</span>}
     >
       <main className="min-h-0 flex-1 overflow-y-auto scroll-smooth">
-        <div className="mx-auto w-full max-w-4xl px-8 pt-4 pb-16 max-md:px-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-200" key={page}>
+        <div className="mx-auto w-full max-w-4xl px-8 pt-4 pb-16 max-md:px-4 page-enter" key={page}>
           <h2 className="m-0 mb-6 text-2xl font-semibold tracking-tight max-md:text-xl">{page === "dashboard" ? "Ops dashboard" : "Monitoring"}</h2>
           {page === "dashboard" ? <OpsDashboard /> : <MonitoringConfig />}
         </div>

@@ -46,7 +46,7 @@ export function BusinessState({ domains }: { domains: DomainView[] }) {
           </Alert>
         )}
         {headline.length > 0 && (
-          <div data-slot="ops-headline" aria-label="Headline metrics" className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(150px,1fr))]">
+          <div data-slot="ops-headline" aria-label="Headline metrics" className="stagger grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(150px,1fr))]">
             {headline.map(({ id, domain, metric: m }) => (
               <a key={id} href={`#${id}`} className="min-w-0 text-inherit no-underline">
                 <Item variant="outline" size="sm" className={cn("h-full flex-col items-start gap-0.5", STATUS_ACCENT[m.status])}>
