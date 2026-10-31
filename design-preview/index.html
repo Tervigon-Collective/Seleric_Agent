@@ -207,15 +207,42 @@ section.block{margin-top:44px}
 .kv dt{color:var(--dim)}.kv dd{margin:0;font-family:var(--mono);font-size:13px}
 .dialog .foot{display:flex;justify-content:flex-end;margin-top:20px}
 
-/* voice dock: deliberately keeps the CURRENT blue voice look, scoped so the new palette can't restyle it */
-.voice{--v-bg:#ffffff;--v-line:#e5e5ea;--v-text:#202022;--v-dim:rgba(60,60,67,.6);--v-brand:#007aff;--v-brand-soft:rgba(0,122,255,.12);
-  position:absolute;left:50%;bottom:92px;transform:translateX(-50%);display:none;align-items:center;gap:12px;padding:10px 12px 10px 14px;border-radius:16px;
-  background:var(--v-bg);border:1px solid var(--v-line);box-shadow:0 12px 32px rgba(16,24,40,.16);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,sans-serif;color:var(--v-text);z-index:20}
-.voice.on{display:flex}
-.voice .orb{width:28px;height:28px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#7ab8ff,#007aff);box-shadow:0 0 0 6px var(--v-brand-soft)}
-.voice small{color:var(--v-dim);font-size:12px;display:block;line-height:1.2}
-.voice button{border:1px solid var(--v-line);border-radius:8px;padding:6px 12px;font-size:13px;background:#fff;color:var(--v-text)}
 
+
+/* voice: docked card replaces the composer; expand goes full screen. Tokens are --v-* so each theme decides the look. */
+.voice-dock{position:absolute;left:50%;transform:translateX(-50%);bottom:34px;width:min(720px,calc(100% - 32px));display:none;flex-direction:column;background:var(--v-card);border:1px solid var(--v-line);border-radius:var(--r-xl);box-shadow:var(--shadow);overflow:hidden;z-index:20}
+.app.voice-on .voice-dock{display:flex}
+.app.voice-on .composer,.app.voice-on .hint{visibility:hidden}
+.vd-cap{padding:14px 18px 0;font-size:13px;color:var(--v-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vd-say{padding:6px 18px 0;font-size:15px;min-height:22px}
+.vd-bar{display:flex;align-items:center;gap:8px;padding:12px}
+.vd-bar .label{flex:1;font-size:14px;color:var(--v-dim)}
+.orb-well{border-radius:50%;overflow:hidden;background:var(--v-well);box-shadow:inset 0 0 0 1px var(--v-line);flex:none}
+.orb-well canvas{width:100%;height:100%;display:block}
+.vbtn{width:34px;height:34px;border-radius:var(--r-md);display:grid;place-items:center;color:var(--v-dim)}
+.vbtn:hover{background:var(--v-hover);color:var(--v-text)}
+.vbtn[aria-pressed="true"]{background:var(--v-hover);color:var(--v-text)}
+.vbtn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.vend{display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:var(--r-md);background:var(--v-end);color:#fff;font-size:14px;font-weight:500}
+.vend:hover{filter:brightness(1.08)}
+.vend svg{width:12px;height:12px;fill:currentColor}
+.voice-screen{position:fixed;inset:0;z-index:100;display:none;flex-direction:column;align-items:center;justify-content:space-between;padding:20px 20px 28px;background:var(--v-stage);color:var(--v-text)}
+.app.voice-full .voice-screen{display:flex}
+.voice-screen .top{align-self:stretch;display:flex;justify-content:space-between}
+.voice-screen .stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;width:min(640px,100%);text-align:center}
+.voice-screen .stage .orb-well{width:min(280px,60vw);height:min(280px,60vw);background:transparent;box-shadow:none}
+.voice-screen .stage p{margin:0}
+.voice-screen .big{display:flex;gap:28px}
+.circle{width:64px;height:64px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;border:1px solid var(--v-line);background:var(--v-card);color:var(--v-text)}
+.circle:hover{background:var(--v-hover)}
+.circle.end{background:var(--v-end);border-color:var(--v-end);color:#fff}
+.circle svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.voice-screen small{color:var(--v-dim);font-size:12px}
+:root{--v-card:#ffffff;--v-line:#e5e5ea;--v-text:#202022;--v-dim:rgba(60,60,67,.6);--v-hover:#f2f2f7;--v-well:radial-gradient(circle at 50% 42%,hsl(222 50% 98%),hsl(222 48% 91%));--v-end:#ff3b30;--v-stage:radial-gradient(90% 70% at 50% 38%,hsl(222 78% 93%),hsl(222 45% 97%) 36%,transparent 68%),#fff;--is-dark:0}
+:root[data-theme="dark"],:root:not([data-theme="light"])[data-x]{--v-card:#242427;--v-line:#404046;--v-text:#d6d6db;--v-dim:#a2a2aa;--v-hover:#36363b;--v-well:radial-gradient(circle at 50% 42%,hsl(222 42% 16%),#070b12 74%);--v-stage:radial-gradient(120% 90% at 50% 35%,hsl(222 45% 16%),#0a0e14 70%);--is-dark:1}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--v-card:#242427;--v-line:#404046;--v-text:#d6d6db;--v-dim:#a2a2aa;--v-hover:#36363b;--v-well:radial-gradient(circle at 50% 42%,hsl(222 42% 16%),#070b12 74%);--v-stage:radial-gradient(120% 90% at 50% 35%,hsl(222 45% 16%),#0a0e14 70%);--is-dark:1}}
+
+.app.voice-on .msgs{padding-bottom:190px}.voice-screen .big{margin-bottom:12px}
 /* narrow screens */
 @media (max-width:860px){
   .sidebar{position:fixed;inset:0 auto 0 0;z-index:40;margin-left:-290px;box-shadow:var(--shadow-lg)}
@@ -403,10 +430,32 @@ section.block{margin-top:44px}
       <div class="view" id="v-search"><div class="placeholder" style="min-height:70vh"><div><b>Search conversations</b>Opens the existing command search, restyled as a centred panel.</div></div></div>
     </div>
 
-    <div class="voice" id="voice" role="status" aria-label="Voice mode (current look, kept as is)">
-      <span class="orb" aria-hidden="true"></span>
-      <div><b style="font-weight:500">Listening…</b><small>Voice mode, unchanged</small></div>
-      <button data-toggle-voice>End</button>
+    <div class="voice-dock" role="region" aria-label="Voice conversation">
+      <div class="vd-cap" id="vCapUser">Why did repeat purchases drop last week?</div>
+      <div class="vd-say" id="vCapAgent">The win-back campaign sent 61% fewer emails than usual.</div>
+      <div class="vd-bar">
+        <span class="orb-well" style="width:48px;height:48px"><canvas data-orb></canvas></span>
+        <span class="label" id="vLabel" role="status">Listening</span>
+        <button class="vbtn" data-mute aria-pressed="false" aria-label="Mute microphone" title="Mute"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></button>
+        <button class="vbtn" data-expand aria-label="Expand to full screen" title="Full screen"><svg viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg></button>
+        <button class="vend" data-end aria-label="End voice conversation"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>End</button>
+      </div>
+    </div>
+    <div class="voice-screen" role="dialog" aria-modal="true" aria-label="Voice conversation">
+      <div class="top">
+        <button class="vbtn" data-collapse aria-label="Collapse to bar" title="Collapse"><svg viewBox="0 0 24 24"><path d="M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5"/></svg></button>
+        <button class="vbtn" data-end aria-label="End voice conversation"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="stage">
+        <span class="orb-well"><canvas data-orb></canvas></span>
+        <p style="font-size:18px" id="vLabel2" role="status">Listening</p>
+        <div><p style="font-size:14px;color:var(--v-dim)">Why did repeat purchases drop last week?</p><p style="font-size:16px;margin-top:8px">The win-back campaign sent 61% fewer emails than usual.</p></div>
+      </div>
+      <div class="big">
+        <button class="circle" data-mute aria-pressed="false" aria-label="Mute microphone"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg><span>Mute</span></button>
+        <button class="circle end" data-end aria-label="End voice conversation"><svg viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span>End</span></button>
+      </div>
+      <small>Just talk, interrupt any time · Esc to end</small>
     </div>
   </main>
 </div>
@@ -446,7 +495,32 @@ section.block{margin-top:44px}
   $$("[data-theme-set]").forEach(function(b){b.onclick=function(e){e.stopPropagation();setTheme(b.getAttribute("data-theme-set"))}});
 
   /* voice dock */
-  $$("[data-toggle-voice]").forEach(function(b){b.onclick=function(e){e.stopPropagation();$("#voice").classList.toggle("on");$("#menu").classList.remove("open")}});
+  
+  /* voice: dock <-> full screen, mute, end; particle orb drawn on canvas (stand-in for the real signal-orb) */
+  var app=$("#app"),muted=false,phase="listening",HUE={listening:222,speaking:250,thinking:200,muted:220};
+  function vset(){var l=muted?"Microphone muted":phase==="speaking"?"Speaking":phase==="thinking"?"Thinking…":"Listening";$("#vLabel").textContent=l;$("#vLabel2").textContent=l;$$("[data-mute]").forEach(function(b){b.setAttribute("aria-pressed",muted)})}
+  $$("[data-toggle-voice]").forEach(function(b){b.onclick=function(e){e.stopPropagation();app.classList.add("voice-on");$("#menu").classList.remove("open")}});
+  $$("[data-mute]").forEach(function(b){b.onclick=function(){muted=!muted;vset()}});
+  $$("[data-expand]").forEach(function(b){b.onclick=function(){app.classList.add("voice-full")}});
+  $$("[data-collapse]").forEach(function(b){b.onclick=function(){app.classList.remove("voice-full")}});
+  $$("[data-end]").forEach(function(b){b.onclick=function(){app.classList.remove("voice-on","voice-full")}});
+  document.addEventListener("keydown",function(e){if(e.key==="Escape")app.classList.remove("voice-on","voice-full")});
+  var phases=["listening","speaking","thinking"],pi=0;setInterval(function(){if(app.classList.contains("voice-on")&&!muted){pi=(pi+1)%3;phase=phases[pi];vset()}},3500);
+  var orbs=$$("canvas[data-orb]"),pts=[],N=700,t0=0;
+  for(var i=0;i<N;i++){var y=1-2*(i+.5)/N,a=i*2.39996,r=Math.sqrt(1-y*y);pts.push([Math.cos(a)*r,y,Math.sin(a)*r])}
+  function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+  function draw(t){
+    var dark=css("--is-dark")==="1",h=muted?220:HUE[phase],amp=phase==="speaking"?.12:phase==="thinking"?.06:.03;
+    orbs.forEach(function(c){
+      if(!c.offsetWidth)return;var s=c.offsetWidth,dpr=window.devicePixelRatio||1;if(c.width!==s*dpr){c.width=c.height=s*dpr}
+      var x=c.getContext("2d");x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,s,s);
+      var rot=t/2600,cr=Math.cos(rot),sr=Math.sin(rot),R=s*.36;
+      for(var i=0;i<N;i++){var p=pts[i],px=p[0]*cr+p[2]*sr,pz=-p[0]*sr+p[2]*cr,w=1+amp*Math.sin(t/260+p[1]*6+i*.01),d=(pz+1)/2;
+        x.fillStyle=dark?"hsla("+h+",85%,"+(55+d*25)+"%,"+(.25+d*.7)+")":"hsla("+h+",70%,"+(48-d*14)+"%,"+(.2+d*.6)+")";
+        x.fillRect(s/2+px*R*w,s/2+p[1]*R*w,s>100?1.6:1.1,s>100?1.6:1.1)}
+    });requestAnimationFrame(draw)}
+  requestAnimationFrame(draw);vset();
+
 
   /* dialogs for tools moved out of the header */
   var dlg={
