@@ -89,7 +89,7 @@ export default function App() {
     // data-theme is always light or dark, so the CSS and the shadcn dark variant keep one switch.
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
-    document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute("content", dark ? "#0f1219" : "#f6f7fb");
+    document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute("content", dark ? "#17181c" : "#ffffff");
     firstTheme.current = false;
   }, [dark]);
   useEffect(() => {

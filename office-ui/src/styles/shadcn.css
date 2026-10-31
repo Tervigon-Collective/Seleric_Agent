@@ -79,23 +79,23 @@
   --sidebar-border: var(--line);
   --sidebar-ring: var(--brand);
   /* Series colours: Apple system colours, light appearance. */
-  --chart-1: #3b5bdb;
-  --chart-2: #1f8a5b;
-  --chart-3: #c27a00;
-  --chart-4: #c42d3c;
-  --chart-5: #7c5cd6;
-  --chart-6: #0e8fb8;
-  --chart-7: #8a90a5;
+  --chart-1: #007aff;
+  --chart-2: #34c759;
+  --chart-3: #ff9500;
+  --chart-4: #ff3b30;
+  --chart-5: #af52de;
+  --chart-6: #32ade6;
+  --chart-7: #8e8e93;
 }
 
 [data-theme="dark"] {
-  --chart-1: #7c9cff;
-  --chart-2: #5fd3a0;
-  --chart-3: #f0b34a;
-  --chart-4: #ff7b87;
-  --chart-5: #b39bff;
-  --chart-6: #6cd4f2;
-  --chart-7: #8087a0;
+  --chart-1: #0a84ff;
+  --chart-2: #30d158;
+  --chart-3: #ff9f0a;
+  --chart-4: #ff453a;
+  --chart-5: #bf5af2;
+  --chart-6: #64d2ff;
+  --chart-7: #8e8e93;
 }
 
 @layer base {
