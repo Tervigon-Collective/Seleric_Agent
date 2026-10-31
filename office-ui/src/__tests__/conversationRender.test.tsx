@@ -99,6 +99,7 @@ describe("conversation shell rendering and accessibility", () => {
   });
 
   it("provides functional conversation and detail panel controls", () => {
+    useShellStore.setState({ sidebarOpen: true, detailsOpen: true });
     act(() => root.render(<App />));
     const sidebarToggle = container.querySelector('[aria-label="Toggle conversations"]') as HTMLButtonElement;
     const detailsToggle = container.querySelector('[aria-label="Toggle conversation details"]') as HTMLButtonElement;

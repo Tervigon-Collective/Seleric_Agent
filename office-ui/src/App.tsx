@@ -89,7 +89,7 @@ export default function App() {
     // data-theme is always light or dark, so the CSS and the shadcn dark variant keep one switch.
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
-    document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute("content", dark ? "#17181c" : "#ffffff");
+    document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute("content", dark ? "#17181a" : "#fafafa");
     firstTheme.current = false;
   }, [dark]);
   useEffect(() => {
@@ -224,7 +224,8 @@ export default function App() {
           <>
             {currentTitle && <span className="min-w-0 flex-1 truncate px-1 text-sm text-muted-foreground" title={currentTitle}>{currentTitle}</span>}
             <span className="flex-1" />
-            <ShareButton threadId={selectedThreadId} className="max-md:hidden" />
+            <span className="flex items-center gap-1.5 opacity-60 transition-opacity duration-200 focus-within:opacity-100 hover:opacity-100 max-md:opacity-100">
+              <ShareButton threadId={selectedThreadId} className="max-md:hidden" />
             <Button
               variant="ghost"
               size="icon"
@@ -233,6 +234,7 @@ export default function App() {
               onClick={toggleDetails}
               title="Inspector (causal, debug, memory)"
             ><PanelRightIcon /></Button>
+            </span>
           </>
         }
       >

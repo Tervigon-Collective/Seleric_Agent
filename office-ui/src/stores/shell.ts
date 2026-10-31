@@ -7,6 +7,16 @@ export type OpsPage = "dashboard" | "monitoring";
 const DETAIL_TABS: readonly DetailTab[] = ["Debug", "Causal", "Memory"];
 const DETAILS_OPEN_KEY = "seleric.detailsOpen";
 const DETAIL_TAB_KEY = "seleric.detailTab";
+const SIDEBAR_OPEN_KEY = "seleric.sidebarOpen";
+
+/** The navigation starts tucked away; the user's choice is remembered. */
+function readStoredSidebarOpen(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 function readStoredDetailsOpen(): boolean {
   try {
@@ -70,8 +80,8 @@ export const useShellStore = create<ShellState>((set, get) => ({
   detailTab: readStoredDetailTab(),
   workspace: initialWorkspace(),
   opsPage: initialOpsPage(),
-  // Sidebar visible on desktop; inspector restores the last open/closed choice.
-  sidebarOpen: true,
+  // Navigation stays tucked until asked for; both panels restore the last choice.
+  sidebarOpen: readStoredSidebarOpen(),
   detailsOpen: readStoredDetailsOpen(),
   selectedArtifact: null,
   setDetailTab: (detailTab) => {
@@ -80,7 +90,11 @@ export const useShellStore = create<ShellState>((set, get) => ({
   },
   setWorkspace: (workspace) => set({ workspace }),
   openOps: (opsPage) => set({ workspace: "ops", opsPage }),
-  toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+  toggleSidebar: () => {
+    const sidebarOpen = !get().sidebarOpen;
+    set({ sidebarOpen });
+    try { localStorage.setItem(SIDEBAR_OPEN_KEY, sidebarOpen ? "1" : "0"); } catch { /* best effort */ }
+  },
   toggleDetails: () => {
     const detailsOpen = !get().detailsOpen;
     set({ detailsOpen });

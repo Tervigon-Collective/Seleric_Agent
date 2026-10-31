@@ -63,11 +63,25 @@ export function SelericNext({ data }: DataMessagePartProps) {
   const text = (data as { text?: unknown }).text;
   const aui = useAui();
   const running = useAuiState((s) => s.thread.isRunning);
+  const [previous, setPrevious] = useState<string | null>(null);
   if (typeof text !== "string" || !text.trim()) return null;
+  // Suggestions fill the composer instead of sending, so the user decides; Undo restores what was there.
+  const fill = () => {
+    setPrevious(aui.composer().getState().text);
+    aui.composer().setText(text);
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]')?.focus());
+  };
+  const undo = () => { aui.composer().setText(previous ?? ""); setPrevious(null); };
   return (
-    <Button type="button" variant="outline" size="sm" className="h-auto whitespace-normal py-1.5 text-left" disabled={running} onClick={() => aui.thread().append(text)}>
-      <span>{text}</span><ArrowRightIcon size={14} />
-    </Button>
+    <div className="flex flex-col items-start gap-1" data-slot="message-next">
+      <span className="text-xs text-muted-foreground">Suggested next</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" size="sm" className="h-auto whitespace-normal rounded-full py-1.5 text-left" disabled={running} onClick={fill}>
+          <span>{text}</span><ArrowRightIcon size={14} />
+        </Button>
+        {previous !== null && <Button type="button" variant="ghost" size="sm" className="pop-in text-brand" onClick={undo}>Undo</Button>}
+      </div>
+    </div>
   );
 }
 

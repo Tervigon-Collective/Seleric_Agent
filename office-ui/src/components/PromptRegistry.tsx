@@ -109,10 +109,23 @@ export function PromptRegistry({
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground" role="status">No prompts match these filters.</p>
       ) : front ? (
-        <div className="stagger flex w-full max-w-xl flex-col gap-2" role="list">
-          {filtered.map((prompt) => (
-            <PromptChip key={prompt.id} prompt={prompt} onSelect={selectPrompt} showBadges={false} />
-          ))}
+        <div className="flex w-full max-w-xl flex-col gap-2">
+          <p className="m-0 text-xs text-muted-foreground">Suggested</p>
+          <div className="stagger flex flex-col gap-2" role="list">
+            {filtered.slice(0, 3).map((prompt) => (
+              <PromptChip key={prompt.id} prompt={prompt} onSelect={selectPrompt} showBadges={false} />
+            ))}
+          </div>
+          {filtered.length > 3 && (
+            <details className="group text-sm">
+              <summary className="cursor-pointer list-none py-1 text-muted-foreground transition-colors hover:text-foreground">More prompts ({filtered.length - 3})</summary>
+              <div className="stagger mt-2 flex flex-col gap-2" role="list">
+                {filtered.slice(3).map((prompt) => (
+                  <PromptChip key={prompt.id} prompt={prompt} onSelect={selectPrompt} showBadges={false} />
+                ))}
+              </div>
+            </details>
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-4" role="list">

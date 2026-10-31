@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup,
@@ -86,6 +86,19 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
   const openOps = useShellStore((s) => s.openOps);
   const opsPage = useShellStore((s) => s.opsPage);
   const createThread = useConversationStore((s) => s.createThread);
+
+  // Gesture: a swipe right from the left edge opens the navigation (touch and pen only; the toggle button does the same).
+  useEffect(() => {
+    let start: { x: number; y: number } | null = null;
+    const down = (e: PointerEvent) => { start = e.pointerType !== "mouse" && e.clientX < 28 ? { x: e.clientX, y: e.clientY } : null; };
+    const up = (e: PointerEvent) => {
+      if (start && e.clientX - start.x > 70 && Math.abs(e.clientY - start.y) < 60 && !useShellStore.getState().sidebarOpen) useShellStore.getState().toggleSidebar();
+      start = null;
+    };
+    window.addEventListener("pointerdown", down);
+    window.addEventListener("pointerup", up);
+    return () => { window.removeEventListener("pointerdown", down); window.removeEventListener("pointerup", up); };
+  }, []);
 
   const compactClose = () => { if (window.matchMedia?.(`(max-width: ${PANEL_BREAKPOINT - 1}px)`).matches) toggleSidebar(); };
   const go = (fn: () => void) => () => { fn(); compactClose(); };

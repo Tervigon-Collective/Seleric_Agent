@@ -10,34 +10,34 @@
 :root {
   color-scheme: light;
   /* Base (recedes) */
-  --bg: #ffffff; /* systemBackground light */
+  --bg: #fafafa; /* systemBackground light */
   --panel: #ffffff; /* tertiarySystemBackground light — foreground cards */
-  --sidebar: #f1f2f9; /* secondarySystemBackground light — grouped */
-  --surface-2: #f1f2f9;
-  --hover: #e3e3ee; /* systemGray5 light */
-  --panel-2: #f2f2f7; /* legacy alias: sidebar / secondary surface */
-  --line: #dcdce3; /* hairline on white */
-  --line-strong: #bcbcc4; /* opaqueSeparator light */
-  --text: #141416; /* label light, softened from pure black */
-  --text-dim: rgba(60, 60, 67, 0.7); /* secondaryLabel light */
-  --text-faint: rgba(60, 60, 67, 0.46); /* tertiary/placeholder light */
-  --brand: #007aff; /* systemBlue light */
-  --brand-hover: #0062cc;
-  --brand-soft: rgba(0, 122, 255, 0.14);
-  --success: #34c759; /* systemGreen light */
-  --success-soft: rgba(52, 199, 89, 0.12);
-  --warning: #ff9500; /* systemOrange light */
-  --warning-soft: rgba(255, 149, 0, 0.12);
-  --danger: #ff3b30; /* systemRed light */
-  --danger-soft: rgba(255, 59, 48, 0.08);
+  --sidebar: #f5f1e8; /* secondarySystemBackground light — grouped */
+  --surface-2: #f0f0f0;
+  --hover: #ece8dd; /* systemGray5 light */
+  --panel-2: #f5f1e8; /* legacy alias: sidebar / secondary surface */
+  --line: #e4e0d6; /* hairline on white */
+  --line-strong: #cbc7bb; /* opaqueSeparator light */
+  --text: #1f2125; /* label light, softened from pure black */
+  --text-dim: #575b63; /* secondaryLabel light */
+  --text-faint: #646871; /* tertiary/placeholder light */
+  --brand: #1d4ed8; /* systemBlue light */
+  --brand-hover: #1e40af;
+  --brand-soft: rgba(59, 130, 246, 0.13);
+  --success: #166534; /* systemGreen light */
+  --success-soft: rgba(34, 197, 94, 0.13);
+  --warning: #92400e; /* systemOrange light */
+  --warning-soft: rgba(245, 158, 11, 0.15);
+  --danger: #b91c1c; /* systemRed light */
+  --danger-soft: rgba(239, 68, 68, 0.1);
 
-  --st-neutral: #8e8e93; /* systemGray */
-  --st-working: #007aff; /* systemBlue */
-  --st-thinking: #af52de; /* systemPurple */
-  --st-waiting: #ff9500; /* systemOrange */
-  --st-failed: #ff3b30; /* systemRed */
-  --st-done: #34c759; /* systemGreen */
-  --st-collab: #32ade6; /* systemCyan */
+  --st-neutral: #8a8d94; /* systemGray */
+  --st-working: #3b82f6; /* systemBlue */
+  --st-thinking: #9333ea; /* systemPurple */
+  --st-waiting: #f59e0b; /* systemOrange */
+  --st-failed: #ef4444; /* systemRed */
+  --st-done: #22c55e; /* systemGreen */
+  --st-collab: #9333ea; /* systemCyan */
 
   --radius-xs: 4px;  /* kbd, inline code */
   --radius-sm: 6px;  /* chips, small tags */
@@ -45,7 +45,7 @@
   --radius: 12px;    /* cards, panels */
   --radius-lg: 14px; /* menus, modals */
   --radius-xl: 20px; /* composer, voice dock */
-  --on-accent: #fff; /* text on accent / danger fills */
+  --on-accent: #ffffff; /* text on accent / danger fills */
   --shadow: 0 1px 2px rgba(20, 30, 70, 0.06), 0 2px 8px rgba(20, 30, 70, 0.05);
   --shadow-lg: 0 12px 36px rgba(20, 30, 70, 0.18);
 
@@ -60,40 +60,42 @@
   --material-header: rgba(255, 255, 255, 0.72);
   --material-elevated: rgba(255, 255, 255, 0.84);
   --material-backdrop: saturate(180%) blur(20px);
+  --zi-blue: #3b82f6;
+  --zi-violet: #9333ea;
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
   /* Low-contrast dark: a soft charcoal base (not true black) with gently
      stepped surfaces and off-white text (about 12:1, was 21:1). */
-  --bg: #17181c;
-  --panel: #202226;
-  --sidebar: #1c1d21;
-  --surface-2: #292b30;
-  --hover: #33353b;
-  --panel-2: #1c1d21;
-  --line: #31333a;
-  --line-strong: #43464e;
-  --text: #e8e8ed;
-  --text-dim: #b2b2bc;
-  --text-faint: #94949f;
-  --brand: #3d96ff; /* systemBlue dark, a touch lighter to stay AA on the softer surfaces */
-  --brand-hover: #6dbbff;
-  --brand-soft: rgba(10, 132, 255, 0.22);
-  --success: #30d158; /* systemGreen dark */
-  --success-soft: rgba(48, 209, 88, 0.14);
-  --warning: #ff9f0a; /* systemOrange dark */
-  --warning-soft: rgba(255, 159, 10, 0.14);
-  --danger: #ff453a; /* systemRed dark */
-  --danger-soft: rgba(255, 69, 58, 0.14);
+  --bg: #17181a;
+  --panel: #222326;
+  --sidebar: #1f1e1b;
+  --surface-2: #2a2b2e;
+  --hover: #2e2d29;
+  --panel-2: #1f1e1b;
+  --line: #34332f;
+  --line-strong: #4a4943;
+  --text: #ecebe6;
+  --text-dim: #b3b1a8;
+  --text-faint: #8f8d85;
+  --brand: #93c5fd; /* systemBlue dark, a touch lighter to stay AA on the softer surfaces */
+  --brand-hover: #bfdbfe;
+  --brand-soft: rgba(96, 165, 250, 0.2);
+  --success: #4ade80; /* systemGreen dark */
+  --success-soft: rgba(34, 197, 94, 0.16);
+  --warning: #fbbf24; /* systemOrange dark */
+  --warning-soft: rgba(245, 158, 11, 0.16);
+  --danger: #f87171; /* systemRed dark */
+  --danger-soft: rgba(239, 68, 68, 0.16);
 
-  --st-neutral: #8e8e93;
-  --st-working: #0a84ff;
-  --st-thinking: #bf5af2; /* systemPurple dark */
-  --st-waiting: #ff9f0a;
-  --st-failed: #ff453a;
-  --st-done: #30d158;
-  --st-collab: #64d2ff; /* systemCyan dark */
+  --st-neutral: #8f8d85;
+  --st-working: #60a5fa;
+  --st-thinking: #c084fc; /* systemPurple dark */
+  --st-waiting: #fbbf24;
+  --st-failed: #f87171;
+  --st-done: #4ade80;
+  --st-collab: #c084fc; /* systemCyan dark */
 
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.4);
@@ -102,6 +104,9 @@
   --material-header: rgba(23, 24, 28, 0.72);
   --material-elevated: rgba(32, 34, 38, 0.72);
   --material-backdrop: saturate(180%) blur(20px);
+  --on-accent: #111827;
+  --zi-blue: #60a5fa;
+  --zi-violet: #a855f7;
 }
 
 * { box-sizing: border-box; }
