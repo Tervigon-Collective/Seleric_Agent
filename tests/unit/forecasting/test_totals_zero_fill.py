@@ -30,7 +30,7 @@ def test_total_interval_borrows_nearest_backtested_horizon():
     mean, lo, hi, w = horizon_totals(days, total_error_quantiles={"h14": [-0.3, 0.3]})
     assert (lo, hi) == (mean * 0.7, mean * 1.3) and "total_interval_scaled_from_h14" in w
     short = days[:7]
-    _, lo7, hi7, _ = horizon_totals(short, total_error_quantiles={"h14": [-0.3, 0.3]})
+    _, _, hi7, _ = horizon_totals(short, total_error_quantiles={"h14": [-0.3, 0.3]})
     assert hi7 / 700 - 1 > 0.3  # shorter horizon is wider than the measured h14 error
     _, lo1, _, _ = horizon_totals(days[:1], total_error_quantiles={"h14": [-0.3, 0.3]})
     assert lo1 == 0.0 or lo1 > 0  # widening never takes a non-negative total below zero

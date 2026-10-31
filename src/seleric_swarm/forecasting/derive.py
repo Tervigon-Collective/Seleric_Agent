@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from seleric_swarm.models.service import Z_80
 from seleric_swarm.forecasting.types import DailyPoint, TargetForecast
+from seleric_swarm.models.service import Z_80
 
 
 def horizon_totals(

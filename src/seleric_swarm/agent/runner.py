@@ -287,7 +287,7 @@ def _payload_ref(payload: dict[str, Any], *, index: int) -> dict[str, Any]:
     rows = payload.get("data") if isinstance(payload.get("data"), list) else None
     return {
         "index": index,
-        "keys": sorted(str(k) for k in payload.keys())[:16],
+        "keys": sorted(str(k) for k in payload)[:16],
         "row_count": len(rows) if rows is not None else None,
         "preview": json.dumps(compact_value(payload, max_rows=3, max_chars=400), separators=(",", ":"), default=str)[:400],
     }

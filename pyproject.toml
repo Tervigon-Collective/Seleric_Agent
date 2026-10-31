@@ -64,6 +64,8 @@ seleric-voice = "seleric_swarm.voice.worker:main"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# One-off analysis notebooks/scripts checked into reports/, not product code.
+exclude = ["reports"]
 
 [tool.ruff.lint]
 ignore = ["BLE001"]

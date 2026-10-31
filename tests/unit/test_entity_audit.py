@@ -82,7 +82,10 @@ async def test_the_tool_audits_a_multi_view_result_and_keeps_entities_a_view_has
     tool = next(t for t in build_local_tools(state) if t.__name__ == "audit_entities")
 
     class Deps:
-        from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+        from seleric_swarm.services.catalogue_bootstrap import (
+            CatalogueMetricMeta,
+            CatalogueSnapshot,
+        )
         catalogue = CatalogueSnapshot(metrics=(
             CatalogueMetricMeta(id="ad_spend", label="Ad spend", raw={"unit": "INR", "aggregation": "additive"}),
             CatalogueMetricMeta(id="orders", label="Orders", raw={"unit": "count", "aggregation": "additive"}),
@@ -138,7 +141,10 @@ async def test_without_a_named_list_the_spend_view_still_leads_so_no_entity_is_d
 
     class Ctx:
         class deps:
-            from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+            from seleric_swarm.services.catalogue_bootstrap import (
+                CatalogueMetricMeta,
+                CatalogueSnapshot,
+            )
             catalogue = CatalogueSnapshot(metrics=(
                 CatalogueMetricMeta(id="ad_spend", label="Ad spend", raw={"unit": "INR", "aggregation": "additive"}),
                 CatalogueMetricMeta(id="orders", label="Orders", raw={"unit": "count", "aggregation": "additive"}),

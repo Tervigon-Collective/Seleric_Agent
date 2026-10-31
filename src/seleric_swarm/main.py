@@ -21,10 +21,10 @@ from seleric_swarm.api.async_missions import (
     publish_durable_mission,
 )
 from seleric_swarm.api.business_state import router as business_state_router
-from seleric_swarm.api.monitoring import router as monitoring_router
 from seleric_swarm.api.conversations import router as conversations_router
 from seleric_swarm.api.emails import router as emails_router
 from seleric_swarm.api.mission_access import request_principal, require_mission_access
+from seleric_swarm.api.monitoring import router as monitoring_router
 from seleric_swarm.api.phase7 import router as phase7_router
 from seleric_swarm.api.ready import check_readiness
 from seleric_swarm.api.request_id import RequestIdMiddleware
@@ -95,7 +95,10 @@ async def _business_state_refresh_loop(runtime: Any) -> None:
     if getattr(runtime, "business_state", None) is None:
         return
     interval = float(_os.getenv("BUSINESS_STATE_REFRESH_INTERVAL_S", "3600") or 3600)
-    from seleric_swarm.services.domain_health.resolver import DomainHealthProfiles, DomainStateResolver
+    from seleric_swarm.services.domain_health.resolver import (
+        DomainHealthProfiles,
+        DomainStateResolver,
+    )
     from seleric_swarm.services.domain_health.scheduler import run_once
     from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
 

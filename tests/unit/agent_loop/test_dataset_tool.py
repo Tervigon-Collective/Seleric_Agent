@@ -12,7 +12,15 @@ from typing import Any
 from seleric_swarm.agent import present
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
 from seleric_swarm.agent.mcp_toolset import (
-    ALLOW, DATASET_TOOL, TurnState, _take_dataset, compact, dataset_as_query_payload, load_dataset_rows, tool_defs, write_evidence,
+    ALLOW,
+    DATASET_TOOL,
+    TurnState,
+    _take_dataset,
+    compact,
+    dataset_as_query_payload,
+    load_dataset_rows,
+    tool_defs,
+    write_evidence,
 )
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
@@ -56,7 +64,8 @@ class FakeGateway:
     async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
         self.calls.append(arguments)
         assert capability == f"seleric.{DATASET_TOOL}" and arguments["action"] == "get"
-        off, lim = arguments["offset"], arguments["limit"]
+        off = arguments["offset"]
+        assert arguments["limit"]  # server always gets a page size
         if self.fail_at is not None and off >= self.fail_at:
             return {"error": "boom", "code": "internal_error"}
         page = ROWS[off:off + 10]  # the fake server pages by 10, whatever limit was asked
