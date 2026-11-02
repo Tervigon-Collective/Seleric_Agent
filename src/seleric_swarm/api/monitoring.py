@@ -6,6 +6,7 @@
 ``PUT  /v1/monitoring/config/{domain}``    save the selection and alert rules (validated, versioned)
 ``DELETE /v1/monitoring/config/{domain}``  back to the shipped defaults
 ``POST /v1/monitoring/refresh/{domain}``   resolve one domain now instead of waiting for the cron
+``GET  /v1/monitoring/targets``            target monitoring: open findings, latest value per metric against its band
 
 Everything is under ``/v1`` so the API-key middleware applies. Reads and writes need an authenticated principal.
 """
@@ -138,6 +139,29 @@ async def state(request: Request) -> dict[str, Any]:
     profiles, store = _profiles()
     domains = [await _state_for(profiles, store, d) for d in profiles.domain_ids()]
     return {"interval_s": _interval(), "max_metrics_per_domain": MAX_METRICS_PER_DOMAIN, "domains": domains}
+
+
+@router.get("/targets")
+async def targets(request: Request, brand_id: int | None = None) -> dict[str, Any]:
+    """Findings and latest evaluations from the ``monitor`` schema (Postgres), written hourly by the monitoring runner."""
+    request_principal(request)
+    from sqlalchemy import create_engine
+
+    from seleric_swarm.config.settings import get_settings
+    from seleric_swarm.exploration.space import default_brand_id
+    from seleric_swarm.services.monitoring.read import read_state
+
+    brand = brand_id if brand_id is not None else int(default_brand_id())
+
+    def _read() -> dict[str, Any]:
+        engine = create_engine(get_settings().database_url, pool_pre_ping=True)
+        try:
+            with engine.connect() as conn:
+                return read_state(conn, brand)
+        finally:
+            engine.dispose()
+
+    return {"brand_id": brand, **await asyncio.to_thread(_read)}
 
 
 @router.get("/config")

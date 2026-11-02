@@ -155,5 +155,5 @@ def test_ci_and_container_configuration_are_hardened() -> None:
             line.strip().startswith("MALWARE_SCANNER_BACKEND:")
             for line in compose.splitlines()
         )
-        == 3
+        == 4  # api, recovery, business-state-cron and monitoring-cron: every service that builds the runtime
     )

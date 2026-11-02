@@ -1,0 +1,21 @@
+# Unified monitoring, V1 (docs/monitoring/00_PLAN.md). Data-event rules for the trust gate. Metric ids are catalogue
+# ids; thresholds are data, so tuning is a YAML edit. Defaults here are starting points, tuned from labels.
+trust_gate:
+  # A day whose closed returns exceed this share of that day's gross sales is a bulk-return closure
+  # (live: 2026-09-28 returned 1,077,233 on 67,302 of gross sales). Metrics that settle late are untrusted that day.
+  bulk_return:
+    numerator_metric: ssot_returns_closed
+    denominator_metric: ssot_gross_sales
+    max_share: 0.25
+  # Spend far below its own recent median is a data event ("ads off"), reported on its own; business metrics
+  # stay trusted because the fall in orders that follows is real.
+  spend_collapse:
+    metric: ssot_ad_spend
+    lookback_days: 14
+    min_history_days: 7
+    min_share_of_median: 0.25
+pooling:
+  window_days: 7
+  min_days: 5
+# The business day: "yesterday" and the hour a period starts are in this zone.
+timezone: Asia/Kolkata
