@@ -275,3 +275,14 @@ def test_percent_follows_from_a_small_count_beside_it():
           "provenance": {"metric_ids": ["orders"]}}]
     assert not grounding("Orders rose from 29 to 42 (+44.8%).", p)["unmatched"]
     assert grounding("Orders rose from 29 to 42 (+50.0%).", p)["unmatched"] == ["50.0%"]
+
+
+def test_a_figure_the_model_calculated_in_the_text_is_a_problem_but_a_run_python_result_is_not():
+    data = {"provenance": {"query_id": "q0"}, "rows": [{"sales": "8468.48"}], "compare_rows": [{"sales": "34945.2"}]}
+    calculated = grounding("Sales fell to ₹8,468 from ₹34,945, a drop of ₹26,477.", [data])
+    assert any("26,477" in d for d in calculated["derived"])
+    assert any("calculated in the text" in p and "26,477" in p for p in problems(calculated))
+    # the same figure, produced by run_python, reaches the pool as a helper figure and is measured
+    computed = {"helper_figures": [{"drop": 26476.72}]}
+    ok = grounding("Sales fell to ₹8,468 from ₹34,945, a drop of ₹26,477.", [data, computed])
+    assert not ok["derived"] and not problems(ok), (ok, problems(ok))

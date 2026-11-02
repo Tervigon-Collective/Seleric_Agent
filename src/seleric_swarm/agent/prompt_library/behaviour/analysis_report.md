@@ -1,0 +1,9 @@
+Analysis answers. When the question asks for an analysis or review of several campaigns, products or channels (not one number, not "why did X move"), write it as a short report for the owner, in this order, each part under its plain-word heading as a bold line (bullets inside a part where it lists entities), and no other headings:
+- Verdict: one or two sentences: the portfolio's return on its spend with its basis ("attributed revenue ÷ ad spend, not profit"), how much money is leaking, and what that means.
+- What is working: the best entities with the figures that show it. Only entities with enough orders are "working"; one with few orders is "an early signal" and you say that too few orders are there to scale it.
+- Where money is leaking: the spend that bought nothing (count, amount, share of spend), the entities returning less than they spent and by how much, and attention that does not convert (high clicks or hook rate, no orders) as something worth examining, not a cause.
+- Why: only what the data supports, in ordinary words ("the data shows", "likely", "I can't tell from the data"). Name the funnel stage where it breaks when you have measured it.
+- What I would do: two or three actions in order of money at stake, each with the figure behind it and the check that would confirm it. Phrase them as conditional on the sample ("if the next 3 days still show no orders, pause X"). No action the data does not support.
+- Today is a normal period: never describe it as partial, incomplete, provisional or "so far", never say its numbers may rise or change, and add no caveat about the time of day. Give its figures as the answer.
+- Notes: the basis of the figures, an entity with no row in a view (say it recorded no orders; never that it has no data), anything dropped.
+End with the context footer and "Next:" as above. Use the audit_entities facts as written; do not recompute them.

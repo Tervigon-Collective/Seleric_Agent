@@ -11,6 +11,7 @@ import { formatAxisTick, type ChartPlan, type ChartSpec, type Plot } from "./cha
 type Row = Record<string, any>;
 type Of<K extends ChartPlan["kind"]> = Extract<ChartPlan, { kind: K }>;
 
+// Series do not animate: these charts mount inside tabs, drawers and lazy panels, where Recharts' entrance animation can stall at zero size and leave the plot blank.
 const color = (index: number) => `var(--chart-${(index % 7) + 1})`;
 const percent = (share: number | null | undefined) => `${share && share < 0 ? "−" : share ? "+" : ""}${Math.round(Math.abs(share ?? 0) * 100)}%`;
 
@@ -23,12 +24,12 @@ function marks(plots: Plot[], rows: Row[], selected: number | null, horizontal: 
   const dim = (index: number) => (selected === null || selected === index ? 1 : 0.35);
   return plots.map((plot, i) => {
     const common = { dataKey: plot.key, ...(horizontal ? {} : { yAxisId: plot.axis }) };
-    if (plot.kind === "line") return <Line key={plot.key} {...common} type="monotone" stroke={color(i)} strokeWidth={2} dot={false} connectNulls />;
+    if (plot.kind === "line") return <Line key={plot.key} {...common} isAnimationActive={false} type="monotone" stroke={color(i)} strokeWidth={2} dot={false} connectNulls />;
     if (plot.kind === "area") {
-      return <Area key={plot.key} {...common} type="monotone" stackId={plot.stack} stroke={color(i)} fill={color(i)} fillOpacity={plot.fillOpacity ?? 0.12} connectNulls />;
+      return <Area key={plot.key} {...common} isAnimationActive={false} type="monotone" stackId={plot.stack} stroke={color(i)} fill={color(i)} fillOpacity={plot.fillOpacity ?? 0.12} connectNulls />;
     }
     return (
-      <Bar key={plot.key} {...common} fill={color(i)} stackId={plot.stack} radius={plot.stack ? 0 : horizontal ? [0, 3, 3, 0] : [3, 3, 0, 0]}>
+      <Bar key={plot.key} {...common} isAnimationActive={false} fill={color(i)} stackId={plot.stack} radius={plot.stack ? 0 : horizontal ? [0, 3, 3, 0] : [3, 3, 0, 0]}>
         {rows.map((_, index) => <Cell key={index} fillOpacity={dim(index)} />)}
       </Bar>
     );
@@ -98,7 +99,7 @@ function Waterfall({ plan, selected, onSelect, height }: { plan: Of<"waterfall">
         <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} minTickGap={8} />
         <YAxis tickLine={false} axisLine={false} width={48} tickFormatter={formatAxisTick} />
         <ChartTooltip content={<ChartTooltipContent hideLabel formatter={(_v, _n, item) => <span>{item.payload.label}: {item.payload.value.toLocaleString("en-IN")}</span>} />} />
-        <Bar dataKey="range" radius={3}>
+        <Bar dataKey="range" radius={3} isAnimationActive={false}>
           {steps.map((step, i) => <Cell key={i} fill={tone[step.tone]} fillOpacity={selected === null || selected === i ? 1 : 0.35} />)}
         </Bar>
       </ComposedChart>
@@ -133,7 +134,7 @@ function Slices({ plan, selected, onSelect, height }: { plan: Of<"slices">; sele
       <ChartContainer config={config} className="w-full" style={{ height }}>
         <FunnelChart>
           <ChartTooltip content={<ChartTooltipContent hideLabel nameKey="name" />} />
-          <Funnel data={slices.map((s, i) => ({ ...s, fill: color(i), fillOpacity: dim(i) }))} dataKey="value" nameKey="name" onClick={(_, i) => onSelect(i)}>
+          <Funnel isAnimationActive={false} data={slices.map((s, i) => ({ ...s, fill: color(i), fillOpacity: dim(i) }))} dataKey="value" nameKey="name" onClick={(_, i) => onSelect(i)}>
             <LabelList dataKey="name" position="right" className="fill-foreground" stroke="none" />
           </Funnel>
         </FunnelChart>
@@ -144,7 +145,7 @@ function Slices({ plan, selected, onSelect, height }: { plan: Of<"slices">; sele
     <ChartContainer config={config} className="w-full" style={{ height }}>
       <PieChart>
         <ChartTooltip content={<ChartTooltipContent hideLabel nameKey="name" />} />
-        <Pie data={slices} dataKey="value" nameKey="name" innerRadius={radius[0]} outerRadius={radius[1]} strokeWidth={2} onClick={(_, i) => onSelect(i)}>
+        <Pie isAnimationActive={false} data={slices} dataKey="value" nameKey="name" innerRadius={radius[0]} outerRadius={radius[1]} strokeWidth={2} onClick={(_, i) => onSelect(i)}>
           {slices.map((_, i) => <Cell key={i} fill={color(i)} fillOpacity={dim(i)} />)}
         </Pie>
         <ChartLegend content={<ChartLegendContent nameKey="name" />} />
@@ -166,7 +167,7 @@ function RadarForm({ plan, rows, height }: { plan: Of<"radar">; rows: Row[]; hei
         <ChartTooltip content={<ChartTooltipContent />} />
         <PolarAngleAxis dataKey="indicator" />
         <PolarGrid />
-        {plan.series.map((s, i) => <Radar key={s.key} dataKey={s.key} stroke={color(i)} fill={color(i)} fillOpacity={0.2} />)}
+        {plan.series.map((s, i) => <Radar key={s.key} isAnimationActive={false} dataKey={s.key} stroke={color(i)} fill={color(i)} fillOpacity={0.2} />)}
         {plan.series.length > 1 && <ChartLegend content={<ChartLegendContent />} />}
       </RadarChart>
     </ChartContainer>
@@ -181,7 +182,7 @@ function ScatterForm({ plan, height }: { plan: Of<"scatter">; height: number | s
         <XAxis type="number" dataKey="x" tickLine={false} axisLine={false} tickFormatter={formatAxisTick} />
         <YAxis type="number" dataKey="y" tickLine={false} axisLine={false} width={48} tickFormatter={formatAxisTick} />
         <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-        <Scatter data={plan.points} fill={color(0)} />
+        <Scatter isAnimationActive={false} data={plan.points} fill={color(0)} />
       </ScatterChart>
     </ChartContainer>
   );
@@ -236,7 +237,7 @@ function Causal({ plan, spec }: { plan: Of<"causal">; spec: ChartSpec }) {
           <YAxis dataKey="name" type="category" tickLine={false} axisLine={false} width={110} />
           <ReferenceLine x={0} stroke="var(--border)" />
           <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-          <Bar dataKey="share" radius={3}>
+          <Bar dataKey="share" radius={3} isAnimationActive={false}>
             {data.map((d, i) => <Cell key={i} fill={d.share >= 0 ? "var(--success)" : "var(--danger)"} />)}
           </Bar>
         </ComposedChart>

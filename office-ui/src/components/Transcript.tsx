@@ -4,7 +4,6 @@ import {
   AuiIf,
   MessagePrimitive,
   ThreadPrimitive,
-  useAui,
   useAuiState,
   type DataMessagePartProps,
 } from "@assistant-ui/react";
@@ -61,26 +60,17 @@ export function SelericContext({ data }: DataMessagePartProps) {
 
 export function SelericNext({ data }: DataMessagePartProps) {
   const text = (data as { text?: unknown }).text;
-  const aui = useAui();
   const running = useAuiState((s) => s.thread.isRunning);
-  const [previous, setPrevious] = useState<string | null>(null);
+  const submitting = useConversationStore((s) => s.submitting);
   if (typeof text !== "string" || !text.trim()) return null;
-  // Suggestions fill the composer instead of sending, so the user decides; Undo restores what was there.
-  const fill = () => {
-    setPrevious(aui.composer().getState().text);
-    aui.composer().setText(text);
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]')?.focus());
-  };
-  const undo = () => { aui.composer().setText(previous ?? ""); setPrevious(null); };
+  // Clicking a suggested next step asks it straight away, in this conversation.
+  const send = () => { void useConversationStore.getState().submit(text); };
   return (
-    <div className="flex flex-col items-start gap-1" data-slot="message-next">
+    <div className="flex min-w-0 max-w-full flex-col items-start gap-1" data-slot="message-next">
       <span className="text-xs text-muted-foreground">Suggested next</span>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="outline" size="sm" className="h-auto whitespace-normal rounded-full py-1.5 text-left" disabled={running} onClick={fill}>
-          <span>{text}</span><ArrowRightIcon size={14} />
-        </Button>
-        {previous !== null && <Button type="button" variant="ghost" size="sm" className="pop-in text-brand" onClick={undo}>Undo</Button>}
-      </div>
+      <Button type="button" variant="outline" size="sm" className="h-auto max-w-full min-w-0 justify-start rounded-full py-1.5 text-left whitespace-normal" disabled={running || submitting} onClick={send}>
+        <span className="min-w-0 break-words">{text}</span><ArrowRightIcon size={14} className="shrink-0" />
+      </Button>
     </div>
   );
 }
@@ -500,16 +490,16 @@ export function Transcript() {
   const cachedCount = useConversationStore((state) => (threadId ? state.messages[threadId]?.length ?? 0 : 0));
   const showSkeleton = loading && !!threadId && cachedCount === 0;
   return (
-    <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
-      <ThreadPrimitive.Viewport className="min-h-0 flex-1 overflow-y-auto scroll-smooth px-6 pt-4 pb-4 max-md:px-3.5 max-md:pt-3" aria-label="Conversation transcript" aria-busy={loading}>
+    <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col group-data-[empty=true]/chat:flex-none">
+      <ThreadPrimitive.Viewport className="min-h-0 flex-1 overflow-y-auto scroll-smooth group-data-[empty=true]/chat:flex-none group-data-[empty=true]/chat:overflow-visible px-6 pt-4 pb-4 max-md:px-3.5 max-md:pt-3" aria-label="Conversation transcript" aria-busy={loading}>
         {/* Key re-triggers the view-enter fade so browsing conversations feels fluid. */}
-        <div className="mx-auto w-full max-w-[736px] pb-3 animate-in fade-in duration-200" key={threadId ?? "empty"}>
+        <div className="mx-auto w-full max-w-[672px] pb-3 animate-in fade-in duration-200" key={threadId ?? "empty"}>
           {showSkeleton && <LoadingSkeleton />}
           {!threadId && (
             <Empty>
-              <EmptyHeader>
-                <EmptyTitle>Where should we begin?</EmptyTitle>
-                <EmptyDescription>Ask about marketing, sales, products, or operations — Seleric investigates your metrics and shows its evidence.</EmptyDescription>
+              <EmptyHeader className="max-w-xl">
+                <EmptyTitle>What do you want to look into?</EmptyTitle>
+                <EmptyDescription>Ask about marketing, sales, products, or operations. Seleric investigates your metrics and shows its evidence.</EmptyDescription>
               </EmptyHeader>
               <EmptyContent className="max-w-xl"><PromptRegistry surface="front" /></EmptyContent>
             </Empty>
@@ -517,9 +507,9 @@ export function Transcript() {
           {threadId && (
             <ThreadPrimitive.Empty>
               <Empty>
-                <EmptyHeader>
-                  <EmptyTitle>What should we investigate?</EmptyTitle>
-                  <EmptyDescription>Ask a question about your metrics and Seleric will investigate.</EmptyDescription>
+                <EmptyHeader className="max-w-xl">
+                  <EmptyTitle>What do you want to look into?</EmptyTitle>
+                  <EmptyDescription>Ask about marketing, sales, products, or operations. Seleric investigates your metrics and shows its evidence.</EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent className="max-w-xl"><PromptRegistry surface="front" /></EmptyContent>
               </Empty>

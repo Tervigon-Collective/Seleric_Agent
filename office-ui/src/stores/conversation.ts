@@ -70,7 +70,11 @@ interface ConversationState {
   followThread: (threadId: string) => Promise<void>;
   stopFollowingThread: () => void;
   loadThreads: () => Promise<void>;
+  /** Archives untitled threads that never had a message (so never a run). Called once after the list loads. */
+  pruneEmptyThreads: () => Promise<void>;
   createThread: () => Promise<void>;
+  /** The selected thread's id, creating one first when on the home page (new chats own no thread until first use). */
+  ensureThread: () => Promise<string | null>;
   selectThread: (id: string) => Promise<void>;
   clearSelection: () => void;
   renameThread: (id: string, title: string) => Promise<void>;
@@ -122,6 +126,7 @@ const stopThreadFollow = () => {
 };
 let demoSubmission = 0;
 let selectionGeneration = 0;
+let pruning: Promise<void> | null = null;
 let submissionGeneration = 0;
 const cancelledSubmissions = new Set<number>();
 const textMessage = (threadId: string, role: "USER" | "ASSISTANT", text: string, id: string): Message => ({
@@ -246,8 +251,13 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       const selectedThreadId = get().selectedThreadId;
       const selectedExists = threads.some((thread) => thread.id === selectedThreadId);
       set({ threads, loading: false, selectedThreadId: selectedExists ? selectedThreadId : null });
-      if (!selectedExists && threads[0]) {
-        await get().selectThread(threads[0].id);
+      // The app opens on the home page (a fresh chat), never on the latest conversation; a thread in the URL is opened by the caller.
+      if (!selectedExists && threads.length) {
+        selectionGeneration += 1;
+        submissionGeneration += 1;
+        subscriptions.forEach((stop) => stop());
+        subscriptions.clear();
+        useOffice.getState().reset();
       } else if (!threads.length) {
         selectionGeneration += 1;
         submissionGeneration += 1;
@@ -268,6 +278,38 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     } catch (error) {
       set({ loading: false, error: error instanceof Error ? error.message : "Unable to load threads" });
     }
+  },
+
+  pruneEmptyThreads: () => {
+    // One pass at a time: React StrictMode mounts the app twice in development, which would otherwise archive every thread twice.
+    if (get().demoMode) return Promise.resolve();
+    pruning ??= (async () => {
+      const settled = Date.now() - 5 * 60_000; // never touch a thread another tab may have just opened
+      const candidates = get().threads.filter((t) => !t.title?.trim() && t.id !== get().selectedThreadId && Date.parse(t.updated_at) < settled);
+      for (const thread of candidates) {
+        try {
+          if ((await conversationsApi.listMessages(thread.id, 1)).length > 0) continue;
+          await conversationsApi.archiveThread(thread.id);
+          set((s) => ({ threads: s.threads.filter((t) => t.id !== thread.id) }));
+        } catch { /* leave it; it is tidied up on the next load */ }
+      }
+    })().finally(() => { pruning = null; });
+    return pruning;
+  },
+
+  ensureThread: async () => {
+    if (!get().selectedThreadId) {
+      if (get().demoMode) await get().createThread();
+      else {
+        try {
+          const thread = await conversationsApi.createThread();
+          set((state) => ({ threads: [thread, ...state.threads], selectedThreadId: thread.id, messages: { ...state.messages, [thread.id]: [] } }));
+        } catch (error) {
+          set({ error: error instanceof Error ? error.message : "Unable to start conversation" });
+        }
+      }
+    }
+    return get().selectedThreadId;
   },
 
   createThread: async () => {
@@ -298,12 +340,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       }));
       return;
     }
+    // A new chat is the home page. The thread is created by the first message (see submit), so an unused chat leaves nothing behind.
     try {
-      const thread = await conversationsApi.createThread();
-      set((s) => ({
-        threads: [thread, ...s.threads],
-        selectedThreadId: thread.id,
-        messages: { ...s.messages, [thread.id]: [] },
+      set({
+        selectedThreadId: null,
         loading: false,
         submitting: false,
         currentRunId: null,
@@ -311,7 +351,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         thinkingText: null,
         voicePending: null,
         error: null,
-      }));
+      });
     } catch (error) {
       set({ error: error instanceof Error ? error.message : "Unable to create thread" });
     }
@@ -767,11 +807,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   uploadAttachment: async (file) => {
-    let threadId = get().selectedThreadId;
-    if (!threadId) {
-      await get().createThread();
-      threadId = get().selectedThreadId;
-    }
+    const threadId = await get().ensureThread();
     if (!threadId) return null;
     set((state) => ({ uploads: { ...state.uploads, [file.name]: "uploading" }, error: null }));
     try {

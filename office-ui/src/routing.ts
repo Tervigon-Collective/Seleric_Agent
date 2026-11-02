@@ -32,6 +32,7 @@ export function writeRoute(route: Partial<AppRoute>, replace = false): void {
     if (route.missionId) url.searchParams.set("mission", route.missionId);
     else url.searchParams.delete("mission");
   }
+  if (!url.searchParams.has("ops")) url.hash = ""; // #ops-<domain>-<metric> anchors belong to the Ops page; a chat thread carries none
   const next = `${url.pathname}${url.search}${url.hash}`;
   if (next === `${location.pathname}${location.search}${location.hash}`) return;
   history[replace ? "replaceState" : "pushState"]({}, "", next);

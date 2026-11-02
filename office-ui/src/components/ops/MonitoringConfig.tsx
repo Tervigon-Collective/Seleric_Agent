@@ -150,10 +150,10 @@ function DomainSection({ domain }: { domain: DomainView }) {
   return (
     <Card id={`mon-${domain.id}`} data-slot="mon-domain" aria-label={domain.title} className="scroll-mt-3">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">{domain.title} <Badge variant="outline">{domain.custom ? "Customised" : "Default"}</Badge></CardTitle>
+        <CardTitle className="flex items-center gap-2 font-serif text-xl font-normal">{domain.title} <Badge variant="outline">{domain.custom ? "Customised" : "Default"}</Badge></CardTitle>
         <CardDescription>{domain.description}</CardDescription>
         <CardAction className="flex items-center gap-2">
-          <Switch id={`enabled-${domain.id}`} checked={draft.enabled} onCheckedChange={(checked) => setEnabled(domain.id, checked)} />
+          <Switch className="data-checked:bg-brand" id={`enabled-${domain.id}`} checked={draft.enabled} onCheckedChange={(checked) => setEnabled(domain.id, checked)} />
           <Label htmlFor={`enabled-${domain.id}`}>Monitor this domain</Label>
         </CardAction>
       </CardHeader>

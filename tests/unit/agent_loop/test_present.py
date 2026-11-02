@@ -283,7 +283,7 @@ async def test_two_queries_for_the_same_days_are_one_chart_not_the_one_quoted_mo
 @pytest.mark.asyncio
 async def test_an_answer_that_states_shares_gets_a_donut_or_treemap():
     rows = [{"channel": c, "net_sales": str(v)} for c, v in [("a", 500), ("b", 300), ("c", 200)]]
-    _result, charts = await run(payload("q1", ["channel", "net_sales"], rows, ["net_sales"]),
+    _result, charts = await run(payload("q1", ["channel", "net_sales"], rows, ["net_sales"], total=1000.0, shares=[50.0, 30.0, 20.0]),  # the total and shares a tool/run_python result holds
                                 "Of ₹1,000 net sales, channel a brought ₹500 (50.0%), b ₹300 (30.0%) and c ₹200 (20.0%).")
     assert [c["chart_type"] for c in charts] == ["donut"]
 

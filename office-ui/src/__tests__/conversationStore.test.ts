@@ -494,3 +494,38 @@ describe("conversation store submit", () => {
     expect(useOffice.getState().timeline[0]?.agentId).toBe("seleric_agent");
   });
 });
+
+describe("empty conversations leave nothing behind", () => {
+  const thread = (id: string, title: string | null, updated: string) => ({
+    id, workspace_id: "w", owner_user_id: "u", project_id: null, title, status: "ACTIVE" as const, metadata: {}, created_at: updated, updated_at: updated,
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("a new chat does not create a thread until something is sent", async () => {
+    useConversationStore.setState({ demoMode: false, selectedThreadId: "old", threads: [], messages: {} });
+    const create = vi.spyOn(conversationsApi, "createThread");
+    await useConversationStore.getState().createThread();
+    expect(create).not.toHaveBeenCalled();
+    expect(useConversationStore.getState().selectedThreadId).toBeNull();
+  });
+
+  it("archives only old untitled threads that have no messages", async () => {
+    const old = new Date(Date.now() - 3_600_000).toISOString();
+    useConversationStore.setState({
+      demoMode: false,
+      selectedThreadId: "open",
+      threads: [
+        thread("empty-old", null, old),
+        thread("has-run", null, old),
+        thread("titled", "Weekly sales", old),
+        thread("fresh", null, new Date().toISOString()),
+        thread("open", null, old),
+      ],
+    });
+    vi.spyOn(conversationsApi, "listMessages").mockImplementation(async (id) => (id === "has-run" ? [{ id: "m1" } as never] : []));
+    const archive = vi.spyOn(conversationsApi, "archiveThread").mockResolvedValue({} as never);
+    await useConversationStore.getState().pruneEmptyThreads();
+    expect(archive.mock.calls.map((c) => c[0])).toEqual(["empty-old"]);
+    expect(useConversationStore.getState().threads.map((t) => t.id)).toEqual(["has-run", "titled", "fresh", "open"]);
+  });
+});

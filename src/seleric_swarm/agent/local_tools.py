@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import json
 import logging
@@ -29,7 +30,7 @@ from seleric_swarm.agent import present
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.email_tools import build_email_tools
 from seleric_swarm.agent.grounding import answer_numbers
-from seleric_swarm.agent.mcp_toolset import TurnState
+from seleric_swarm.agent.mcp_toolset import TurnState, full_evidence_rows
 from seleric_swarm.agent.model import LOOP_ESCALATED_EFFORT, LOOP_WRITEUP_EFFORT, set_loop_effort
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.toolsets import (
@@ -141,7 +142,7 @@ def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False, quotable
         summary = getattr(result, "summary", None)
         if summary is None:
             summary = result if isinstance(result, str) else json.dumps(result, default=str)
-        state.steps.append({"kind": "tool_call", "tool": fn.__name__, "args": {k: str(v)[:200] for k, v in kwargs.items()}})
+        state.steps.append({"kind": "tool_call", "tool": fn.__name__, "args": {k: str(v)[:4000] for k, v in kwargs.items()}})  # 4000: a run_python script must stay readable in the trace
         step = {"kind": "tool_return", "tool": fn.__name__, "ok": not failed, "ms": ms, "result": str(summary)[:2000]}
         source = getattr(getattr(result, "provenance", None), "source_metadata", None)
         if isinstance(source, dict) and isinstance(source.get("phase_ms"), dict):
@@ -197,7 +198,8 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None, is_cance
             return ToolResult(
                 success=False, retryable=True, error_code="INSUFFICIENT_EVIDENCE",
                 summary=f"No fetched result has query_id {query_ids}. Fetched this turn: {known or 'nothing yet'}.")
-        return await sandbox.run_python(ctx, code, ids, purpose)
+        rows = await asyncio.to_thread(full_evidence_rows, state, query_ids, ctx.deps) if query_ids else None  # 100k rows take seconds
+        return await sandbox.run_python(ctx, code, ids, purpose, rows=rows)
 
     async def show_chart(
         ctx: RunContext[SelericDeps],

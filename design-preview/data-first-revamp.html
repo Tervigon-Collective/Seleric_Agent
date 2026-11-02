@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seleric data-first revamp (mockup, sample data)</title>
+<style>
+:root {
+  --bg: #fafafa; --panel: #ffffff; --sidebar: #f5f1e8; --surface: #f0f0f0; --hover: #ece8dd;
+  --line: #e4e0d6; --line-strong: #cbc7bb;
+  --text: #1f2125; --dim: #4b4f57; --faint: #646871;
+  --blue: #3b82f6; --blue-text: #1d4ed8; --violet: #9333ea; --violet-text: #7e22ce;
+  --ok: #166534; --warn: #92400e; --bad: #b91c1c;
+  --ok-bg: #e8f5ec; --warn-bg: #fdf1dc; --bad-bg: #fdeaea; --blue-bg: #e8f0fe; --violet-bg: #f3e8ff;
+  --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface); color: var(--text); font: 13px/1.4 var(--font); -webkit-font-smoothing: antialiased; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--violet-text); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+svg { flex: none; }
+
+/* mockup chrome */
+.switcher { display: flex; gap: 6px; align-items: center; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+.switcher b { margin-right: 8px; }
+.switcher button { height: 30px; padding: 0 12px; border: 1px solid var(--line-strong); background: var(--panel); border-radius: 8px; }
+.switcher button[aria-pressed="true"] { background: var(--text); color: #fff; border-color: var(--text); }
+.switcher .tag { margin-left: auto; color: var(--faint); font-size: 12px; }
+.stage { padding: 16px; display: flex; justify-content: center; }
+.screen { display: none; }
+.screen.on { display: block; }
+
+/* app frame */
+.app { width: 1440px; max-width: 100%; height: 860px; background: var(--bg); border: 1px solid var(--line-strong); border-radius: 12px; overflow: hidden; display: grid; grid-template-columns: 216px minmax(0, 1fr) 340px; }
+.app.chat { grid-template-columns: 216px minmax(0, 1fr) 320px; }
+
+/* sidebar */
+aside.side { background: var(--sidebar); border-right: 1px solid var(--line); padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+.brand { display: flex; align-items: center; gap: 8px; padding: 4px 8px 10px; font-weight: 600; font-size: 14px; }
+.brand i { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg, var(--blue), var(--violet)); display: block; }
+.nav a, .nav button { display: flex; align-items: center; gap: 10px; width: 100%; height: 32px; padding: 0 10px; border: 0; background: none; border-radius: 8px; color: #33373e; text-decoration: none; text-align: left; }
+.nav a:hover, .nav button:hover { background: var(--hover); }
+.nav a[aria-current="page"] { background: var(--panel); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
+.nav kbd { margin-left: auto; font: 11px var(--font); color: var(--faint); border: 1px solid var(--line-strong); border-radius: 4px; padding: 0 4px; }
+.sec { margin: 12px 10px 4px; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); }
+.threads a { display: block; padding: 5px 10px; border-radius: 8px; color: var(--dim); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.threads a:hover { background: var(--hover); }
+.spacer { flex: 1; }
+
+/* main */
+main.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.top { height: 48px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--bg); }
+.top h1 { margin: 0; font-size: 15px; font-weight: 600; }
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.seg button { height: 28px; padding: 0 10px; border: 0; background: none; color: var(--dim); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--text); color: #fff; }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.pill.ok { background: var(--ok-bg); color: var(--ok); }
+.pill.warn { background: var(--warn-bg); color: var(--warn); }
+.pill.bad { background: var(--bad-bg); color: var(--bad); }
+.pill.info { background: var(--blue-bg); color: var(--blue-text); }
+.pill.vio { background: var(--violet-bg); color: var(--violet-text); }
+.ibtn { width: 32px; height: 32px; display: inline-grid; place-items: center; border: 1px solid var(--line-strong); background: var(--panel); border-radius: 8px; }
+.ibtn:hover { background: var(--hover); }
+.btn { height: 30px; padding: 0 12px; border: 1px solid var(--line-strong); background: var(--panel); border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; }
+.btn.pri { background: var(--blue-text); border-color: var(--blue-text); color: #fff; }
+.btn:hover { background: var(--hover); } .btn.pri:hover { background: #1e40af; }
+.scroll { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
+
+/* cards */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.card > header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+.card > header h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.card > header .r { margin-left: auto; color: var(--faint); font-size: 12px; }
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.kpi { padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: end; }
+.kpi .l { color: var(--dim); font-size: 12px; grid-column: 1 / -1; display: flex; justify-content: space-between; }
+.kpi .v { font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+.kpi .d { font-size: 12px; grid-column: 1; }
+.kpi svg.sp { grid-row: 2 / 4; grid-column: 2; }
+.up { color: var(--ok); } .dn { color: var(--bad); } .flat { color: var(--faint); }
+.row2 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 10px; }
+.legend { display: flex; gap: 14px; color: var(--dim); font-size: 12px; padding: 8px 12px 0; }
+.legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+.feed { list-style: none; margin: 0; padding: 0; }
+.feed li { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); align-items: start; }
+.feed li:last-child { border: 0; }
+.feed b { font-weight: 600; } .feed small { color: var(--faint); font-size: 12px; }
+.feed a { color: var(--blue-text); font-size: 12px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 6px 12px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 12px; font-weight: 500; color: var(--dim); background: #fcfbf8; }
+td.r, th.r { text-align: right; }
+tr:last-child td { border: 0; }
+tbody tr:hover { background: #faf8f3; }
+
+/* right chat panel */
+aside.panel { border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.panel .body { flex: 1; min-height: 0; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.msg-u { align-self: flex-end; max-width: 88%; background: var(--surface); padding: 7px 10px; border-radius: 12px 12px 3px 12px; }
+.msg-a { max-width: 100%; }
+.msg-a p { margin: 0 0 6px; }
+.steps { color: var(--faint); font-size: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { height: 28px; padding: 0 10px; border: 1px solid var(--line-strong); background: var(--panel); border-radius: 999px; color: var(--dim); }
+.chip:hover { background: var(--blue-bg); border-color: var(--blue); color: var(--blue-text); }
+.cap { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); margin: 0 0 6px; }
+.composer { border-top: 1px solid var(--line); padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.input { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); border-radius: 14px; padding: 4px 4px 4px 12px; background: var(--bg); }
+.input:focus-within { border-color: var(--violet-text); box-shadow: 0 0 0 2px #e9d5ff; }
+.input input { flex: 1; min-width: 0; border: 0; background: none; outline: none; height: 30px; }
+.input input::placeholder { color: var(--faint); }
+.mic[aria-pressed="true"] { background: var(--violet-bg); border-color: var(--violet); color: var(--violet-text); }
+.send { background: var(--blue-text); border-color: var(--blue-text); color: #fff; }
+.hint { color: var(--faint); font-size: 12px; }
+.undo { color: var(--blue-text); background: none; border: 0; text-decoration: underline; padding: 0; }
+
+/* chat screen */
+.thread { width: 100%; max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.run { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; }
+.run summary { cursor: pointer; padding: 8px 12px; display: flex; gap: 8px; align-items: center; list-style: none; }
+.run summary::-webkit-details-marker { display: none; }
+.run ol { margin: 0; padding: 4px 12px 10px 32px; color: var(--dim); font-size: 12px; }
+.ans { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.ans h3 { margin: 0 0 6px; font-size: 14px; }
+.ans p { margin: 0 0 8px; }
+.ev dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 12px; }
+.ev dt { color: var(--faint); } .ev dd { margin: 0; word-break: break-word; }
+.ev code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface); padding: 1px 4px; border-radius: 4px; }
+
+/* voice screen */
+.phone { width: 390px; height: 844px; background: var(--bg); border: 1px solid var(--line-strong); border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; align-items: center; padding: 18px 20px 24px; text-align: center; }
+.phone .bar { width: 100%; display: flex; justify-content: space-between; align-items: center; }
+.orbwrap { margin-top: 56px; width: 168px; height: 168px; position: relative; display: grid; place-items: center; }
+.orb { width: 110px; height: 110px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #93c5fd, var(--blue) 45%, var(--violet) 100%); animation: breathe 2.4s ease-in-out infinite; }
+.orbwrap::before, .orbwrap::after { content: ""; position: absolute; inset: 14px; border-radius: 50%; border: 1px solid var(--blue); opacity: .35; animation: ring 2.4s ease-out infinite; }
+.orbwrap::after { animation-delay: 1.2s; }
+@keyframes breathe { 50% { transform: scale(1.08); } }
+@keyframes ring { from { transform: scale(.7); opacity: .45; } to { transform: scale(1.2); opacity: 0; } }
+.wave { display: flex; gap: 3px; align-items: center; height: 28px; margin-top: 14px; }
+.wave i { width: 3px; border-radius: 2px; background: var(--violet); animation: bar 1s ease-in-out infinite; height: 8px; }
+.wave i:nth-child(2n) { animation-delay: .15s; } .wave i:nth-child(3n) { animation-delay: .3s; }
+@keyframes bar { 50% { height: 24px; } }
+.state { margin: 18px 0 4px; font-size: 20px; font-weight: 600; }
+.heard { color: var(--dim); max-width: 300px; min-height: 40px; }
+.vchips { margin-top: auto; display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.vchips .chip { height: 40px; border-radius: 12px; }
+.vrow { display: flex; gap: 10px; width: 100%; margin-top: 14px; }
+.vrow .btn { flex: 1; height: 44px; justify-content: center; }
+.vrow .end { background: var(--bad); border-color: var(--bad); color: #fff; }
+@media (prefers-reduced-motion: reduce) { .orb, .orbwrap::before, .orbwrap::after, .wave i { animation: none; } }
+@media (max-width: 1100px) { .app, .app.chat { grid-template-columns: 56px minmax(0, 1fr); } aside.panel { display: none; } .side .lbl, .side .sec, .side .threads, .side kbd { display: none; } }
+</style>
+</head>
+<body>
+<div class="switcher" role="group" aria-label="Mockup screens">
+  <b>Seleric data-first revamp</b>
+  <button type="button" data-screen="ops" aria-pressed="true">Ops</button>
+  <button type="button" data-screen="chat" aria-pressed="false">Chat</button>
+  <button type="button" data-screen="voice" aria-pressed="false">Voice (phone)</button>
+  <span class="tag">Mockup, sample data only. Zero palette, flat, no shadows.</span>
+</div>
+
+<!-- icon sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.6A8 8 0 1 1 21 12z"/></symbol>
+    <symbol id="i-act" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8M10 20a2 2 0 0 0 4 0"/></symbol>
+    <symbol id="i-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 8h2M13 8h2M9 12h2M13 12h2M10 21v-4h4v4"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+    <symbol id="i-set" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-kb" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/></symbol>
+  </defs>
+</svg>
+
+<div class="stage">
+
+<!-- ======================= OPS ======================= -->
+<section class="screen on" id="screen-ops" aria-label="Ops screen">
+  <div class="app">
+    <aside class="side" aria-label="Navigation">
+      <div class="brand"><i></i><span class="lbl">Seleric</span></div>
+      <nav class="nav" aria-label="Actions">
+        <a href="#" data-go="chat"><svg width="16" height="16" aria-hidden="true"><use href="#i-plus"/></svg><span class="lbl">New chat</span></a>
+        <button type="button"><svg width="16" height="16" aria-hidden="true"><use href="#i-search"/></svg><span class="lbl">Search</span><kbd>⌘K</kbd></button>
+      </nav>
+      <div class="sec">Workspace</div>
+      <nav class="nav" aria-label="Workspace">
+        <a href="#" data-go="chat"><svg width="16" height="16" aria-hidden="true"><use href="#i-chat"/></svg><span class="lbl">Chat</span></a>
+        <a href="#" aria-current="page"><svg width="16" height="16" aria-hidden="true"><use href="#i-act"/></svg><span class="lbl">Ops</span></a>
+        <a href="#"><svg width="16" height="16" aria-hidden="true"><use href="#i-bell"/></svg><span class="lbl">Monitoring</span></a>
+        <a href="#"><svg width="16" height="16" aria-hidden="true"><use href="#i-off"/></svg><span class="lbl">Office</span></a>
+        <a href="#"><svg width="16" height="16" aria-hidden="true"><use href="#i-flag"/></svg><span class="lbl">Missions</span></a>
+      </nav>
+      <div class="sec">Recent</div>
+      <div class="threads">
+        <a href="#" data-go="chat">Why did conversion dip Tuesday?</a>
+        <a href="#">Revenue by channel, last 30d</a>
+        <a href="#">Refund rate vs. baseline</a>
+      </div>
+      <div class="spacer"></div>
+      <nav class="nav" aria-label="Settings"><button type="button"><svg width="16" height="16" aria-hidden="true"><use href="#i-set"/></svg><span class="lbl">Settings</span></button></nav>
+    </aside>
+
+    <main class="main">
+      <div class="top">
+        <h1>Ops</h1>
+        <div class="seg" role="group" aria-label="Time range">
+          <button type="button" aria-pressed="false">24h</button><button type="button" aria-pressed="true">7d</button><button type="button" aria-pressed="false">30d</button>
+        </div>
+        <span class="pill warn" style="margin-left:auto">▲ Watch: 1 anomaly open</span>
+        <span class="hint">Checked 4 min ago</span>
+      </div>
+      <div class="scroll">
+        <div class="kpis">
+          <article class="card kpi"><div class="l"><span>Revenue</span><span class="pill ok">● On track</span></div><div class="v num">$48.2k</div><div class="d num up">▲ 4.1% vs prior 7d</div>
+            <svg class="sp" width="84" height="30" viewBox="0 0 84 30" aria-hidden="true"><polyline fill="none" stroke="#1d4ed8" stroke-width="1.6" points="0,22 12,20 24,23 36,16 48,17 60,10 72,12 84,6"/></svg></article>
+          <article class="card kpi"><div class="l"><span>Sessions</span><span class="pill ok">● On track</span></div><div class="v num">12.4k</div><div class="d num up">▲ 2.3%</div>
+            <svg class="sp" width="84" height="30" viewBox="0 0 84 30" aria-hidden="true"><polyline fill="none" stroke="#1d4ed8" stroke-width="1.6" points="0,18 12,16 24,19 36,14 48,15 60,12 72,13 84,9"/></svg></article>
+          <article class="card kpi"><div class="l"><span>Conversion rate</span><span class="pill warn">▲ Watch</span></div><div class="v num">3.1%</div><div class="d num dn">▼ 0.4 pt</div>
+            <svg class="sp" width="84" height="30" viewBox="0 0 84 30" aria-hidden="true"><polyline fill="none" stroke="#92400e" stroke-width="1.6" points="0,8 12,9 24,7 36,10 48,22 60,20 72,21 84,19"/></svg></article>
+          <article class="card kpi"><div class="l"><span>Orders</span><span class="pill ok">● On track</span></div><div class="v num">384</div><div class="d num up">▲ 1.9%</div>
+            <svg class="sp" width="84" height="30" viewBox="0 0 84 30" aria-hidden="true"><polyline fill="none" stroke="#1d4ed8" stroke-width="1.6" points="0,20 12,21 24,18 36,19 48,15 60,16 72,12 84,11"/></svg></article>
+          <article class="card kpi"><div class="l"><span>Avg. order value</span><span class="pill ok">● On track</span></div><div class="v num">$125.5</div><div class="d num flat">■ 0.0%</div>
+            <svg class="sp" width="84" height="30" viewBox="0 0 84 30" aria-hidden="true"><polyline fill="none" stroke="#1d4ed8" stroke-width="1.6" points="0,15 12,14 24,16 36,15 48,14 60,16 72,15 84,15"/></svg></article>
+          <article class="card kpi"><div class="l"><span>Refund rate</span><span class="pill ok">● On track</span></div><div class="v num">1.8%</div><div class="d num up">▼ 0.2 pt</div>
+            <svg class="sp" width="84" height="30" viewBox="0 0 84 30" aria-hidden="true"><polyline fill="none" stroke="#1d4ed8" stroke-width="1.6" points="0,10 12,12 24,11 36,14 48,15 60,16 72,18 84,19"/></svg></article>
+        </div>
+
+        <div class="row2">
+          <section class="card" aria-labelledby="h-rev">
+            <header><h2 id="h-rev">Conversion rate vs. baseline</h2><span class="r">Daily, last 7 days</span></header>
+            <div class="legend"><span><i style="border-color:#1d4ed8"></i>Actual</span><span><i style="border-color:#646871;border-top-style:dashed"></i>Baseline</span><span><i style="border-color:#7e22ce"></i>Anomaly window</span></div>
+            <svg viewBox="0 0 600 190" width="100%" role="img" aria-label="Line chart. Conversion rate holds near 3.5 percent from Monday to Tuesday, drops to 3.0 percent on Wednesday, and stays below the 3.5 percent baseline through Sunday." style="display:block;padding:0 6px 6px">
+              <g stroke="#e4e0d6" stroke-width="1"><line x1="44" y1="20" x2="590" y2="20"/><line x1="44" y1="60" x2="590" y2="60"/><line x1="44" y1="100" x2="590" y2="100"/><line x1="44" y1="140" x2="590" y2="140"/></g>
+              <g font-size="11" fill="#646871"><text x="8" y="24">4.0%</text><text x="8" y="64">3.5%</text><text x="8" y="104">3.0%</text><text x="8" y="144">2.5%</text>
+                <text x="60" y="172">Mon</text><text x="143" y="172">Tue</text><text x="226" y="172">Wed</text><text x="309" y="172">Thu</text><text x="392" y="172">Fri</text><text x="475" y="172">Sat</text><text x="558" y="172">Sun</text></g>
+              <rect x="205" y="14" width="150" height="132" fill="#f3e8ff" opacity=".7"/>
+              <line x1="44" y1="60" x2="590" y2="60" stroke="#646871" stroke-width="1.5" stroke-dasharray="5 4"/>
+              <polyline fill="none" stroke="#1d4ed8" stroke-width="2.2" stroke-linejoin="round" points="70,56 153,58 236,102 319,96 402,90 485,98 568,92"/>
+              <g fill="#1d4ed8"><circle cx="70" cy="56" r="3"/><circle cx="153" cy="58" r="3"/><circle cx="236" cy="102" r="3"/><circle cx="319" cy="96" r="3"/><circle cx="402" cy="90" r="3"/><circle cx="485" cy="98" r="3"/><circle cx="568" cy="92" r="3"/></g>
+              <text x="212" y="32" font-size="11" font-weight="600" fill="#7e22ce">Anomaly: -0.5 pt vs. baseline</text>
+            </svg>
+          </section>
+
+          <section class="card" aria-labelledby="h-an">
+            <header><h2 id="h-an">Anomalies</h2><span class="r">1 open · 2 resolved</span></header>
+            <ul class="feed">
+              <li><span class="pill warn">▲ Warn</span><div><b>Conversion rate below baseline</b><br><small>Since Wed · mobile web · checkout step</small></div><a href="#" data-go="chat">Investigate</a></li>
+              <li><span class="pill ok">✓ Resolved</span><div><b>Sessions spike</b><br><small>Sun · paid social · back within range</small></div><a href="#">Details</a></li>
+              <li><span class="pill ok">✓ Resolved</span><div><b>Refund rate uptick</b><br><small>Last Fri · one SKU</small></div><a href="#">Details</a></li>
+            </ul>
+          </section>
+        </div>
+
+        <section class="card" aria-labelledby="h-met">
+          <header><h2 id="h-met">All metrics</h2><span class="r">Sample data</span></header>
+          <table>
+            <thead><tr><th scope="col">Metric</th><th scope="col" class="r">Value</th><th scope="col" class="r">vs. prior</th><th scope="col">Status</th><th scope="col">Source</th><th scope="col">Checked</th></tr></thead>
+            <tbody>
+              <tr><th scope="row" style="font-weight:500;background:none">Revenue</th><td class="r num">$48,214</td><td class="r num up">▲ 4.1%</td><td><span class="pill ok">● On track</span></td><td>Orders</td><td>4 min ago</td></tr>
+              <tr><th scope="row" style="font-weight:500;background:none">Sessions</th><td class="r num">12,406</td><td class="r num up">▲ 2.3%</td><td><span class="pill ok">● On track</span></td><td>Web sessions</td><td>4 min ago</td></tr>
+              <tr><th scope="row" style="font-weight:500;background:none">Conversion rate</th><td class="r num">3.1%</td><td class="r num dn">▼ 0.4 pt</td><td><span class="pill warn">▲ Watch</span></td><td>Orders ÷ Sessions</td><td>4 min ago</td></tr>
+              <tr><th scope="row" style="font-weight:500;background:none">Orders</th><td class="r num">384</td><td class="r num up">▲ 1.9%</td><td><span class="pill ok">● On track</span></td><td>Orders</td><td>4 min ago</td></tr>
+              <tr><th scope="row" style="font-weight:500;background:none">Refund rate</th><td class="r num">1.8%</td><td class="r num up">▼ 0.2 pt</td><td><span class="pill ok">● On track</span></td><td>Refunds</td><td>4 min ago</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+    </main>
+
+    <aside class="panel" aria-label="Ask Seleric">
+      <div class="top" style="background:var(--panel)"><h1 style="font-size:14px">Ask Seleric</h1><button type="button" class="ibtn" style="margin-left:auto;width:28px;height:28px" aria-label="Close panel"><svg width="14" height="14" aria-hidden="true"><use href="#i-x"/></svg></button></div>
+      <div class="body">
+        <div class="msg-u">Why did conversion dip on Wednesday?</div>
+        <div class="msg-a">
+          <p class="steps">✓ Resolved metric · ✓ Queried orders and sessions · ✓ Compared segments</p>
+          <p>Conversion fell mostly on <b>mobile web</b>, at the checkout step. Desktop is flat. <a href="#" data-go="chat" style="color:var(--blue-text)">See evidence</a></p>
+        </div>
+        <div>
+          <p class="cap">Suggested</p>
+          <div class="chips" role="group" aria-label="Suggested questions">
+            <button type="button" class="chip">Break down by device</button>
+            <button type="button" class="chip">Compare to last month</button>
+            <button type="button" class="chip">Set an alert at 3.0%</button>
+          </div>
+        </div>
+      </div>
+      <div class="composer">
+        <div class="input">
+          <label class="sr" for="q-ops">Message</label>
+          <input id="q-ops" placeholder="Ask, or press the mic and speak">
+          <button type="button" class="ibtn mic" aria-label="Start voice input" aria-pressed="false" data-mic><svg width="16" height="16" aria-hidden="true"><use href="#i-mic"/></svg></button>
+          <button type="button" class="ibtn send" aria-label="Send message"><svg width="16" height="16" aria-hidden="true"><use href="#i-send"/></svg></button>
+        </div>
+        <div class="hint" role="status" aria-live="polite" data-micstatus>Idle. Typing always works.</div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ======================= CHAT ======================= -->
+<section class="screen" id="screen-chat" aria-label="Chat screen">
+  <div class="app chat">
+    <aside class="side" aria-label="Navigation">
+      <div class="brand"><i></i><span class="lbl">Seleric</span></div>
+      <nav class="nav" aria-label="Actions">
+        <a href="#"><svg width="16" height="16" aria-hidden="true"><use href="#i-plus"/></svg><span class="lbl">New chat</span></a>
+        <button type="button"><svg width="16" height="16" aria-hidden="true"><use href="#i-search"/></svg><span class="lbl">Search</span><kbd>⌘K</kbd></button>
+      </nav>
+      <div class="sec">Workspace</div>
+      <nav class="nav" aria-label="Workspace">
+        <a href="#" aria-current="page"><svg width="16" height="16" aria-hidden="true"><use href="#i-chat"/></svg><span class="lbl">Chat</span></a>
+        <a href="#" data-go="ops"><svg width="16" height="16" aria-hidden="true"><use href="#i-act"/></svg><span class="lbl">Ops</span></a>
+        <a href="#"><svg width="16" height="16" aria-hidden="true"><use href="#i-bell"/></svg><span class="lbl">Monitoring</span></a>
+        <a href="#"><svg width="16" height="16" aria-hidden="true"><use href="#i-off"/></svg><span class="lbl">Office</span></a>
+        <a href="#"><svg width="16" height="16" aria-hidden="true"><use href="#i-flag"/></svg><span class="lbl">Missions</span></a>
+      </nav>
+      <div class="sec">Recent</div>
+      <div class="threads">
+        <a href="#" style="background:var(--panel);color:var(--text)">Why did conversion dip Wednesday?</a>
+        <a href="#">Revenue by channel, last 30d</a>
+        <a href="#">Refund rate vs. baseline</a>
+      </div>
+      <div class="spacer"></div>
+      <nav class="nav" aria-label="Settings"><button type="button"><svg width="16" height="16" aria-hidden="true"><use href="#i-set"/></svg><span class="lbl">Settings</span></button></nav>
+    </aside>
+
+    <main class="main">
+      <div class="top"><h1>Why did conversion dip Wednesday?</h1><span class="pill info" style="margin-left:auto">Done · 6 s</span></div>
+      <div class="scroll">
+        <div class="thread">
+          <div class="msg-u">Why did conversion dip on Wednesday?</div>
+          <details class="run">
+            <summary><span class="pill ok">✓ Done</span><span>4 steps</span><span class="hint" style="margin-left:auto">Show steps</span></summary>
+            <ol><li>Resolved “conversion” to Orders ÷ Sessions</li><li>Queried daily values, last 7 days</li><li>Split by device and funnel step</li><li>Checked for anomalies in related metrics</li></ol>
+          </details>
+          <article class="ans">
+            <h3>Mobile web checkout drove the dip</h3>
+            <p>Conversion fell from 3.5% to 3.0% on Wednesday and has not recovered. Desktop is flat; the drop sits on mobile web at the checkout step.</p>
+            <table aria-label="Conversion by device">
+              <thead><tr><th scope="col">Device</th><th scope="col" class="r">Tue</th><th scope="col" class="r">Wed</th><th scope="col" class="r">Change</th></tr></thead>
+              <tbody>
+                <tr><th scope="row" style="font-weight:500;background:none">Mobile web</th><td class="r num">3.2%</td><td class="r num">2.4%</td><td class="r num dn">▼ 0.8 pt</td></tr>
+                <tr><th scope="row" style="font-weight:500;background:none">Desktop</th><td class="r num">4.1%</td><td class="r num">4.0%</td><td class="r num flat">■ 0.1 pt</td></tr>
+                <tr><th scope="row" style="font-weight:500;background:none">App</th><td class="r num">3.6%</td><td class="r num">3.6%</td><td class="r num flat">■ 0.0 pt</td></tr>
+              </tbody>
+            </table>
+            <p class="hint" style="margin:8px 0 0">Sample numbers for the mockup.</p>
+          </article>
+          <div>
+            <p class="cap">Suggested next <button type="button" class="undo" style="margin-left:6px;text-transform:none;letter-spacing:0">Undo</button></p>
+            <div class="chips" role="group" aria-label="Suggested next questions">
+              <button type="button" class="chip">Show the checkout funnel on mobile</button>
+              <button type="button" class="chip">Alert me if mobile drops below 2.5%</button>
+              <button type="button" class="chip">Export this table</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="composer" style="background:var(--bg)">
+        <div class="input" style="max-width:760px;width:100%;margin:0 auto;background:var(--panel)">
+          <label class="sr" for="q-chat">Message</label>
+          <input id="q-chat" placeholder="Ask a follow-up, or press the mic and speak">
+          <button type="button" class="ibtn mic" aria-label="Start voice input" aria-pressed="false" data-mic><svg width="16" height="16" aria-hidden="true"><use href="#i-mic"/></svg></button>
+          <button type="button" class="ibtn send" aria-label="Send message"><svg width="16" height="16" aria-hidden="true"><use href="#i-send"/></svg></button>
+        </div>
+        <div class="hint" role="status" aria-live="polite" data-micstatus style="max-width:760px;width:100%;margin:0 auto">Idle. Typing always works.</div>
+      </div>
+    </main>
+
+    <aside class="panel ev" aria-label="Evidence">
+      <div class="top" style="background:var(--panel)"><h1 style="font-size:14px">Evidence</h1><span class="pill vio" style="margin-left:auto">3 sources</span></div>
+      <div class="body">
+        <section class="card" style="padding:10px 12px"><p class="cap">Metric</p>
+          <dl><dt>Definition</dt><dd>Orders ÷ Sessions</dd><dt>Window</dt><dd>Mon–Sun, daily</dd><dt>Baseline</dt><dd>3.5% (trailing 28d median)</dd></dl></section>
+        <section class="card" style="padding:10px 12px"><p class="cap">Query</p>
+          <dl><dt>Source</dt><dd><code>orders</code>, <code>web_sessions</code></dd><dt>Rows</dt><dd class="num">1,284 (sample)</dd><dt>Run</dt><dd>6 s ago</dd></dl></section>
+        <section class="card" style="padding:10px 12px"><p class="cap">Checks</p>
+          <dl><dt>Anomaly</dt><dd><span class="pill warn">▲ Warn</span> mobile web</dd><dt>Data gaps</dt><dd><span class="pill ok">✓ None found</span></dd></dl></section>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ======================= VOICE ======================= -->
+<section class="screen" id="screen-voice" aria-label="Voice screen (phone)">
+  <div class="phone" role="region" aria-label="Voice conversation">
+    <div class="bar">
+      <button type="button" class="ibtn" aria-label="Open navigation"><svg width="16" height="16" aria-hidden="true"><use href="#i-menu"/></svg></button>
+      <span class="hint">Voice</span>
+      <button type="button" class="ibtn" aria-label="Close voice"><svg width="16" height="16" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="orbwrap" aria-hidden="true"><div class="orb"></div></div>
+    <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <p class="state" role="status" aria-live="polite">Listening…</p>
+    <p class="heard" aria-live="polite">“Why did conversion dip on Wednesday?”</p>
+    <div class="vchips">
+      <p class="cap" style="margin:0">Suggested, say or tap</p>
+      <button type="button" class="chip">“Break it down by device”</button>
+      <button type="button" class="chip">“Compare to last month”</button>
+      <button type="button" class="chip">“Set an alert at 3 percent”</button>
+    </div>
+    <div class="vrow">
+      <button type="button" class="btn"><svg width="16" height="16" aria-hidden="true"><use href="#i-kb"/></svg>Type instead</button>
+      <button type="button" class="btn end"><svg width="16" height="16" aria-hidden="true"><use href="#i-x"/></svg>End</button>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<script>
+// Screen switcher + mic toggle. The mic is mocked: it only flips the labelled states.
+const screens = document.querySelectorAll(".screen"), tabs = document.querySelectorAll(".switcher button");
+function show(name) {
+  screens.forEach((s) => s.classList.toggle("on", s.id === "screen-" + name));
+  tabs.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.screen === name)));
+}
+tabs.forEach((b) => b.addEventListener("click", () => show(b.dataset.screen)));
+document.querySelectorAll("[data-go]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); show(a.dataset.go); }));
+document.querySelectorAll("[data-mic]").forEach((m) => m.addEventListener("click", () => {
+  const on = m.getAttribute("aria-pressed") !== "true";
+  m.setAttribute("aria-pressed", String(on));
+  m.setAttribute("aria-label", on ? "Stop voice input" : "Start voice input");
+  m.closest(".composer").querySelector("[data-micstatus]").textContent = on ? "Listening… say a question, or keep typing." : "Idle. Typing always works.";
+}));
+document.querySelectorAll(".seg").forEach((g) => g.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  g.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+}));
+</script>
+</body>
+</html>

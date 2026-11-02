@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { cn } from "cn";
 import { Composer } from "./components/Composer";
 import { DetailPanel } from "./components/DetailPanel";
 import { PanelErrorBoundary } from "./components/ErrorBoundary";
@@ -57,7 +56,7 @@ function ShareButton({ threadId, className }: { threadId: string | null; classNa
     <Button
       variant="outline"
       size="sm"
-      className={cn(className, copied && "is-success")}
+      className={className}
       aria-label={copied ? "Link copied" : "Copy link to this conversation"}
       title="Copy link to this conversation"
       onClick={copy}
@@ -90,7 +89,7 @@ export default function App() {
     // data-theme is always light or dark, so the CSS and the shadcn dark variant keep one switch.
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
-    document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute("content", dark ? "#17181a" : "#fafafa");
+    document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute("content", dark ? "#1a1b1e" : "#f4f4f2");
     firstTheme.current = false;
   }, [dark]);
   useEffect(() => {
@@ -105,6 +104,7 @@ export default function App() {
   const toggleDetails = useShellStore((s) => s.toggleDetails);
   const loadThreads = useConversationStore((s) => s.loadThreads);
   const error = useConversationStore((s) => s.error);
+  const chatEmpty = useConversationStore((s) => !s.selectedThreadId || !(s.messages[s.selectedThreadId]?.length));
   const selectThread = useConversationStore((s) => s.selectThread);
   const clearSelection = useConversationStore((s) => s.clearSelection);
   const selectedThreadId = useConversationStore((s) => s.selectedThreadId);
@@ -124,6 +124,7 @@ export default function App() {
       const route = readRoute();
       if (route.threadId) await selectThread(route.threadId);
       if (alive) setRoutingReady(true);
+      void useConversationStore.getState().pruneEmptyThreads();
     });
     return () => { alive = false; };
   }, [loadThreads, selectThread]);
@@ -149,7 +150,8 @@ export default function App() {
         event.preventDefault(); setSearchOpen(true);
       }
       // Modals handle their own Escape; this only folds the side panels.
-      if (event.key === "Escape" && !searchOpen && !promptsOpen && !diagnosticsOpen) {
+      // A dialog that just consumed this Escape (Radix marks it handled) must not also fold the sidebar behind it.
+      if (event.key === "Escape" && !event.defaultPrevented && !searchOpen && !promptsOpen && !diagnosticsOpen) {
         const shell = useShellStore.getState();
         if (shell.detailsOpen) shell.toggleDetails();
         else if (shell.sidebarOpen) shell.toggleSidebar();
@@ -240,7 +242,7 @@ export default function App() {
         }
       >
         <main className="flex min-h-0 flex-1 items-stretch bg-background">
-          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+          <div data-empty={chatEmpty} className="group/chat relative flex min-h-0 min-w-0 flex-1 flex-col bg-background data-[empty=true]:justify-center">
             {error && <Alert variant="destructive" role="alert" className="rounded-none border-x-0 border-t-0"><AlertDescription>{error}</AlertDescription></Alert>}
             <PanelErrorBoundary name="transcript">
               <SelericAssistantRuntimeProvider>

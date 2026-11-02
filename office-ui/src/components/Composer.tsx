@@ -156,6 +156,7 @@ export function Composer() {
   const backdropRef = useRef<HTMLDivElement>(null);
   const [corrections, setCorrections] = useState<AutoCorrectItem[]>([]);
   const text = useAuiState((s) => (s.composer.isEditing ? s.composer.text : ""));
+  const empty = useAuiState((s) => s.thread.isEmpty);
   const voiceLive = useVoiceStore((s) => s.status === "connecting" || s.status === "listening" || s.status === "speaking");
 
   useEffect(() => {
@@ -214,7 +215,7 @@ export function Composer() {
     <div className="shrink-0 bg-background px-6 pb-3 max-md:px-3 max-md:pb-[max(12px,env(safe-area-inset-bottom))]">
       <VoiceDock />
       {/* Hidden, not unmounted: keeps the draft and the autocorrect listeners alive. */}
-      <div className="mx-auto max-w-[736px]" hidden={voiceLive}>
+      <div className="mx-auto max-w-[672px]" hidden={voiceLive}>
         <ComposerPrimitive.Root aria-label="Message composer" className="flex flex-col gap-1 rounded-[20px] border border-input bg-card p-2.5 shadow-[var(--shadow)] transition-[box-shadow,border-color] duration-200 focus-within:border-ring/60 focus-within:ring-3 focus-within:ring-ring/20">
           <div className="relative">
             <div className={cn(FIELD, "pointer-events-none absolute inset-0 overflow-hidden break-words whitespace-pre-wrap text-transparent")} aria-hidden="true" ref={backdropRef}>
@@ -222,7 +223,7 @@ export function Composer() {
             </div>
             <ComposerPrimitive.Input
               ref={inputRef}
-              placeholder="Ask about sales, marketing, products…"
+              placeholder={empty ? "Ask about sales, marketing, products…" : "Reply to Seleric…"}
               aria-label="Message"
               rows={2}
               className={cn(FIELD, "relative block max-h-36 min-h-11 resize-none border-0 bg-transparent outline-none placeholder:text-muted-foreground")}
@@ -242,11 +243,10 @@ export function Composer() {
             <ComposerPrimitive.AddAttachment className={buttonVariants({ variant: "ghost", size: "icon-sm" })} aria-label="Choose attachments" title="Attach a file">
               <PaperclipIcon />
             </ComposerPrimitive.AddAttachment>
-            <small className="ml-1 min-w-0 truncate text-xs text-muted-foreground max-md:hidden">Enter to send · Shift+Enter for a new line</small>
             <span className="flex-1" />
             <VoiceControls text={text} />
             <AuiIf condition={(state) => !state.thread.isRunning}>
-              <ComposerPrimitive.Send className={cn(buttonVariants({ size: "icon-sm" }), "neu-primary pop-in size-9 rounded-full")} aria-label="Send message" title="Send (Enter)">
+              <ComposerPrimitive.Send className={cn(buttonVariants({ size: "icon-sm" }), "pop-in rounded-full bg-brand text-sidebar-primary-foreground hover:bg-brand-hover transition-colors")} aria-label="Send message" title="Send (Enter)">
                 <SendIcon />
               </ComposerPrimitive.Send>
             </AuiIf>
@@ -268,6 +268,7 @@ export function Composer() {
             </ComposerPrimitive.Attachments>
           </div>
         </ComposerPrimitive.Root>
+        <p className="m-0 mt-2 text-center text-xs text-muted-foreground">Evidence stays with every answer.</p>
       </div>
     </div>
   );

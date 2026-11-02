@@ -8,14 +8,22 @@ const DETAIL_TABS: readonly DetailTab[] = ["Debug", "Causal", "Memory"];
 const DETAILS_OPEN_KEY = "seleric.detailsOpen";
 const DETAIL_TAB_KEY = "seleric.detailTab";
 const SIDEBAR_OPEN_KEY = "seleric.sidebarOpen";
+const SIDEBAR_COLLAPSED_KEY = "seleric.sidebarCollapsed";
 
-/** The navigation starts tucked away; the user's choice is remembered. */
+const wide = (px: number) => typeof window !== "undefined" && window.innerWidth >= px;
+
+/** The user's choice is remembered; with none stored, the navigation is open at desktop width and tucked away below it. */
 function readStoredSidebarOpen(): boolean {
   try {
-    return localStorage.getItem(SIDEBAR_OPEN_KEY) === "1";
+    const stored = localStorage.getItem(SIDEBAR_OPEN_KEY);
+    return stored === null ? wide(1024) : stored === "1";
   } catch {
-    return false;
+    return wide(1024);
   }
+}
+
+function readStoredSidebarCollapsed(): boolean {
+  try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1"; } catch { return false; }
 }
 
 function readStoredDetailsOpen(): boolean {
@@ -63,13 +71,22 @@ interface ShellState {
   workspace: Workspace;
   opsPage: OpsPage;
   sidebarOpen: boolean;
+  /** Desktop only: the sidebar shrinks to an icon rail. Below the panel breakpoint it stays a drawer. */
+  sidebarCollapsed: boolean;
   detailsOpen: boolean;
+  /** Monitoring's chat overlay: whether it is over the page, and what it is investigating. */
+  askOpen: boolean;
+  askContext: string | null;
   selectedArtifact: Record<string, unknown> | null;
   setDetailTab: (tab: DetailTab) => void;
   setWorkspace: (workspace: Workspace) => void;
   /** Open the Ops workspace on one of its pages (dashboard, or the monitoring configuration). */
   openOps: (page: OpsPage) => void;
   toggleSidebar: () => void;
+  toggleSidebarCollapsed: () => void;
+  setAskOpen: (open: boolean) => void;
+  /** Open the chat overlay over Monitoring and say what it is looking into. */
+  askAbout: (context: string) => void;
   toggleDetails: () => void;
   /** Open the inspector at a specific tab (evidence on demand). */
   openInspector: (tab: DetailTab) => void;
@@ -82,7 +99,10 @@ export const useShellStore = create<ShellState>((set, get) => ({
   opsPage: initialOpsPage(),
   // Navigation stays tucked until asked for; both panels restore the last choice.
   sidebarOpen: readStoredSidebarOpen(),
+  sidebarCollapsed: readStoredSidebarCollapsed(),
   detailsOpen: readStoredDetailsOpen(),
+  askOpen: false,
+  askContext: null,
   selectedArtifact: null,
   setDetailTab: (detailTab) => {
     set({ detailTab });
@@ -90,6 +110,13 @@ export const useShellStore = create<ShellState>((set, get) => ({
   },
   setWorkspace: (workspace) => set({ workspace }),
   openOps: (opsPage) => set({ workspace: "ops", opsPage }),
+  toggleSidebarCollapsed: () => {
+    const sidebarCollapsed = !get().sidebarCollapsed;
+    set({ sidebarCollapsed });
+    try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? "1" : "0"); } catch { /* best effort */ }
+  },
+  setAskOpen: (askOpen) => set({ askOpen }),
+  askAbout: (askContext) => set({ askOpen: true, askContext }),
   toggleSidebar: () => {
     const sidebarOpen = !get().sidebarOpen;
     set({ sidebarOpen });

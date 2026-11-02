@@ -45,7 +45,7 @@ function PromptChip({
       type="button"
       variant="outline"
       size="sm"
-      className="h-auto w-full justify-start py-2 text-left font-normal text-wrap whitespace-normal"
+      className="h-auto w-auto max-w-full justify-start rounded-full bg-card px-4 py-2 text-left text-[14px] font-normal text-wrap whitespace-normal"
       onClick={() => onSelect(prompt.text)}
       title="Add to input — edit before sending"
     >
@@ -109,9 +109,9 @@ export function PromptRegistry({
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground" role="status">No prompts match these filters.</p>
       ) : front ? (
-        <div className="flex w-full max-w-xl flex-col gap-2">
-          <p className="m-0 text-xs text-muted-foreground">Suggested</p>
-          <div className="stagger flex flex-col gap-2" role="list">
+        <div className="flex w-full max-w-xl flex-col items-center gap-2">
+          <p className="sr-only">Suggested</p>
+          <div className="stagger flex flex-wrap justify-center gap-2.5" role="list">
             {filtered.slice(0, 3).map((prompt) => (
               <PromptChip key={prompt.id} prompt={prompt} onSelect={selectPrompt} showBadges={false} />
             ))}
@@ -119,7 +119,7 @@ export function PromptRegistry({
           {filtered.length > 3 && (
             <details className="group text-sm">
               <summary className="cursor-pointer list-none py-1 text-muted-foreground transition-colors hover:text-foreground">More prompts ({filtered.length - 3})</summary>
-              <div className="stagger mt-2 flex flex-col gap-2" role="list">
+              <div className="stagger mt-2 flex flex-wrap justify-center gap-2.5" role="list">
                 {filtered.slice(3).map((prompt) => (
                   <PromptChip key={prompt.id} prompt={prompt} onSelect={selectPrompt} showBadges={false} />
                 ))}

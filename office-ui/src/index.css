@@ -9,49 +9,54 @@
 
 :root {
   color-scheme: light;
-  /* Base (recedes) */
-  --bg: #fafafa; /* systemBackground light */
-  --panel: #ffffff; /* tertiarySystemBackground light — foreground cards */
-  --sidebar: #f5f1e8; /* secondarySystemBackground light — grouped */
-  --surface-2: #f0f0f0;
-  --hover: #ece8dd; /* systemGray5 light */
-  --panel-2: #f5f1e8; /* legacy alias: sidebar / secondary surface */
-  --line: #e4e0d6; /* hairline on white */
-  --line-strong: #cbc7bb; /* opaqueSeparator light */
-  --text: #1f2125; /* label light, softened from pure black */
-  --text-dim: #575b63; /* secondaryLabel light */
-  --text-faint: #646871; /* tertiary/placeholder light */
-  --brand: #1d4ed8; /* systemBlue light */
-  --brand-hover: #1e40af;
-  --brand-soft: rgba(59, 130, 246, 0.13);
-  --success: #166534; /* systemGreen light */
-  --success-soft: rgba(34, 197, 94, 0.13);
-  --warning: #92400e; /* systemOrange light */
-  --warning-soft: rgba(245, 158, 11, 0.15);
-  --danger: #b91c1c; /* systemRed light */
-  --danger-soft: rgba(239, 68, 68, 0.1);
+  /* fe-dashboard theme (Dashboard/fe-dashboard globals.css, .light): #F4F4F2 canvas, #FCFCFA cards, slate text and borders,
+     purple primary, pink accent. Text and status shades are one step darker than the originals where those fail WCAG AA. */
+  --bg: #f4f4f2;
+  --panel: #fcfcfa;
+  --sidebar: #ffffff;
+  --surface-2: #f1f5f9;
+  --hover: #e9eef4;
+  --active: #ece3f7; /* current nav item: primary at ~10% */
+  --panel-2: #ffffff; /* legacy alias: sidebar / secondary surface */
+  --line: #e2e8f0;
+  --line-strong: #cbd5e1;
+  --text: #020817;
+  --text-dim: #475569;
+  --text-faint: #5b6b80;
+  --brand: #7f33cc; /* primary: hsl(270 60% 50%) */
+  --brand-hover: #6b27b0;
+  --brand-text: #7f33cc;
+  --brand-soft: #ece3f7;
+  --accent-pink: #eb4799; /* fe-dashboard accent: hsl(330 80% 60%) */
+  --success: #15803d;
+  --success-soft: #dcfce7;
+  --warning: #b45309;
+  --warning-soft: #fef3c7;
+  --danger: #b91c1c;
+  --danger-soft: #fee2e2;
 
   --st-neutral: #8a8d94; /* systemGray */
   --st-working: #3b82f6; /* systemBlue */
-  --st-thinking: #9333ea; /* systemPurple */
+  --st-thinking: #7f33cc; /* primary */
   --st-waiting: #f59e0b; /* systemOrange */
   --st-failed: #ef4444; /* systemRed */
   --st-done: #22c55e; /* systemGreen */
   --st-collab: #9333ea; /* systemCyan */
 
   --radius-xs: 4px;  /* kbd, inline code */
-  --radius-sm: 6px;  /* chips, small tags */
-  --radius-md: 8px;  /* buttons, inputs */
-  --radius: 12px;    /* cards, panels */
-  --radius-lg: 14px; /* menus, modals */
-  --radius-xl: 20px; /* composer, voice dock */
+  --radius-sm: 4px;  /* chips, small tags */
+  --radius-md: 6px;  /* buttons, inputs */
+  --radius: 8px;     /* cards, panels (fe-dashboard --radius: 0.5rem) */
+  --radius-lg: 8px;  /* menus, modals */
+  --radius-xl: 22px; /* composer, voice dock */
   --on-accent: #ffffff; /* text on accent / danger fills */
-  --shadow: 0 1px 2px rgba(60, 50, 30, 0.06);
-  --shadow-lg: 0 12px 36px rgba(60, 50, 30, 0.16);
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.14);
 
   /* SF-first stack per HIG Typography; Inter kept as web fallback. */
+  --serif: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif; /* fe-dashboard uses Inter only, so headings share the sans face */
   --font: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   --motion-fast: 120ms;
   --motion: 180ms;
@@ -60,66 +65,56 @@
   --material-header: rgba(255, 255, 255, 0.72);
   --material-elevated: rgba(255, 255, 255, 0.84);
   --material-backdrop: saturate(180%) blur(20px);
-  --zi-blue: #3b82f6;
-  --zi-violet: #9333ea;
-  --neu-light: rgba(255, 255, 255, 0.95);
-  --neu-dark: rgba(60, 50, 30, 0.09);
-  --neu-blue: #e6efff;
-  --neu-pink: #f3e8ff;
-  --neu-raised: -3px -3px 10px var(--neu-light), 3px 3px 10px var(--neu-dark);
-  --neu-raised-sm: -2px -2px 6px var(--neu-light), 2px 2px 6px var(--neu-dark);
-  --neu-raised-xs: -1px -1px 3px var(--neu-light), 1px 1px 3px var(--neu-dark);
-  --neu-inset: inset 1px 1px 3px var(--neu-dark);
-  --neu-inset-sm: inset 1px 1px 2px var(--neu-dark);
+  --zi-blue: #7f33cc;
+  --zi-violet: #7f33cc; /* focus ring: the primary */
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
-  /* Low-contrast dark: a soft charcoal base (not true black) with gently
-     stepped surfaces and off-white text (about 12:1, was 21:1). */
-  --bg: #17181a;
-  --panel: #222326;
-  --sidebar: #1f1e1b;
-  --surface-2: #2a2b2e;
-  --hover: #2e2d29;
-  --panel-2: #1f1e1b;
-  --line: #34332f;
-  --line-strong: #4a4943;
-  --text: #ecebe6;
-  --text-dim: #b3b1a8;
-  --text-faint: #8f8d85;
-  --brand: #93c5fd; /* systemBlue dark, a touch lighter to stay AA on the softer surfaces */
-  --brand-hover: #bfdbfe;
-  --brand-soft: rgba(96, 165, 250, 0.2);
-  --success: #4ade80; /* systemGreen dark */
-  --success-soft: rgba(34, 197, 94, 0.16);
-  --warning: #fbbf24; /* systemOrange dark */
-  --warning-soft: rgba(245, 158, 11, 0.16);
-  --danger: #f87171; /* systemRed dark */
-  --danger-soft: rgba(239, 68, 68, 0.16);
+  /* Dark theme: shadcnthemer "Violet Bloom (tweakcn)" (.dark), oklch converted to hex. --brand is the theme primary one step
+     darker so white text on it passes AA; --brand-text is the lighter violet used for links and icons on the dark surfaces. */
+  --bg: #1a1b1e;
+  --panel: #222327;
+  --sidebar: #161618;
+  --surface-2: #2a2c33;
+  --hover: #2e3038;
+  --active: #312c54;
+  --panel-2: #161618;
+  --line: #33353a;
+  --line-strong: #45484d;
+  --text: #f0f0f0;
+  --text-dim: #a0a0a0;
+  --text-faint: #8f8f8f;
+  --brand: #7a46e9;
+  --brand-hover: #8858fa;
+  --brand-text: #b39fff;
+  --brand-soft: #2e264e;
+  --accent-pink: #f472b6;
+  --success: #4ade80;
+  --success-soft: #193521;
+  --warning: #fbbf24;
+  --warning-soft: #3a2e12;
+  --danger: #f87171;
+  --danger-soft: #472020;
 
   --st-neutral: #8f8d85;
-  --st-working: #60a5fa;
+  --st-working: #5993f4;
   --st-thinking: #c084fc; /* systemPurple dark */
   --st-waiting: #fbbf24;
   --st-failed: #f87171;
   --st-done: #4ade80;
   --st-collab: #c084fc; /* systemCyan dark */
 
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.55);
+  --shadow: none;
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
 
   /* iOS dark materials: translucent + vibrant, blur over content. */
-  --material-header: rgba(23, 24, 28, 0.72);
-  --material-elevated: rgba(32, 34, 38, 0.72);
+  --material-header: rgba(21, 24, 26, 0.72);
+  --material-elevated: rgba(2, 8, 23, 0.72);
   --material-backdrop: saturate(180%) blur(20px);
-  --on-accent: #111827;
-  --zi-blue: #60a5fa;
-  --zi-violet: #a855f7;
-  --neu-light: rgba(255, 255, 255, 0.04);
-  --neu-dark: rgba(0, 0, 0, 0.35);
-  --neu-blue: #1c2a45;
-  --neu-pink: #2e2142;
+  --on-accent: #ffffff;
+  --zi-blue: #8c5cff;
+  --zi-violet: #8c5cff; /* focus ring: theme --ring is the primary */
 }
 
 * { box-sizing: border-box; }
@@ -132,7 +127,7 @@ html {
   overscroll-behavior-y: none;
 }
 ::selection { background: var(--brand-soft); }
-[data-theme="dark"] ::selection { background: rgba(124, 156, 255, 0.32); }
+[data-theme="dark"] ::selection { background: rgba(140, 92, 255, 0.4); }
 
 /* Thin iOS-style scrollbars in both appearances — fixes the stark white
    scrollbar gutter seen in dark-mode screenshots on desktop Chrome. */
@@ -206,7 +201,7 @@ button { color: inherit; }
 
 .safe-content > :last-child { margin-bottom: 0; }
 .safe-content p { margin: 0 0 10px; }
-.safe-content a { color: var(--brand); overflow-wrap: anywhere; text-decoration: none; }
+.safe-content a { color: var(--brand-text); overflow-wrap: anywhere; text-decoration: none; }
 .safe-content a:hover { text-decoration: underline; }
 .safe-content pre {
   padding: 12px; overflow-x: auto; background: var(--surface-2);
@@ -216,7 +211,7 @@ button { color: inherit; }
 .safe-content h3, .safe-content h4, .safe-content h5, .safe-content h6 {
   margin: 20px 0 8px; line-height: 1.35; font-weight: 650; letter-spacing: -0.01em;
 }
-.safe-content h3 { font-size: 16px; }
+.safe-content h3 { font: 500 20px/1.3 var(--serif); letter-spacing: -0.01em; }
 .safe-content h4 { font-size: 15px; }
 .safe-content h5, .safe-content h6 { font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
 .safe-content > h3:first-child, .safe-content > h4:first-child { margin-top: 0; }
@@ -318,7 +313,7 @@ select{
 
 /* Voice — light is the default (paper + ink orb). Dark keeps the additive stage. */
 .voice-screen {
-  --level: 0; --hue: 222;
+  --level: 0; --hue: 270;
   position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column;
   align-items: center; justify-content: space-between; padding: 28px 20px 24px;
   color: var(--text);
@@ -327,17 +322,17 @@ select{
     var(--bg);
   animation: voice-in 0.25s ease-out;
 }
-.voice-screen.speaking, .voice-dock.speaking { --hue: 250; }
-.voice-screen.thinking, .voice-dock.thinking { --hue: 200; }
-.voice-screen.muted { --hue: 220; filter: saturate(0.35); }
+.voice-screen.speaking, .voice-dock.speaking { --hue: 300; }
+.voice-screen.thinking, .voice-dock.thinking { --hue: 330; }
+.voice-screen.muted { --hue: 270; filter: saturate(0.35); }
 
 .voice-stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; width: min(640px, 100%); }
 .voice-orb { width: 280px; }
 
 /* Docked voice bar — same card as the composer, in whichever theme is active. */
 .voice-dock {
-  --level: 0; --hue: 222;
-  max-width: 736px; margin: 0 auto; background: var(--panel); border: 1px solid var(--line-strong);
+  --level: 0; --hue: 270;
+  max-width: 672px; margin: 0 auto; background: var(--panel); border: 1px solid var(--line-strong);
   border-radius: var(--radius-xl); box-shadow: var(--shadow); overflow: hidden; animation: dock-in var(--motion) ease-out;
 }
 
@@ -351,11 +346,11 @@ select{
 
 [data-theme="dark"] .voice-screen {
   color: var(--text);
-  background: radial-gradient(120% 90% at 50% 35%, hsl(var(--hue) 45% 16%) 0%, #0a0e14 70%);
+  background: radial-gradient(120% 90% at 50% 35%, hsl(var(--hue) 35% 14%) 0%, var(--bg) 70%);
 }
 
 [data-theme="dark"] .voice-dock .voice-orb {
-  background: radial-gradient(circle at 50% 42%, hsl(var(--hue) 42% 16%) 0%, #070b12 74%);
+  background: radial-gradient(circle at 50% 42%, hsl(var(--hue) 32% 14%) 0%, var(--bg) 74%);
   box-shadow: none;
 }
 @keyframes dock-in { from { opacity: 0; transform: translateY(8px); } }

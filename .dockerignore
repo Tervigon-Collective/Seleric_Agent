@@ -21,3 +21,4 @@ diagrams/
 **/*.md
 !README.md
 !QUICKSTART.md
+!src/seleric_swarm/agent/prompt_library/**

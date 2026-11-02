@@ -20,14 +20,14 @@ export interface Palette {
 }
 
 export const LIGHT: Palette = {
-  bg: "#fafafa",
-  grid: "#e4e0d6",
-  zoneFill: "#f5f1e8",
-  zoneStroke: "#cbc7bb",
-  zoneLabel: "#575b63",
-  deskFill: "#e4e0d6",
-  text: "#1f2125",
-  textDim: "#575b63",
+  bg: "#ffffff",
+  grid: "#e5e5ea",
+  zoneFill: "#f2f2f7",
+  zoneStroke: "#c6c6c8",
+  zoneLabel: "#3c3c43",
+  deskFill: "#e5e5ea",
+  text: "#000000",
+  textDim: "#3c3c43",
   status: {
     neutral: "#8e8e93",
     working: "#3b82f6",
@@ -58,14 +58,14 @@ export const LIGHT: Palette = {
 };
 
 export const DARK: Palette = {
-  bg: "#17181a",
-  grid: "#34332f",
-  zoneFill: "#1f1e1b",
-  zoneStroke: "#4a4943",
-  zoneLabel: "#b3b1a8",
-  deskFill: "#34332f",
-  text: "#ecebe6",
-  textDim: "#b3b1a8",
+  bg: "#000000",
+  grid: "#2c2c2e",
+  zoneFill: "#1c1c1e",
+  zoneStroke: "#38383a",
+  zoneLabel: "#ebebf5",
+  deskFill: "#2c2c2e",
+  text: "#ffffff",
+  textDim: "#98989f",
   status: {
     neutral: "#8e8e93",
     working: "#60a5fa",

@@ -541,6 +541,8 @@ def problems(g: dict[str, Any]) -> list[str]:
     pcts = [u for u in g["unmatched"] if u.rstrip().endswith("%")]
     other = [u for u in g["unmatched"] if u not in pcts]
     return ([f"figures in no tool result and not one arithmetic step from them: {', '.join(other)}"] if other else []) + \
+        ([f"figures you calculated in the text (only tool and run_python results may be quoted): {', '.join(g.get('derived') or [])}"]
+         if g.get("derived") else []) + \
         ([f"percentages that do not follow from the figures written beside them (recompute from those figures): {', '.join(pcts)}"] if pcts else []) + \
         ([f"sign differs from the data (the same figure appears there with the opposite sign): {', '.join(g['sign_mismatch'])}"]
          if g.get("sign_mismatch") else []) + \
@@ -552,7 +554,7 @@ CORRECTION = (
     "Verification found problems in the draft:\n- {issues}\n"
     "Fix only those figures. Replace each with the exact value from the tool results (rounding for display is fine), "
     "or, if the data does not hold it, say it is unavailable - a '?' or a guessed value is never acceptable. If a flagged "
-    "figure was a sum you computed, fetch the total with a tool (granularity none) instead of adding rows. "
+    "figure was a sum, difference, ratio or percentage you computed, get it from a tool (compare_period, granularity none) or compute it with run_python and quote that result. "
     "Keep everything else the user asked for: every table, row, breakdown and period stays in the answer. "
     "Write the complete final answer without mentioning this check and without repeating any figure you are removing."
 )
@@ -567,13 +569,14 @@ def unverified_note(issues: list[str]) -> str:
 
 
 def grounded_count(g: dict[str, Any]) -> int:
-    """Figures of an answer that check out (measured + derived)."""
-    return int(g.get("measured", 0)) + len(g.get("derived") or [])
+    """Figures of an answer that check out: copied from a result (a figure derived in the text is a problem, not a pass)."""
+    return int(g.get("measured", 0))
 
 
 def lost_substance(before: dict[str, Any], after: dict[str, Any]) -> bool:
     """A correction that cut the answer's verified figures to under 60% of what the draft had verified (while the draft
     had at most a quarter of its figures flagged) traded the answer for a clean-looking one: keep the draft."""
-    flagged = len(before.get("unmatched") or []) + len(before.get("misbound") or []) + len(before.get("sign_mismatch") or [])
+    flagged = (len(before.get("unmatched") or []) + len(before.get("misbound") or []) + len(before.get("sign_mismatch") or [])
+               + len(before.get("derived") or []))
     mostly_fine = before.get("numbers", 0) > 0 and flagged * 4 <= before["numbers"]
     return mostly_fine and grounded_count(after) < 0.6 * grounded_count(before)

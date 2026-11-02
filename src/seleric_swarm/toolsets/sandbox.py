@@ -115,7 +115,7 @@ def _fix_the_script(message: str) -> ToolResult:
     return ToolResult(success=False, summary=message, error_code="SANDBOX_SCRIPT_ERROR", retryable=True)
 
 
-def _typed_in_values(code: str, ctx: RunContext[SelericDeps]) -> list[float]:
+def _typed_in_values(code: str, ctx: RunContext[SelericDeps], rows: list[dict[str, Any]] | None = None) -> list[float]:
     """Numeric literals in *code* that equal a value this mission fetched (to the cent).
 
     A literal is any constant in the parsed script; small numbers (counts, scales, thresholds) are left alone
@@ -134,7 +134,7 @@ def _typed_in_values(code: str, ctx: RunContext[SelericDeps]) -> list[float]:
     }
     if not literals:
         return []
-    fetched = []
+    fetched = [float(r["value"]) for r in rows or [] if isinstance(r.get("value"), (int, float))]  # rows past the evidence cap too
     for a in ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id):
         if a.artifact_type == "evidence" and isinstance(a.payload, dict):
             v = a.payload.get("value")
@@ -194,6 +194,7 @@ async def run_python(
     code: str,
     evidence_ids: list[str] | None = None,
     purpose: str = "",
+    rows: list[dict[str, Any]] | None = None,
 ) -> ToolResult:
     """Run a short python script to aggregate/transform already-fetched evidence.
 
@@ -265,7 +266,7 @@ async def run_python(
         compile(code, "<sandbox>", "exec")  # syntax check only; the child compiles and runs it
     except SyntaxError as exc:
         return _fix_the_script(f"sandbox code has a syntax error: {exc}. Fix it and retry.")
-    if typed := _typed_in_values(code, ctx):
+    if typed := _typed_in_values(code, ctx, rows):
         return _fix_the_script(
             "the script types fetched values in as literals ("
             + ", ".join(f"{v:g}" for v in typed[:5])
@@ -275,9 +276,10 @@ async def run_python(
 
     workdir = _workdir(ctx.deps.mission_id)
     before = {p.name for p in workdir.iterdir()} if workdir.exists() else set()
-    evidence_dicts = [e.model_dump(mode="json") for e in evidence]
+    # `rows` are the complete rows of this turn's results (the stored evidence is capped); the ids only say what the finding cites.
+    evidence_dicts = rows if rows is not None else [e.model_dump(mode="json") for e in evidence]
     cut: dict[str, str] = {}  # query id -> how much of it was kept, for the queries whose stored evidence is partial
-    for row, evidence_id in zip(evidence_dicts, evidence_ids, strict=False):  # which query a row came from, for filtering
+    for row, evidence_id in zip(evidence_dicts if rows is None else [], evidence_ids, strict=False):  # which query a row came from, for filtering
         artifact = ctx.deps.artifact_store.get(evidence_id)
         if note := (getattr(getattr(artifact, "provenance", None), "source_metadata", None) or {}).get("evidence_truncated"):
             cut[str(getattr(artifact.provenance, "query_version", "") or "?")] = str(note)
@@ -350,6 +352,8 @@ async def run_python(
     )
 
     warnings = [f"wrote {len(new_files)} file(s) to {workdir}"] if new_files else []
+    if zero_warning := _zero_field_warning(result, evidence_dicts):
+        warnings.append(zero_warning)
     warnings += [
         f"the evidence of query {qid} is partial ({note}): totals, averages and ranges in this result cover only those "
         "rows, not the whole window. Do not state them as the period's figures; re-query a coarser grain or a shorter window."
@@ -399,6 +403,27 @@ def _empty_current_period(result: Any, evidence: list[dict[str, Any]]) -> str | 
     return ("every current-period figure in the result is 0, but the fetched current-period rows are not: the script's "
             "filter matched no row. Each evidence row has `period` ('current' or 'previous'): filter on "
             "e['period'] == 'current' / 'previous' (compare_period rows are separate rows, not columns), then retry.")
+
+
+def _zero_field_warning(result: Any, evidence: list[dict[str, Any]]) -> str | None:
+    """A result field that is 0 in every row while the fetched rows hold non-zero values for several measures: the script
+    probably read a measure as a column. Evidence has one row per value (told apart by ``metric_id``), so a lookup of a
+    measure that is not a key of the row quietly gives 0. A warning, not a refusal: the zeros may be real."""
+    rows = [result] if isinstance(result, dict) else result if isinstance(result, list) else []
+    columns: dict[str, list[float]] = {}
+    for row in rows:
+        for key, v in (row.items() if isinstance(row, dict) else ()):
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                columns.setdefault(str(key), []).append(float(v))
+    zero = [k for k, vals in columns.items() if len(vals) >= 2 and all(abs(x) < 1e-9 for x in vals)]
+    live = sorted({str(e["metric_id"]) for e in evidence
+                   if e.get("metric_id") and isinstance(e.get("value"), (int, float)) and abs(e["value"]) > 1e-9})
+    if not zero or len(live) < 2:
+        return None
+    return (f"result field(s) {', '.join(zero)} are 0 in every row, but the fetched rows have non-zero values for "
+            f"{', '.join(live)}. Evidence has one row per value, told apart by e['metric_id']: a measure is not a key of the "
+            "row, so read each from its own rows (e['metric_id'] == '<id>') and join them on the shared dimensions. "
+            "If zero is the real answer, say so; otherwise fix the script and retry.")
 
 
 def _serialize(value: Any) -> str:

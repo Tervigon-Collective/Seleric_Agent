@@ -4,7 +4,6 @@ import { useConversationStore } from "../stores/conversation";
 import { useShellStore } from "../stores/shell";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "cn";
 import { ArchiveIcon, PencilIcon } from "./icons";
@@ -58,7 +57,6 @@ export function ThreadSidebar() {
   const threads = useConversationStore((s) => s.threads);
   const selected = useConversationStore((s) => s.selectedThreadId);
   const search = useConversationStore((s) => s.search);
-  const setSearch = useConversationStore((s) => s.setSearch);
     const selectThread = useConversationStore((s) => s.selectThread);
   const renameThread = useConversationStore((s) => s.renameThread);
   const archiveThread = useConversationStore((s) => s.archiveThread);
@@ -89,6 +87,7 @@ export function ThreadSidebar() {
   }, [userThreads]);
 
   const choose = (id: string) => {
+    useShellStore.getState().setWorkspace("conversation");
     void selectThread(id);
     if (window.matchMedia?.("(max-width: 1023px)").matches) toggleSidebar();
   };
@@ -104,8 +103,7 @@ export function ThreadSidebar() {
 
   return (
     <div data-slot="thread-sidebar" className="flex min-h-0 flex-1 flex-col gap-2">
-      <Input type="search" className="h-8 border-transparent bg-background/60 text-[13.5px] shadow-none transition-colors focus-visible:bg-background" aria-label="Search conversations" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search conversations" />
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className="min-h-0 flex-1 [&_[data-radix-scroll-area-viewport]>div]:!block">
         <nav aria-label="Conversation list" className="flex flex-col gap-1">
           {groups.map((group) => (
             <div key={group.label} className="flex flex-col gap-0.5">

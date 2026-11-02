@@ -33,4 +33,17 @@ describe("URL routing", () => {
     expect(location.search).not.toContain("ops=");
     expect(readRoute().workspace).toBe("conversation");
   });
+
+  it("drops the ops card anchor when the chat opens a thread", () => {
+    history.replaceState({}, "", "/app?ops=dashboard#ops-performance-net_roas");
+    writeRoute({ workspace: "conversation", threadId: "thread-3" });
+    expect(location.hash).toBe("");
+    expect(location.search).toContain("thread=thread-3");
+  });
+
+  it("keeps the anchor while still on the ops page", () => {
+    history.replaceState({}, "", "/app?ops=dashboard#ops-performance-net_roas");
+    writeRoute({ workspace: "ops", opsPage: "dashboard" });
+    expect(location.hash).toBe("#ops-performance-net_roas");
+  });
 });

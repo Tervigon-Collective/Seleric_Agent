@@ -56,8 +56,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     set({ status: "connecting", muted: false, error: null, expanded, captions: { user: "", assistant: "" } });
     const conversation = useConversationStore.getState();
     try {
-      if (!conversation.selectedThreadId) await conversation.createThread();
-      const threadId = useConversationStore.getState().selectedThreadId;
+      const threadId = await conversation.ensureThread();
       if (!threadId) throw new Error("Unable to start a conversation for voice");
       // livekit is large and only needed once voice starts; fetch it alongside the token.
       const [{ url, token }, { Room, RoomEvent, Track }] = await Promise.all([
