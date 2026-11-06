@@ -382,7 +382,8 @@ def placeholders(answer: str) -> list[str]:
             core = t.strip(_LEADING_MARKS)
             if core == "?":
                 out.append("?")
-            elif core.endswith("?") and i < len(toks) - 1 and _as_num(core[:-1].lstrip("₹$").rstrip("%")) is not None:
+            elif (core.endswith("?") and i < len(toks) - 1 and _as_num(core[:-1].lstrip("₹$").rstrip("%")) is not None
+                  and not toks[i + 1].lstrip("(\"'*_")[:1].isupper()):  # "2025? (I will…" ends a question
                 out.append(core)
     return out
 

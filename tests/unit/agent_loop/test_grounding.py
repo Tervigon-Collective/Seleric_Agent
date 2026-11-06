@@ -61,6 +61,9 @@ def test_placeholders():
                    [{"rows": [{"a": "16227.73", "b": "49163", "c": "4190", "d": "7", "e": "20"}]}])
     assert ph["placeholders"] == ["₹16,227.73?", "?", "7?"], ph
     assert placeholders("Anything else?") == []
+    # a question that ends a sentence mid-line is not a placeholder (the Diwali clarification, 2026-11-06)
+    assert placeholders("3) Do you mean 19–25 October 2025? (I will assume 2025 unless told otherwise.)") == []
+    assert placeholders("Was it 2025? Please confirm.") == []
 
 
 def test_null_cells_survive_compaction():
