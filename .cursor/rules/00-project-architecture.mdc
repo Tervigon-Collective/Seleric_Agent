@@ -18,5 +18,4 @@ for the current system.
 6. Write/action operations always follow propose → validate → preview → confirm → commit → audit — implemented via `conversations/phase7.py`'s `ApprovalRequest`/`RollbackRecord`; new capabilities wire into that, they don't build a parallel flow.
 7. A new autonomous agent is added only if there's a genuine isolation boundary that can't be represented as a tool — default assumption is "this is a tool."
 
-Full rationale and the rest of the non-negotiable list: see Claude memory
-`feedback_ai_multiagent_principles.md` and `docs/CURRENT_ARCHITECTURE.md`.
+Full rationale: `docs/CURRENT_ARCHITECTURE.md`.

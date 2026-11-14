@@ -24,17 +24,19 @@ specialists); that architecture and its docs were retired — see
 
 ```text
 Seleric_Agent/
-├── README.md
-├── pyproject.toml
-├── .env.example
-├── docker-compose.yml
-├── Makefile
-├── config/
-├── diagrams/
-├── docs/
-├── src/seleric_swarm/
-├── tests/
-└── .cursor/rules/
+├── src/seleric_swarm/   agent loop, toolsets, API, conversations, services, forecasting
+├── office-ui/           React frontend (vitest; built into the API image)
+├── chronos/             separate forecasting service (own image, needs torch)
+├── config/              policies, model registry, MCP server config
+├── migrations/          Postgres migrations (seleric-migrate)
+├── schemas/ contracts/  JSON schemas and agent-card contracts
+├── tests/               pytest suite (unit, api, contract, replay, adversarial, ...)
+├── eval/regress/        live regression harness (needs the running stack)
+├── scripts/             repo validation, lint, backfill and backtest tools
+├── docs/ plans/         current docs; docs/archive and plans/ are history
+├── documentation/       longer HLD/LLD reference set
+├── deploy/ docker-compose.yml Dockerfile Makefile
+└── CLAUDE.md            working notes for coding agents; .cursor/rules/ holds the same rules for Cursor
 ```
 
 ## Start here
@@ -53,7 +55,7 @@ Seleric_Agent/
 
 ## Current reference baseline
 
-Python 3.11+, PydanticAI, FastAPI, Cube via `seleric-mcp`, DoWhy for causal estimation. Dependency versions should be locked after a compatibility test in your environment.
+Python 3.11+ (images use 3.12), PydanticAI, FastAPI, Cube via `seleric-mcp`, DoWhy for causal estimation. Dependencies are locked in `uv.lock`; install with `uv sync --extra dev`.
 
 ## Durable conversation recovery
 

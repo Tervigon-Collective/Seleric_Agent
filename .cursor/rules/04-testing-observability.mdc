@@ -5,9 +5,9 @@ alwaysApply: true
 
 # Testing / Observability Rules
 
-1. Every new agent/tool/model contract needs unit and contract tests.
-2. Emit mission_id, task_id, agent_id, evidence_id and trace_id where applicable.
-3. Build replay tests for cross-domain incidents and handoffs.
+1. Every new tool/model contract needs unit and contract tests.
+2. Emit mission_id, task_id, evidence_id and trace_id where applicable.
+3. Build replay tests for cross-domain incidents.
 4. Test missing/stale/conflicting data explicitly.
 5. Test prompt injection inside external/tool-returned text.
 6. Any production capability must define timeout, retry and failure behavior.

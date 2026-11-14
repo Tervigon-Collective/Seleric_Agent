@@ -27,5 +27,4 @@ retired along with the rest of the old pipeline. There is one agent
    arbitration component (architecture rule 7: don't add a component unless
    there's a genuine isolation boundary that can't be a tool).
 
-Full rationale: Claude memory `feedback_ai_multiagent_principles.md`,
-`docs/CURRENT_ARCHITECTURE.md`.
+Full rationale: `docs/CURRENT_ARCHITECTURE.md`.
