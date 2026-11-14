@@ -281,9 +281,10 @@ async def run_python(
     cut: dict[str, str] = {}  # query id -> how much of it was kept, for the queries whose stored evidence is partial
     for row, evidence_id in zip(evidence_dicts if rows is None else [], evidence_ids, strict=False):  # which query a row came from, for filtering
         artifact = ctx.deps.artifact_store.get(evidence_id)
-        if note := (getattr(getattr(artifact, "provenance", None), "source_metadata", None) or {}).get("evidence_truncated"):
-            cut[str(getattr(artifact.provenance, "query_version", "") or "?")] = str(note)
-        if (query_id := getattr(getattr(artifact, "provenance", None), "query_version", None)):
+        provenance = getattr(artifact, "provenance", None)
+        if note := (getattr(provenance, "source_metadata", None) or {}).get("evidence_truncated"):
+            cut[str(getattr(provenance, "query_version", "") or "?")] = str(note)
+        if (query_id := getattr(provenance, "query_version", None)):
             row["query_id"] = query_id
         for key, value in (row.get("dimensions") or {}).items():  # row["campaign_name"] works as well as row["dimensions"][...]
             row.setdefault(key, value)
@@ -313,8 +314,8 @@ async def run_python(
         )
 
     result = outcome.get("result")
-    if (refusal := _empty_current_period(result, evidence_dicts)) is not None:
-        return _fix_the_script(refusal)
+    if (empty_note := _empty_current_period(result, evidence_dicts)) is not None:
+        return _fix_the_script(empty_note)
     new_files = sorted(
         {p.name for p in workdir.iterdir()} - before
     ) if workdir.exists() else []

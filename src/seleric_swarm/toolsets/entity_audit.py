@@ -84,7 +84,7 @@ def _money(v: float, symbol: str) -> str:
     whole = round(abs(v))
     digits = str(whole)
     if len(digits) > 3:
-        head, tail, groups = digits[:-3], digits[-3:], []
+        head, tail, groups = digits[:-3], digits[-3:], list[str]()
         while len(head) > 2:
             groups.insert(0, head[-2:])
             head = head[:-2]

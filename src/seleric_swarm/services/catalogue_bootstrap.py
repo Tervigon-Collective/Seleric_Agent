@@ -217,7 +217,7 @@ class CatalogueSnapshot:
         for meta in self.metrics:
             if meta.id == metric_id:
                 found = re.search(r'Date axis: (switchable|placement only|cohort only|native)', str((meta.raw or {}).get('description') or ''))
-                return bool(found) and found.group(1) != 'switchable'
+                return found is not None and found.group(1) != 'switchable'
         return False
 
     def supported_dimensions_for(self, metric_id: str) -> list[str]:

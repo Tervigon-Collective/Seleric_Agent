@@ -177,6 +177,12 @@ async def forecast(
     if refusal is not None:
         return refusal
 
+    if horizon_days < 1:
+        return _refuse(
+            f"horizon_days must be a positive number of days, got {horizon_days}",
+            warning=policy.WARN_INVALID_HORIZON,
+        )
+
     verdict = ctx.deps.budget.consume("prediction_calls")
     if not verdict.ok:
         return _refuse(

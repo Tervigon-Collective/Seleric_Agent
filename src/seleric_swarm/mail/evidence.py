@@ -129,7 +129,7 @@ def _collect(deps: SelericDeps, query_ids: Iterable[str], by_query: dict[str, li
             continue
         by_part: dict[str, list[Artifact]] = {}
         for a in arts.values():
-            by_part.setdefault(a.provenance.query_version, []).append(a)
+            by_part.setdefault(a.provenance.query_version or "", []).append(a)
         found[qid] = [_dataset(group, meta, definitions, tz) for group in by_part.values()]
     return found, missing
 

@@ -4,7 +4,7 @@ import asyncio
 import statistics
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
@@ -191,7 +191,7 @@ class DomainStateResolver:
         return registry.get(catalogue_id) if registry is not None else None
 
     @staticmethod
-    def _polarity(entry: dict[str, Any], definition: Any, state_direction: str | None) -> str | None:
+    def _polarity(entry: dict[str, Any], definition: Any, state_direction: str | None) -> Literal["up", "down"] | None:
         """The way that is bad for this metric. None when nobody has said: the catalogue's silent default of "up" is
         not a statement, so a metric without an explicit direction is watched but never alerted."""
         override = entry.get("direction_bad")
@@ -201,8 +201,9 @@ class DomainStateResolver:
             return None
         raw = getattr(definition, "raw", None)
         if isinstance(raw, dict):
-            return raw.get("direction_bad") if raw.get("direction_bad") in ("up", "down") else None
-        return state_direction
+            declared = raw.get("direction_bad")
+            return "up" if declared == "up" else "down" if declared == "down" else None
+        return "up" if state_direction == "up" else "down" if state_direction == "down" else None
 
     async def resolve(
         self,

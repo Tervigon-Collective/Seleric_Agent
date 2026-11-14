@@ -8,7 +8,7 @@ import math
 import time
 from dataclasses import dataclass, field, replace
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from seleric_swarm.agent.artifacts import Finding, ForecastArtifact, PredictionArtifact
 from seleric_swarm.agent.forecast_plan import render_forecast_plan
@@ -366,7 +366,7 @@ async def run_forecast(
             )
             warnings.extend(tw)
             agg = deps.catalogue.aggregation_for(t.metric_id)
-            total_kind = "total"
+            total_kind: Literal["total", "average"] = "total"
             if agg and agg != "additive" and in_window:  # summing daily ratios/levels is meaningless
                 k = len(in_window)
                 total_mean, total_p10, total_p90 = total_mean / k, total_p10 / k, total_p90 / k
@@ -929,7 +929,7 @@ def _answer_skeleton(
             if fc.total_p10 is not None and fc.total_p90 is not None
             else f"{'window' if plan.window_start else 'horizon'} {'average per day' if fc.total_kind == 'average' else 'total'}: mean={_plain(fc.total_mean)}"
         )
-        if plan.threshold is not None and fc.total_p10 is not None and fc.total_p90 is not None:
+        if plan.threshold is not None and fc.total_mean is not None and fc.total_p10 is not None and fc.total_p90 is not None:
             sd = (fc.total_p90 - fc.total_p10) / (2 * Z_80)
             z = (plan.threshold - fc.total_mean) / sd if sd > 0 else math.copysign(math.inf, plan.threshold - fc.total_mean)
             prob = 0.5 * math.erfc(z / math.sqrt(2))

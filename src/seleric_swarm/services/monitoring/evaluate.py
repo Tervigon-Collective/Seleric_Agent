@@ -206,7 +206,7 @@ def evaluate(
 ) -> Evaluation:
     """One metric on one day. ``as_of`` is the latest day in the data; younger days of a late-settling metric are provisional."""
     settles = metric.settles_after_days > 0
-    data_status = "provisional" if settles and (date.fromisoformat(as_of) - date.fromisoformat(day)).days < metric.settles_after_days else "fresh"
+    data_status: Literal["fresh", "provisional"] = "provisional" if settles and (date.fromisoformat(as_of) - date.fromisoformat(day)).days < metric.settles_after_days else "fresh"
     if settles and metric.eval_window == "day" and day in untrusted:
         return Evaluation(metric.metric_id, day, None, "untrusted", "none", 0, data_status, "bulk return closure on this day")
     skip = untrusted if settles else set()

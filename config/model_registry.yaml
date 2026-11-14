@@ -33,7 +33,7 @@ models:
     type: forecast
     status: approved
     owner: profile_c
-    target: net_sales
+    target: metric.net_sales
     forecast_horizon_days: 14
     last_validated_at: "2026-09-18"
     backtest_available: true
@@ -51,7 +51,7 @@ models:
     type: forecast
     status: approved
     owner: profile_c
-    target: orders
+    target: metric.orders
     forecast_horizon_days: 14
     last_validated_at: "2026-09-18"
     backtest_available: true
@@ -69,7 +69,7 @@ models:
     type: forecast
     status: approved
     owner: profile_c
-    target: sessions
+    target: metric.sessions
     forecast_horizon_days: 14
     last_validated_at: "2026-09-18"
     backtest_available: true
@@ -87,7 +87,7 @@ models:
     type: forecast
     status: approved
     owner: profile_c
-    target: ad_spend
+    target: metric.spend
     forecast_horizon_days: 14
     last_validated_at: "2026-09-18"
     backtest_available: true

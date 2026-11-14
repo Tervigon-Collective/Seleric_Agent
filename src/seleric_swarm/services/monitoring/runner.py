@@ -125,8 +125,9 @@ def _num(x: float) -> str:
 
 def summary_of(item: Loaded, e: Evaluation) -> str:
     band = item.band
-    line = {"below_floor": band.floor, "below_target": band.target, "above_target": band.target, "above_ceiling": band.ceiling}
-    ref = line.get(e.status) if band else None
+    ref = None
+    if band is not None:
+        ref = {"below_floor": band.floor, "below_target": band.target, "above_target": band.target, "above_ceiling": band.ceiling}.get(e.status)
     ref_text = "" if ref is None else f" {_num(ref)}"
     prov = " (provisional)" if e.data_status == "provisional" else ""
     return f"{item.label} on {e.day} is {_num(e.observed or 0)}, {PHRASE.get(e.status, e.status)}{ref_text}{prov}."

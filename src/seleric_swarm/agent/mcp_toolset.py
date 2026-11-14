@@ -447,7 +447,8 @@ def dataset_as_query_payload(payload: dict[str, Any], rows: list[dict[str, Any]]
     """A dataset (server schema + every row) in the shape of a metrics_query result, so evidence, tables, charts and
     run_python treat its handle like any query_id. Time column ``bucket.<grain>``; measures are the catalogue ids."""
     schema = [c for c in payload.get("columns") or [] if isinstance(c, dict)]
-    prov = payload.get("provenance") if isinstance(payload.get("provenance"), dict) else {}
+    raw_prov = payload.get("provenance")
+    prov: dict[str, Any] = raw_prov if isinstance(raw_prov, dict) else {}
     grain = str(payload.get("grain") or prov.get("grain") or "day")
     measures = [c["name"] for c in schema if c.get("role") == "measure"]
     dims = [c["name"] for c in schema if c.get("role") == "dimension"]
