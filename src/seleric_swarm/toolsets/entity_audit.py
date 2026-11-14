@@ -103,8 +103,9 @@ class Audit:
         return "\n".join(self.lines)
 
 
-def audit(entities: list[Entity], *, labels: dict[str, str], roles: Roles, symbol: str = "₹") -> Audit:
-    """The facts, in business language. ``labels`` maps measure ids to the names the answer should use."""
+def audit(entities: list[Entity], *, labels: dict[str, str], roles: Roles, symbol: str = "₹", cut_at: int | None = None) -> Audit:
+    """The facts, in business language. ``labels`` maps measure ids to the names the answer should use. ``cut_at``: the spend
+    result returned exactly its row limit, so more entities exist than it holds."""
     a = Audit()
     unattributed = [e for e in entities if e.name == UNSET]
     entities = [e for e in entities if e.name != UNSET]
@@ -117,6 +118,9 @@ def audit(entities: list[Entity], *, labels: dict[str, str], roles: Roles, symbo
     ret_label = (labels.get(roles.returned, roles.returned) if roles.returned else
                  f"{labels.get(roles.roas or '', 'return')} × spend" if roles.roas else None)
     a.lines.append(f"ENTITY AUDIT over {n} entities with spend (every figure below is computed from the fetched rows; keep each as given).")
+    if cut_at:
+        a.lines.append(f"COVERAGE: the spend result returned its limit of {cut_at} rows, so entities beyond the top {cut_at} are not in these "
+                       "totals: the portfolio figures are a lower bound for the account, not its total; never quote them as the account's.")
     a.lines.append(f"PORTFOLIO: {spend_label} {_money(total_spend, symbol)} across the {n} entities")
     a.facts["total_spend"] = total_spend
     if unattributed:

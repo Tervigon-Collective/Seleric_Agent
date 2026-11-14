@@ -90,7 +90,7 @@ def test_hourly_rows_keep_their_timestamp_not_midnight() -> None:
 def _hourly_payload(days: int, measures: list[str]) -> dict:
     from datetime import timedelta
 
-    start = datetime(2026, 9, 21)
+    start = datetime(2026, 9, 21, tzinfo=UTC)
     rows = []
     for h in range(days * 24):
         stamp = (start + timedelta(hours=h)).strftime("%Y-%m-%dT%H:00:00.000")

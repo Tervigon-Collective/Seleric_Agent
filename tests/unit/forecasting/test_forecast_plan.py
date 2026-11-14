@@ -142,3 +142,35 @@ async def test_compile_entity_horizon_clamp():
     assert plan.entity_dimension == "lt_platform"
     assert plan.horizon.n_days == 30  # clamped by entity policy
     assert any("entity_horizon_clamped" in n for n in plan.notes)
+
+
+@pytest.mark.asyncio
+async def test_period_end_extends_horizon_and_windows_totals():
+    from datetime import date
+
+    from seleric_swarm.agent.forecast_plan import compile_forecast_plan
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
+
+    plan = await compile_forecast_plan(
+        ["net_sales"], catalogue=CatalogueSnapshot(), as_of=date(2026, 10, 30),
+        period_start="2026-11-01", period_end="2026-11-30",
+    )
+    assert plan.horizon.end == date(2026, 11, 30)
+    assert (plan.window_start, plan.window_end) == (date(2026, 11, 1), date(2026, 11, 30))
+
+
+@pytest.mark.asyncio
+async def test_past_period_is_refused_and_clamped_horizon_is_disclosed():
+    from seleric_swarm.forecasting.policies import default_policies
+
+    cat = CatalogueSnapshot()
+    with pytest.raises(ValueError, match="before today"):
+        await compile_forecast_plan(
+            ["net_sales"], catalogue=cat, as_of=date(2026, 10, 30), period_end="2026-10-25"
+        )
+    max_h = default_policies().defaults.max_horizon_days
+    plan = await compile_forecast_plan(
+        ["net_sales"], catalogue=cat, as_of=date(2026, 10, 30), horizon_days=max_h + 30
+    )
+    assert plan.horizon.n_days == max_h
+    assert any(n.startswith("horizon_clamped") for n in plan.notes)

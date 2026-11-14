@@ -29,6 +29,7 @@ dependencies = [
   "opentelemetry-exporter-otlp-proto-http>=1.45.0",
   "opentelemetry-instrumentation-fastapi>=0.65b0",
   "langfuse>=4.0",
+  "xlsxwriter>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -58,6 +59,7 @@ dev = [
   "ruff>=0.9",
   "mypy>=1.14",
   "types-PyYAML>=6.0",
+  "openpyxl>=3.1",
 ]
 
 [project.scripts]
@@ -70,6 +72,8 @@ seleric-voice = "seleric_swarm.voice.worker:main"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# One-off analysis notebooks/scripts checked into reports/, not product code.
+exclude = ["reports"]
 
 [tool.ruff.lint]
 ignore = ["BLE001"]

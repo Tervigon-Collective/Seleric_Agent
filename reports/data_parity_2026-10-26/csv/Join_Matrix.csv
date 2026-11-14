@@ -1,0 +1,30 @@
+Join matrix: each cell = share of last30 value that lands in a known (non-null) group; '-' = dimension not supported by that view; 'n/t' = not testable (error/stale),,,,,,,,,,,,,,,,,,,,,
+View (rep metric),brand_id,ad_platform,campaign_id,adset_id,ad_id,finance_channel,sub_channel,is_paid,is_new_customer,payment_bucket,shipping_state,shipping_region,sku,product_title,product_type,vendor,order_id,channel,medium_group,creative_type,is_cod
+attribution (touches),1,0.932,0.847,0.674,0.674,1,1,1,-,-,-,-,-,-,-,-,-,1,1,0.674,-
+attribution_paths (None),n/t,n/t,n/t,n/t,n/t,n/t,n/t,n/t,n/t,-,-,-,-,-,-,-,-,n/t,n/t,n/t,-
+commerce (discounts),1,0.875,0.838,0.666,0.666,1,1,1,1,1,1,-,-,-,-,-,1,1,1,0.666,1
+customers (customers),1,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+finance (channel_new_customers),1,0.922,0.837,0.649,0.649,1,1,1,1,1,-,1,-,-,-,-,-,-,-,0.649,-
+funnel_orders (funnel_order_purchases),1,0.931,0.828,0.643,0.643,1,1,1,-,-,-,-,-,-,-,-,-,1,1,0.643,-
+paid_media (ad_spend),1,1,1,0.918,0.918,1,-,1,-,-,-,-,-,-,-,-,-,-,-,0.917,-
+paid_media_changes (bid_strategy_changes),1,1,1,1,1,-,-,-,-,-,-,-,-,-,-,-,-,-,-,1,-
+payments (exchange_credit_amount),1,-0.054,-0.045,-,-,-0.061,-0.061,1,1,-,-,-,-,-,-,-,-,-0.061,-0.061,-,1
+procurement_sampling (sample_units),1,-,-,-,-,-,-,-,-,-,-,-,0.69,-,-,-,-,-,-,-,-
+product_ads (product_ad_spend),1,1,1,0.557,0.557,0.66,0.66,1,1,0.66,0.66,0.66,0.66,0.66,0.66,0.66,1,0.66,0.66,0.557,1
+product_profit (product_gross_cogs),1,0.904,0.833,0.632,0.632,1,1,1,1,1,0.995,0.995,1,1,1,1,1,1,1,0.632,1
+purchase_order_lines (line_ordered_units),n/t,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+purchase_orders (open_purchase_orders),n/t,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+quality_checks (qc_actual_units),n/t,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+returns (exchange_refund_count),1,0.684,0.579,0.421,0.421,0.75,0.75,1,1,1,-,-,0.947*,0.947*,0.947*,-,-,0.75,0.75,0.421,1
+stock_layers (receipt_layers),n/t,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+stock_levels (available_units),1,-,-,-,-,-,-,-,-,-,-,-,0.923,-,-,-,-,-,-,-,-
+stock_movements (movement_value),1,-,-,-,-,-,-,-,-,-,-,-,0.817,-,-,-,-,-,-,-,-
+stock_sync_errors (inventory_sync_errors),1,-,-,-,-,-,-,-,-,-,-,-,1,-,-,-,-,-,-,-,-
+vendors (vendor_count),n/t,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+web_event_detail (event_add_to_carts),1,0.892,0.797,0.581,0.581,1,1,1,-,-,-,-,1,1,-,-,-,1,1,0.581,-
+web_events (add_to_cart_events),1,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-
+web_funnel (funnel_purchases),1,0.928,-,-,-,1,-,1,-,-,-,-,-,-,-,-,-,1,1,-,-
+web_sessions (add_to_carts),1,0.891,0.796,0.58,0.58,1,1,1,-,-,-,-,-,-,-,-,-,1,1,0.58,-
+# views supporting,25,14,13,12,12,13,11,13,7,5,3,3,8,4,3,2,3,11,11,12,5
+,,,,,,,,,,,,,,,,,,,,,
+* = grouping by this dimension does NOT preserve the view's total (see Join_Coverage). Cells: 100% = every unit of value maps to a known group; lower = unattributed / unknown share.,,,,,,,,,,,,,,,,,,,,,

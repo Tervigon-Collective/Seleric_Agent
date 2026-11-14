@@ -205,6 +205,12 @@ def _day(value: Any) -> str:
     return str(value)[:10]
 
 
+def _when(value: Any, column: str) -> str:
+    """A time cell: the date, plus the hour for an hour-grain column (a day-only cell made every row of a day identical)."""
+    text = str(value)
+    return f"{text[:10]} {text[11:16]}" if column.endswith(".hour") and len(text) >= 16 else text[:10]
+
+
 def _short_day(value: str) -> str:
     try:
         d = date.fromisoformat(value[:10])
@@ -347,7 +353,7 @@ def table_content(deps: SelericDeps, frame: Frame, *, query_id: str, caption: st
         cells: dict[str, Any] = {}
         for c in frame.keys:
             raw = row.get(c)
-            cells[headers[c]] = _day(raw) if c == frame.time_col else (str(raw) if raw not in (None, "") else UNSET_ENTITY)
+            cells[headers[c]] = _when(raw, c) if c == frame.time_col else (str(raw) if raw not in (None, "") else UNSET_ENTITY)
         for m in frame.measures:
             value = number(row.get(m))
             missing += value is None

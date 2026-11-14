@@ -1,0 +1,38 @@
+{
+ "n": 55,
+ "aspect": "bi_hypothesis",
+ "q": "What would happen to profit if we stopped COD completely?",
+ "thread": "thread_a98c342023424c68af6977bc01d1065f",
+ "mission": "MS3-5f0e7c9b6f",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 15.133,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 0,
+ "llm_calls": 1,
+ "grounding": {
+  "derived": [],
+  "numbers": 0,
+  "measured": 0,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "I can model that \u2014 quick clarification first so I run the right numbers:\n\n1) For customers who chose COD, should I assume they are lost entirely if COD is removed (worst case), or that they convert to prepaid at the same spend/AOV/rate (full substitution), or something between (please say a % that would convert)?  \n2) Which period should I use for the baseline: the last 7 complete days (2026-10-22..2026-10-28) or a different window?"
+}

@@ -55,7 +55,9 @@ def _cube_response(fixture: dict) -> dict:
 def _runtime(fixture: dict):
     from types import SimpleNamespace
 
-    metrics = MetricRegistry("config/metric_registry.yaml")
+    metrics = MetricRegistry.from_definitions(
+        [{"id": FIXTURE["catalogue_metric_id"], "domain": "commerce", "description": "Net sales", "direction_bad": "down"}]
+    )
     gateway = _FakeGateway(_cube_response(fixture))
     runtime = SimpleNamespace(metrics=metrics, mcp=gateway)
     runtime.business_state = BusinessStateService(runtime)
@@ -78,7 +80,7 @@ def test_robust_zscore_matches_hand_worked_fixture():
 async def test_get_metric_state_anomaly_matches_golden_fixture():
     runtime, gateway = _runtime(FIXTURE)
     request = StateRequest(
-        metric_id=FIXTURE["metric_id"],
+        metric_id=FIXTURE["catalogue_metric_id"],
         time_range=TimeRangeV1(kind="absolute", start=FIXTURE["series"][-1]["ts"], end=FIXTURE["series"][-1]["ts"]),
         agent_id="commerce_agent",
         need=["anomaly"],
@@ -125,7 +127,7 @@ async def test_anomaly_sparse_history_never_fabricates_a_score():
 async def test_evaluate_anomaly_returns_same_subset():
     runtime, _ = _runtime(FIXTURE)
     request = StateRequest(
-        metric_id=FIXTURE["metric_id"],
+        metric_id=FIXTURE["catalogue_metric_id"],
         time_range=TimeRangeV1(kind="absolute", start=FIXTURE["series"][-1]["ts"], end=FIXTURE["series"][-1]["ts"]),
         agent_id="commerce_agent",
         need=[],

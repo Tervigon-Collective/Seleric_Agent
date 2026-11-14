@@ -1,0 +1,43 @@
+{
+ "n": 38,
+ "aspect": "uat_ads",
+ "q": "Meta says our ROAS is great but finance doesn't see it. What's going on?",
+ "thread": "thread_5eb0c0b633ad4b8281485f24574f71cd",
+ "mission": "MS3-e6bcd625a7",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 79,
+ "elapsed_s": 74.771,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 19,
+  "measured": 19,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "metrics_query",
+  "catalogue_search_metrics",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "Short answer: finance\u2019s ROAS (Net ROAS, by order date) is about 0.79x for 2026-10-22 \u2192 2026-10-28 (vs 0.80x in the prior 7 days), so finance does not see the \u201cgreat\u201d ROAS Meta reports because the two metrics use different definitions and bases \u2014 platform-reported ROAS is placement/attribution-based and uses gross sales, while finance\u2019s Net ROAS = contribution before ads \u00f7 ad spend (order-date, after COGS, fulfilment and returns).\n\nWhat\u2019s behind that (largest points first)\n- Different basis: Meta\u2019s ROAS typically uses attributed gross sales on the ad placement/reporting axis; finance\u2019s Net ROAS here is by order date and uses contribution before ads (net of COGS/fulfilment). They are measuring different numerators and different timing, so they won\u2019t match.\n- In our recent week (2026-10-22 \u2192 2026-10-28) finance figures: contribution margin INR 2,48,575 (up from INR 2,29,911) and ad spend INR 3,13,701 (up from INR 2,86,712). Net ROAS moved 0.80 \u2192 0.79 (\u2248 -1.1% vs its usual level).\n- Ad delivery/efficiency changed: impressions, clicks and landing page views fell (impressions 10,20,891 \u2192 7,26,992; clicks 25,392 \u2192 14,517), while CPC/CPL rose sharply (CPC INR 11.3 \u2192 INR 21.6, +91.4%; cost per landing page view INR 18.3 \u2192 INR 27.7, +51.9%). Higher cost per attention plus mix shifts explain why finance\u2019s contribution-per\u2011rupee appears weaker than platform gross-sales ROAS suggests.\n- Mix / Simpson effect: activity shifted between ad statuses and formats (ACTIVE/SHOP_NOW segments changed share), so an aggregate platform ROAS can look healthy while finance\u2019s Net ROAS (which weights by contribution after costs) does not.\n\nWorth checking:\n- Compare Meta\u2019s platform ROAS (placement/gross sales basis) next to finance Net ROAS side\u2011by\u2011side by campaign and by the same date axis to see how attribution and gross\u2192net adjustments create the gap.\n\nPeriod: 2026-10-22..2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29\nNext: Break this down by ad platform and campaign (show platform gross ROAS vs finance Net ROAS side by side)"
+}

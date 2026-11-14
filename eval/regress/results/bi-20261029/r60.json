@@ -1,0 +1,49 @@
+{
+ "n": 60,
+ "aspect": "bi_whatif",
+ "q": "If we cut Meta spend by 30% next month, what would happen to our profit?",
+ "thread": "thread_1a14b9e94cbe4f5e9ec4a8d4b7293bd2",
+ "mission": "MS3-64e101f247",
+ "run_status": "COMPLETED",
+ "status": "partial",
+ "wall_s": 159,
+ "elapsed_s": 157.525,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 6,
+ "grounding": {
+  "derived": [],
+  "numbers": 18,
+  "measured": 17,
+  "misbound": [],
+  "problems": [
+   "sign differs from the data (the same figure appears there with the opposite sign): 30%"
+  ],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": [
+   "30%"
+  ]
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "metrics_query",
+  "audit_entities",
+  "break_down_metric",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "By order date for sales/profit; ad spend shown on the P&L (delivery date). For Tilting Heads: cutting Meta ad spend by 30% (\u20b92,56,513) would likely reduce the current Meta loss, provided sales don\u2019t fall too far.\n\n- Where we are (Sep 2026): Meta P&L ad spend \u20b98,55,043; Meta net sales (P&L basis) \u20b99,39,860; Meta net profit \u2212\u20b93,11,157.  \n- If spend is cut 30% (\u20b92,56,513) and sales do not change: savings = \u20b92,56,513 \u2192 Meta net profit improves to about \u2212\u20b954,644. New Meta ad spend \u2248 \u20b95,98,530.  \n- If spend is cut 30% (\u20b92,56,513) and sales fall proportionally (\u221230%): Meta net profit \u2248 \u2212\u20b92,17,810 (smaller benefit than the no-drop case).  \n- Breakeven: sales would have to drop by more than \u224847.2% after the cut for profit to be worse than today.\n\nWorth checking: run a staged test (e.g., 10\u201330% cuts by campaign) and monitor Meta-attributed net sales and conversion; if sales drop <47.2% the cut should improve profit.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break this down by Meta campaign (ad spend, net sales, net profit).\n\n\u26a0 Not verified against the data: sign differs from the data (the same figure appears there with the opposite sign): 30%"
+}

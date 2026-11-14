@@ -1,3 +1,4 @@
+import { Table as UiTable, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ReactNode } from "react";
 
 /*
@@ -144,25 +145,25 @@ function blocks(source: string, keyPrefix: string): ReactNode[] {
       const alignedRows = rows.map((row) => alignRow(row, head.length));
       const numeric = numericColumns(head.length, alignedRows);
       out.push(
-        <div className="md-table-wrap" key={key()}>
-          <table>
-            <thead>
-              <tr>
+        <div className="my-3 rounded-md border" key={key()}>
+          <UiTable>
+            <TableHeader>
+              <TableRow>
                 {head.map((cell, c) => (
-                  <th key={c} className={numeric[c] ? "num" : undefined}>{inline(cell)}</th>
+                  <TableHead key={c} className={numeric[c] ? "num text-right" : undefined}>{inline(cell)}</TableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {alignedRows.map((row, r) => (
-                <tr key={r}>
+                <TableRow key={r}>
                   {head.map((_, c) => (
-                    <td key={c} className={numeric[c] ? "num" : undefined}>{inline(row[c] ?? "")}</td>
+                    <TableCell key={c} className={numeric[c] ? "num text-right tabular-nums" : undefined}>{inline(row[c] ?? "")}</TableCell>
                   ))}
-                </tr>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </UiTable>
         </div>,
       );
       continue;

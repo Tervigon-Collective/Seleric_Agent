@@ -28,6 +28,7 @@ class EngineForecast:
     warnings: list[str] = field(default_factory=list)
     inference_seconds: float | None = None
     fallback_reason: str | None = None
+    total_sd: float | None = None  # engine-known SD of the horizon total, when it has one
 
 
 @dataclass
@@ -258,6 +259,7 @@ class EtsEngine:
             revision=None,
             days=days,
             warnings=list(result.warnings),
+            total_sd=result.total_sd(lead, lead + horizon - 1),
         )
 
 

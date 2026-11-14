@@ -1,7 +1,6 @@
 """GET /v1/metrics/definitions — governed definitions for the evidence inspector.
 
-Read-only projection of the runtime MetricRegistry. Pins the registered
-net_roas formula so run behaviour can be audited against it.
+Read-only projection of the runtime MetricRegistry (the catalogue). Pins the net_roas formula so run behaviour can be audited against it.
 """
 
 from __future__ import annotations
@@ -17,11 +16,16 @@ from seleric_swarm.services.metrics import MetricRegistry
 API_KEY = "test-metrics-key"
 
 
+_CATALOGUE = [
+    {"id": "net_roas", "description": "Net ROAS", "formula": "net_sales / total_ad_spend", "domain": "performance"},
+    {"id": "cpc", "description": "Cost per click", "formula": "spend / clicks", "domain": "performance"},
+    {"id": "net_sales", "description": "Net sales", "formula": "gross_sales - discounts - returns", "domain": "commerce"},
+]
+
+
 class _Runtime:
     def __init__(self, *, with_metrics: bool = True) -> None:
-        self.metrics = (
-            MetricRegistry("config/metric_registry.yaml") if with_metrics else None
-        )
+        self.metrics = MetricRegistry.from_definitions(_CATALOGUE) if with_metrics else None
 
 
 def _build_client(runtime: _Runtime) -> TestClient:
@@ -50,7 +54,7 @@ def test_lists_governed_definitions() -> None:
     body = response.json()
     assert isinstance(body, list) and body, "catalogue must not be empty"
     by_id = {entry["id"]: entry for entry in body}
-    net_roas = by_id["metric.net_roas"]
+    net_roas = by_id["net_roas"]
     assert net_roas["key"] == "net_roas"
     assert net_roas["name"] == "net roas"
     # Pinned: the governed definition. Runs reporting other values deviate.
@@ -71,7 +75,7 @@ def test_reports_unconfigured_registry() -> None:
     assert response.status_code == 503
 
 
-@pytest.mark.parametrize("alias", ["net roas", "revenue", "cpc"])
+@pytest.mark.parametrize("alias", ["net roas", "net sales", "cpc"])
 def test_aliases_support_evidence_matching(alias: str) -> None:
     client = _build_client(_Runtime())
     body = client.get("/v1/metrics/definitions", headers=_auth()).json()

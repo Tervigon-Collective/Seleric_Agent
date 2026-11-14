@@ -60,11 +60,7 @@ async def select_entities(
     if target_policy and target_policy.entities:
         entity_policy = target_policy.entities.get(dimension)
         if entity_policy is None:
-            return EntitySelection(
-                dimension=dimension,
-                refused=[(dimension, "T_ENTITY_UNSUPPORTED")],
-                warnings=["T_ENTITY_UNSUPPORTED"],
-            )
+            entity_policy = EntityPolicy()
     else:
         # No per-entity policy yet: allow with defaults (provisional entity path).
         entity_policy = EntityPolicy()
@@ -91,6 +87,8 @@ async def select_entities(
         selection.warnings.append("Q_SPARSE_ENTITY:no_volume")
         return selection
 
+    if requested_values:
+        requested_values = _resolve_named(requested_values, volumes, selection.warnings)
     candidates = list(requested_values) if requested_values else sorted(
         volumes, key=lambda v: volumes.get(v, 0.0), reverse=True
     )
@@ -110,18 +108,15 @@ async def select_entities(
     for value in ordered:
         vol = volumes.get(value, 0.0)
         share = (vol / account_total) if account_total > 0 else 0.0
-        if share < min_share and value not in (requested_values or []):
+        if share < min_share and not requested_values:
             selection.refused.append((value, f"Q_SPARSE_ENTITY:share={share:.0%}"))
             continue
-        if requested_values and share < min_share:
-            # Explicitly named entity still sparse → refuse that entity, offer aggregate.
-            selection.refused.append((value, f"Q_SPARSE_ENTITY:share={share:.0%}"))
-            selection.warnings.append(
-                f"Q_SPARSE_ENTITY:{value}: refused sparse entity; use account aggregate"
-            )
+        if requested_values and vol <= 0:
+            # Named by the user: forecast on any real volume; share only gates discovery.
+            selection.refused.append((value, "Q_SPARSE_ENTITY:no_volume"))
             continue
         selected.append(value)
-        if len(selected) >= max_n:
+        if len(selected) >= max_n and not requested_values:
             break
 
     selection.values = selected
@@ -136,6 +131,56 @@ async def select_entities(
                 f"entity_coverage={covered:.0%}: remainder below min share, not forecast separately"
             )
     return selection
+
+
+def _is_date(value: Any) -> bool:
+    try:
+        date.fromisoformat(str(value)[:10])
+        return True
+    except ValueError:
+        return False
+
+
+def _breakdown_value(row: dict[str, Any], dimension: str, metric_id: str) -> Any:
+    """The row's value for *dimension*. The data layer may answer a breakdown through a conformed
+    sibling (a view lacking the dimension answers via its twin), so when the requested key is absent the one
+    remaining non-metric, non-date column is the breakdown."""
+    value = dimension_value(row, dimension)
+    if value is not None:
+        return value
+    rest = [
+        v for k, v in row.items()
+        if k != metric_id and not str(k).startswith(f"{metric_id}.")
+        and not _is_date(v)
+    ]
+    return rest[0] if len(rest) == 1 else None
+
+
+def _resolve_named(
+    requested: list[str], volumes: dict[str, float], warnings: list[str]
+) -> list[str]:
+    """Map each named value onto the values the data actually has (exact, then case-insensitive,
+    then containment either way), so a partial or re-cased name still finds its entity."""
+    by_lower = {k.lower(): k for k in volumes}
+    out: list[str] = []
+    for raw in requested:
+        name = str(raw).strip()
+        if name in volumes:
+            out.append(name)
+        elif name.lower() in by_lower:
+            out.append(by_lower[name.lower()])
+        else:
+            low = name.lower()
+            hits = sorted(
+                (k for k in volumes if low in k.lower() or (k.lower() in low and len(k) >= 3)),
+                key=lambda k: -volumes[k],
+            )
+            if hits:
+                warnings.append(f"entity_resolved:{name}->{hits[:5]}")
+                out.extend(hits)
+            else:
+                out.append(name)
+    return list(dict.fromkeys(out))
 
 
 def entity_filter(dimension: str, value: str) -> list[dict[str, Any]]:
@@ -194,7 +239,7 @@ async def _volume_by_entity(
     for row in result.get("rows") or []:
         if not isinstance(row, dict):
             continue
-        ent = dimension_value(row, dimension)
+        ent = _breakdown_value(row, dimension, metric_id)
         if ent is None or str(ent).strip() == "":
             continue
         raw = row.get(metric_id)

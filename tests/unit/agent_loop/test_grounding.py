@@ -61,6 +61,9 @@ def test_placeholders():
                    [{"rows": [{"a": "16227.73", "b": "49163", "c": "4190", "d": "7", "e": "20"}]}])
     assert ph["placeholders"] == ["₹16,227.73?", "?", "7?"], ph
     assert placeholders("Anything else?") == []
+    # a question that ends a sentence mid-line is not a placeholder (the Diwali clarification, 2026-11-06)
+    assert placeholders("3) Do you mean 19–25 October 2025? (I will assume 2025 unless told otherwise.)") == []
+    assert placeholders("Was it 2025? Please confirm.") == []
 
 
 def test_null_cells_survive_compaction():
@@ -75,6 +78,9 @@ def test_partial_window_warning():
     q = {"provenance": {"time_range": {"start": "2026-10-01", "end": "2026-10-12"}}}
     flag_partial(q, today)
     assert not q.get("warnings"), q
+    c = {"provenance": {"time_range": {"start": "2026-10-13", "end": "2026-10-13"}, "compare_cutoff": {"to": "2026-10-12T17:30:00.000"}}}
+    flag_partial(c, today)
+    assert not c.get("warnings"), c  # the comparison was already cut at the same time of day
 
 
 def test_pair_scan_is_not_vacuous():
@@ -254,3 +260,32 @@ def test_explicit_sign_must_match_the_data():
     assert wrong["sign_mismatch"] == ["96,900"] and wrong["measured"] == 0
     assert any("sign" in line for line in problems(wrong))
     assert grounding("- ₹96,900 net profit", p)["sign_mismatch"] == []  # a list bullet is not a sign
+
+
+def test_series_listing_line_is_not_misbound():
+    # live MS3-ad015c8cc1: "lowest on 10-22 ... week 10-20 -> 10-26: a, b, c, ..." flagged every day not named on the line
+    vals = [53791.61, 78857.21, 31734.54, 66875.96, 43650.36, 42043.27, 44812.72]
+    days = {"query_id": "q1", "rows": [{"report_date": f"2026-10-{20 + i}T00:00:00.000", "gross_sales": str(v)} for i, v in enumerate(vals)]}
+    ans = ("Lowest on 2026-10-22 at ₹31,735 (week 2026-10-20 → 2026-10-26: daily gross sales = ₹53,792, ₹78,857, ₹31,735, "
+           "₹66,876, ₹43,650, ₹42,043, ₹44,813).")
+    assert not grounding(ans, [days])["misbound"]
+    assert grounding("- 2026-10-22: ₹78,857", [days])["misbound"]
+
+
+def test_percent_follows_from_a_small_count_beside_it():
+    # live 2026-10-28: "orders 29 -> 42 (+44.8%)" was flagged because a count under 32 was not an operand
+    p = [{"query_id": "q1", "columns": ["orders"], "rows": [{"orders": "42"}], "compare_rows": [{"orders": "29"}],
+          "provenance": {"metric_ids": ["orders"]}}]
+    assert not grounding("Orders rose from 29 to 42 (+44.8%).", p)["unmatched"]
+    assert grounding("Orders rose from 29 to 42 (+50.0%).", p)["unmatched"] == ["50.0%"]
+
+
+def test_a_figure_the_model_calculated_in_the_text_is_a_problem_but_a_run_python_result_is_not():
+    data = {"provenance": {"query_id": "q0"}, "rows": [{"sales": "8468.48"}], "compare_rows": [{"sales": "34945.2"}]}
+    calculated = grounding("Sales fell to ₹8,468 from ₹34,945, a drop of ₹26,477.", [data])
+    assert any("26,477" in d for d in calculated["derived"])
+    assert any("calculated in the text" in p and "26,477" in p for p in problems(calculated))
+    # the same figure, produced by run_python, reaches the pool as a helper figure and is measured
+    computed = {"helper_figures": [{"drop": 26476.72}]}
+    ok = grounding("Sales fell to ₹8,468 from ₹34,945, a drop of ₹26,477.", [data, computed])
+    assert not ok["derived"] and not problems(ok), (ok, problems(ok))

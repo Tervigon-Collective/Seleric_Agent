@@ -204,9 +204,23 @@ class _Budget:
                 or time.perf_counter() - self.started > TURN_BUDGET_S)
 
 
-def _instructions(system_prompt: str, memories: list[str], prior_queries: list[str], budget: _Budget) -> list[Any]:
+def _instructions(
+    system_prompt: str,
+    memories: list[str],
+    prior_queries: list[str],
+    budget: _Budget,
+    *,
+    thread_summary: str = "",
+    workspace_notes: str = "",
+) -> list[Any]:
     def memory_block(_: RunContext[SelericDeps]) -> str:
         return ("What the user asked you to remember:\n- " + "\n- ".join(memories)) if memories else ""
+
+    def summary_block(_: RunContext[SelericDeps]) -> str:
+        return ("Earlier in this conversation (compressed):\n" + thread_summary) if thread_summary else ""
+
+    def config_block(_: RunContext[SelericDeps]) -> str:
+        return ("Workspace settings for this turn:\n" + workspace_notes) if workspace_notes else ""
 
     def prior_block(_: RunContext[SelericDeps]) -> str:
         return ("Queries already run in this conversation (use as parent_query_id when drilling down):\n"
@@ -215,7 +229,7 @@ def _instructions(system_prompt: str, memories: list[str], prior_queries: list[s
     def budget_block(_: RunContext[SelericDeps]) -> str:
         return BUDGET_NOTICE if budget.forced else ""
 
-    return [system_prompt, memory_block, prior_block, budget_block]
+    return [system_prompt, summary_block, memory_block, config_block, prior_block, budget_block]
 
 
 async def run_turn(
@@ -230,6 +244,8 @@ async def run_turn(
     memories: list[str] | None = None,
     prior_queries: list[str] | None = None,
     prior_payloads: list[Any] | None = None,
+    thread_summary: str = "",
+    workspace_notes: str = "",
     is_cancelled: Callable[[], bool] = lambda: False,
     snapshot_loader: Any = None,
     on_stream: Callable[[str, str], None] | None = None,
@@ -251,13 +267,25 @@ async def run_turn(
             return []
         return slim_defs(defs)
 
-    tools = [*build_mcp_tools(gateway, tool_defs, state), *build_local_tools(state, snapshot_loader=snapshot_loader)]
+    def email_figures() -> list[Any]:  # what an email may quote: the same pool the final answer is checked against
+        quoted = quoted_figures(_conversation_texts(question, history))
+        return [*(prior_payloads or []), *state.payloads, *([quoted] if quoted else [])]
+
+    tools = [*build_mcp_tools(gateway, tool_defs, state),
+             *build_local_tools(state, snapshot_loader=snapshot_loader, is_cancelled=is_cancelled, figures=email_figures)]
     llm_calls: list[dict[str, Any]] = []
     agent: Agent[SelericDeps, str] = Agent(
         model=_TimedModel(model, llm_calls, turn_started=started, timing=timing),
         deps_type=SelericDeps,
         output_type=str,
-        instructions=_instructions(system_prompt, memories or [], prior_queries or [], budget),
+        instructions=_instructions(
+            system_prompt,
+            memories or [],
+            prior_queries or [],
+            budget,
+            thread_summary=thread_summary,
+            workspace_notes=workspace_notes,
+        ),
         name="seleric_agent",
         tools=tools,
         capabilities=[PrepareTools(prepare)],

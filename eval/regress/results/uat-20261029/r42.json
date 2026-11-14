@@ -1,0 +1,51 @@
+{
+ "n": 42,
+ "aspect": "uat_web",
+ "q": "Which traffic sources bring people who actually buy, not just visit, and what are we paying for them?",
+ "thread": "thread_868bd01874164448a1c12708031091a1",
+ "mission": "MS3-a26c6b589d",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 234,
+ "elapsed_s": 228.806,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 7,
+ "llm_calls": 7,
+ "grounding": {
+  "derived": [
+   "2,211",
+   "0.96",
+   "1,172",
+   "1.67"
+  ],
+  "numbers": 16,
+  "measured": 12,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_resolve_dimension",
+  "catalogue_search_metrics",
+  "catalogue_resolve_dimension",
+  "build_dataset_query",
+  "run_python",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "By order date for sales & orders, delivery date for ad spend (P&L basis) and session date for sessions: Meta and Google drive almost all buyers; Google is substantially more efficient.\n\n- Big picture: Meta 91 orders (\u20b91,92,636 net sales) with \u20b92,01,194 ad spend \u2192 cost per order \u20b92,211 and net ROAS ~0.96. Google 96 orders (\u20b91,88,395) with \u20b91,12,507 ad spend \u2192 cost per order \u20b91,172 and net ROAS ~1.67. Google buys similar volume at notably lower cost and higher ROAS.\n- Organic and unattributed bring small, unpaid demand: Organic 8 orders (\u20b913,886) with 310 sessions; Unattributed 11 orders (\u20b913,115) with 1,689 sessions \u2014 both have no ad spend. WhatsApp recorded 1 order (\u20b92,118) and 65 sessions with no ad spend.\n- So-what: Google is the most efficient paid source (higher ROAS, lower CPO); Meta drives similar order volume but at higher cost; non-paid channels contribute modest direct purchases without spend.\n\nWorth checking: campaign-level breakdowns inside Meta and Google to find which campaigns give the lower CPO / higher ROAS.\n\nPeriod: 2026-10-22 to 2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break this down by campaign within Meta and Google."
+}

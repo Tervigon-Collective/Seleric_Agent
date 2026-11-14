@@ -57,3 +57,14 @@ def test_the_metric_index_lists_metrics_per_view_without_dimensions():
     out = metric_index(CatalogueSnapshot(metrics=[M("net_sales", "commerce"), M("orders", "commerce", "Orders (all)")]))  # type: ignore[arg-type]
     assert "## commerce [date axis: order_date]" in out and "net_sales" in out and "orders (Orders (all))" in out
     assert "campaign_name" not in out
+
+
+def test_the_metric_index_says_what_each_view_is_for():
+    class M:
+        def __init__(self, id, view):
+            self.id, self.view, self.label, self.supported_dimensions, self.raw = id, view, "", [], {}
+
+    snap = CatalogueSnapshot(metrics=[M("a", "v1"), M("b", "v2")], view_descriptions=(("v1", "Funnel only; sections are in v2."),))  # type: ignore[arg-type]
+    out = metric_index(snap)
+    assert "## v1 [date axis: ?]\nabout: Funnel only; sections are in v2.\nmetrics: a" in out
+    assert "## v2 [date axis: ?]\nmetrics: b" in out  # a view without a description is unchanged

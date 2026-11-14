@@ -1,0 +1,42 @@
+{
+ "n": 69,
+ "aspect": "bi_human",
+ "q": "whats our cac",
+ "thread": "thread_c0802dbadc6d4e35ad12d2e52941c228",
+ "mission": "MS3-061a313543",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 63,
+ "elapsed_s": 60.456,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 3,
+  "measured": 3,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "metrics_query",
+  "insights_explain"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "Our customer acquisition cost (CAC) for the last 30 days is \u20b91,917, up 5.8% from \u20b91,812 in the previous period. This increase suggests higher costs to acquire new customers recently.\n\nPeriod: 2026-09-29 to 2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break this down by channel and campaign."
+}

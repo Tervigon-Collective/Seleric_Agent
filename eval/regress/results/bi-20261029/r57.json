@@ -1,0 +1,44 @@
+{
+ "n": 57,
+ "aspect": "bi_customers",
+ "q": "Which channel brings us the most repeat customers?",
+ "thread": "thread_e737f8bb709f4c8d9c91b377e2c20bb1",
+ "mission": "MS3-7b895c02f3",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 63,
+ "elapsed_s": 60.005,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [
+   "160"
+  ],
+  "numbers": 5,
+  "measured": 4,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "catalogue_resolve_dimension",
+  "catalogue_search_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "By order date for Tilting Heads this month (2026-10-01\u20132026-10-28): Instagram feed (ig_feed) brought the most repeat customers \u2014 88 \u2014 followed by organic (72) and Facebook feed (fb_feed) with 27.\n\n- Top channels: ig_feed 88 repeat customers, organic 72, fb_feed 27 \u2014 these three account for the bulk of repeat buyers this month.\n- Why it matters: channels that drive repeat buyers are a good place to focus retention offers or reactivation creatives; organic and ig_feed together delivered 160 repeat customers.\nWorth checking: break this by campaign within ig_feed and fb_feed to see which campaigns produce repeat buyers.\n\nPeriod: 2026-10-01\u20132026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break this down by campaign and ad platform."
+}

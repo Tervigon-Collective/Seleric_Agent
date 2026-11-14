@@ -1,3 +1,5 @@
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { SPEC_BY_ID } from "../office/agents";
 import type { MissionRef } from "../types";
 
@@ -27,26 +29,28 @@ export function MissionMinimap({
 }) {
   if (missions.length < 2) return null;
   return (
-    <div className="minimap" aria-label="Missions">
-      <h2>Missions ({missions.length})</h2>
-      {missions.slice(0, 8).map((m) => {
-        const lead = m.missionLead ? SPEC_BY_ID[`${m.missionLead}_agent`]?.name ?? m.missionLead : "—";
-        return (
-          <div
-            key={m.missionId}
-            className={`mm-row ${m.missionId === missionId ? "active" : ""}`}
-            role="button"
-            tabIndex={0}
-            onClick={() => onPick(m.missionId)}
-            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onPick(m.missionId)}
-            title={m.query}
-          >
-            <span className="pip" style={{ background: STATUS_PIP[m.status] ?? "var(--st-neutral)" }} />
-            <span className="mm-q">{m.query || m.missionId}</span>
-            <span className="mm-lead">{lead}</span>
-          </div>
-        );
-      })}
-    </div>
+    <Card size="sm" data-slot="minimap" aria-label="Missions" className="absolute right-2 bottom-9 z-[7] max-w-64 max-lg:hidden">
+      <CardContent className="flex flex-col gap-0.5">
+        <h2 className="m-0 text-xs tracking-wide text-muted-foreground uppercase">Missions ({missions.length})</h2>
+        {missions.slice(0, 8).map((m) => {
+          const lead = m.missionLead ? SPEC_BY_ID[`${m.missionLead}_agent`]?.name ?? m.missionLead : "—";
+          return (
+            <Button
+              key={m.missionId}
+              type="button"
+              variant={m.missionId === missionId ? "secondary" : "ghost"}
+              size="xs"
+              className="w-full justify-start"
+              onClick={() => onPick(m.missionId)}
+              title={m.query}
+            >
+              <span className="size-2 shrink-0 rounded-full" style={{ background: STATUS_PIP[m.status] ?? "var(--st-neutral)" }} />
+              <span className="min-w-0 flex-1 truncate text-left">{m.query || m.missionId}</span>
+              <span className="shrink-0 text-muted-foreground">{lead}</span>
+            </Button>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }

@@ -1,0 +1,141 @@
+%% Seleric Agent - low-level design of one agent turn, derived from the code (not from docs).
+%% Files: api/async_missions.py, recovery.py, agent/runner.py, agent/loop.py, agent/mcp_toolset.py, agent/local_tools.py,
+%%        agent/present.py, agent/grounding.py, toolsets/*, causal/*, conversations/postgres.py.
+%% Legend: red dashed = known gap (G#), green = fixed locally and uncommitted, grey = outside this repo.
+%% Gap index:
+%%   G1  present.frame_of falls back to one part when results share no key, silently (agent/present.py:292)
+%%   G2  audit_entities accepted mixed-key results                      FIXED locally (agent/local_tools.py)
+%%   G3  totals over capped fetches quoted as portfolio figures; audit now flags it FIXED, insights_explain (remote) NOT
+%%   G4  multi-view parts are ranked and limited separately (agent/mcp_toolset.py:180-204)
+%%   G5  nothing in code forces diagnose_metric_change for a stated drop; routing is prompt text (agent/prompt.py:28-29)
+%%   G6  grounding checks that figures exist, not that the sentence is true (agent/grounding.py)
+%%   G7  metric roles hardcoded: toolsets/policy_config.py AUDIT_*, toolsets/composition.py "net_sales"
+%%   G8  no entity bridge: product title vs handle, campaign to product (unattributed spend)
+%%   G9  "verify the premise first" is prompt text only
+%%   G10 SEMANTIC_PORT_MODE defaults to off (semantic/README.md)
+%%   G11 compose uses plain postgres:16, so the optional pgvector column in migration 006 is likely skipped (unverified)
+flowchart TB
+    subgraph SUBMIT["1. Submit and execute - api/async_missions.py, recovery.py"]
+        S1["POST /v1/threads/.../messages or /v1/missions"]
+        S2["PostgresRunRepository<br/>run row plus outbox, committed first"]
+        S3["publish_durable_mission<br/>best-effort queue notify, outbox is authoritative"]
+        S4["RunRecoveryWorker<br/>claim, lease 60s, heartbeat 15s<br/>expired lease is requeued"]
+        S5["run_mission_job -> run_v3_mission"]
+        S1 --> S2 --> S3 --> S4 --> S5
+    end
+
+    subgraph CONTEXT["2. Context - agent/runner.py"]
+        C1["CatalogueSnapshot<br/>metrics, dimensions, views, conformed families"]
+        C2["Server guide and tool definitions<br/>from MCP tools/list at boot"]
+        C3["History turns, memories, thread summary,<br/>workspace notes"]
+        C4["Earlier query payload refs<br/>query ids and evidence ids of this thread"]
+        C5["Prompt: PREAMBLE, ANSWER_RULES,<br/>ANALYSIS_RULES, catalogue index"]
+        C1 --> C5
+        C2 --> C5
+        C3 --> C5
+        C4 --> C5
+    end
+
+    subgraph LOOPBOX["3. Loop - agent/loop.py run_turn"]
+        L1["Agent.run with parallel tool calls"]
+        L2["PrepareTools budget<br/>MAX_STEPS 10, tool calls 20, soft 150s<br/>exhausted: tools withdrawn, answer from evidence"]
+        L3["Degenerate output check<br/>retry once, then fixed fallback text"]
+        L4["Cancellation checked before each model request"]
+        L1 --> L2 --> L3
+        L4 -.-> L1
+    end
+
+    subgraph MCPTOOLS["4a. Core MCP read tools - agent/mcp_toolset.py"]
+        M1["schema validate<br/>filter_misuse, read-only allowlist"]
+        M2["MCPGateway.call"]
+        M3["flag_partial, flag_composed<br/>write_evidence -> EvidenceArtifact rows"]
+        M4["TurnState.payloads<br/>query_id -> result, parts, args"]
+        M1 --> M2 --> M3 --> M4
+    end
+
+    subgraph LOCALTOOLS["4b. Local tools - agent/local_tools.py, _tracked wrapper -> ToolView"]
+        T1["diagnose_metric_change<br/>toolsets/diagnosis -> causal/diagnosis<br/>dowhy_service, estimate_pool forkserver"]
+        T2["break_down_metric<br/>toolsets/composition"]
+        T3["forecast_metrics<br/>toolsets/forecasting -> forecasting/"]
+        T4["explore_data<br/>toolsets/exploration, exploration/space"]
+        T5["run_python<br/>toolsets/sandbox -> sandbox_child"]
+        T6["show_chart, show_table<br/>toolsets/analytics, present.frame_of"]
+        T7["audit_entities<br/>toolsets/entity_audit, pick_roles"]
+        T8["business_snapshot, escalate"]
+        T9["draft_mom_email, draft_ad_hoc_email, send_email<br/>agent/email_tools, mail/*"]
+    end
+
+    subgraph JOIN["5. Joining multi-view results - agent/present.py"]
+        J1["sources_of(payload)<br/>one Source per part"]
+        J2["frame_of(sources, lead, named)<br/>join on shared keys, spend view leads"]
+        J3["no shared key:<br/>largest part stands alone"]
+        J1 --> J2 --> J3
+    end
+
+    subgraph CHECKS["6. Answer checks - agent/loop.py, grounding.py, answer_text.py"]
+        K1["grounding(answer, figure_pool)<br/>unmatched, misbound, placeholders, sign conflicts"]
+        K2["one corrective pass<br/>lost_substance keeps the draft"]
+        K3["answer_text cleanup<br/>ids to names, rounding, tables"]
+        K4["present.py visuals<br/>KPI cards, table, chart by result shape"]
+        K1 --> K2 --> K3 --> K4
+    end
+
+    subgraph PERSIST["7. Persist and publish - runner._persist_turn, conversations/*"]
+        P1[("Postgres<br/>messages and parts, artifacts,<br/>run events, memories, summaries")]
+        P2["Activity events -> SSE and polling<br/>/v1/office, /v1/runs/.../events"]
+        P3["trace: steps, stats, grounding,<br/>context_composition"]
+        P1 --- P2
+        P1 --- P3
+    end
+
+    subgraph REMOTE["Outside this repo - Seleric Core MCP"]
+        R1["metrics_query, metrics_drilldown,<br/>build_dataset_query"]
+        R2["insights_explain<br/>deltas and top movers"]
+        R3["catalogue_* tools"]
+    end
+
+    S5 --> C5 --> L1
+    L1 --> MCPTOOLS
+    L1 --> LOCALTOOLS
+    M2 --> R1
+    M2 --> R3
+    M2 --> R2
+    M4 --> T7
+    M4 --> T6
+    M4 --> T1
+    T7 --> J1
+    T6 --> J1
+    T1 --> M2
+    T1 --> M3
+    L3 --> K1
+    K4 --> P1
+    T9 --> P1
+
+    %% ---- gaps ----
+    G1["G1 silent fallback<br/>present.py:292, still reached by the table path"]
+    G2["G2 mixed-key audit refused now<br/>tests/unit/test_entity_audit.py"]
+    G3A["G3 audit COVERAGE line when the row limit is hit"]
+    G3B["G3 insights_explain sums only fetched rows,<br/>no truncation flag, contribution over 100 percent"]
+    G4["G4 each part ranked and limited on its own,<br/>entities appear in one part and not another"]
+    G5["G5 and G9 routing and premise check<br/>are prompt text, no code route"]
+    G6["G6 claims not verified<br/>ranking, share, scale verdict, same-basis compare"]
+    G7["G7 AUDIT_* measure lists and net_sales literal"]
+    G8["G8 no title to handle or campaign to product bridge"]
+    G10["G10 and G11 semantic port off by default,<br/>pgvector likely not installed"]
+    J3 -.- G1
+    T7 -.- G2
+    T7 -.- G3A
+    R2 -.- G3B
+    M3 -.- G4
+    L1 -.- G5
+    K1 -.- G6
+    T7 -.- G7
+    J2 -.- G8
+    C1 -.- G10
+
+    classDef gap fill:#fdecea,stroke:#c62828,stroke-width:2px,stroke-dasharray:5 3,color:#7f0000
+    classDef fixed fill:#e7f5ea,stroke:#2e7d32,stroke-width:2px,color:#1b5e20
+    classDef ext fill:#eceff1,stroke:#607d8b,color:#37474f
+    class G1,G3B,G4,G5,G6,G7,G8,G10,J3 gap
+    class G2,G3A fixed
+    class R1,R2,R3 ext

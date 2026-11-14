@@ -64,8 +64,8 @@ describe("overlay a11y + wiring", () => {
     });
     expect(container.textContent).toContain("Verify issue");
     expect(container.textContent).toContain("Find causal frontier");
-    expect(container.querySelector(".board-step.done")).toBeTruthy();
-    expect(container.querySelector(".board-step.active")).toBeTruthy();
+    expect(container.querySelector('[data-slot="board-step"][data-state="done"]')).toBeTruthy();
+    expect(container.querySelector('[data-slot="board-step"][data-state="active"]')).toBeTruthy();
     expect(container.textContent).toContain("Why did mobile CVR fall?");
   });
 
@@ -76,20 +76,20 @@ describe("overlay a11y + wiring", () => {
     });
     const buttons = [...container.querySelectorAll("button")];
     expect(buttons.some((b) => b.textContent === "leadership")).toBe(true);
-    const rows = [...container.querySelectorAll(".tl-row")];
+    const rows = [...container.querySelectorAll('[data-slot="tl-row"]')];
     expect(rows.length).toBeGreaterThan(0);
     act(() => (rows.find((r) => r.textContent?.includes("funnel")) as HTMLElement)?.click());
     expect(useOffice.getState().selectedAgentId).toBe("funnel_agent");
   });
 
-  it("MissionMinimap is hidden for a single mission and keyboard-activates for many", () => {
+  it("MissionMinimap is hidden for a single mission and activates its rows for many", () => {
     let picked = "";
     act(() =>
       root.render(
         <MissionMinimap missions={[{ missionId: "MS-1", query: "one", status: "running", lastSeq: 0 }]} missionId="MS-1" onPick={(id) => (picked = id)} />,
       ),
     );
-    expect(container.querySelector(".minimap")).toBeNull();
+    expect(container.querySelector('[data-slot="minimap"]')).toBeNull();
 
     act(() =>
       root.render(
@@ -103,11 +103,12 @@ describe("overlay a11y + wiring", () => {
         />,
       ),
     );
-    const panel = container.querySelector(".minimap")!;
+    const panel = container.querySelector('[data-slot="minimap"]')!;
     expect(panel.getAttribute("aria-label")).toBe("Missions");
-    const row = [...panel.querySelectorAll('[role="button"]')].find((r) => r.textContent?.includes("two")) as HTMLElement;
-    expect(row.getAttribute("tabindex")).toBe("0");
-    act(() => row.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    // Rows are real buttons now, so keyboard activation is the browser's own (Enter/Space fire click).
+    const row = [...panel.querySelectorAll("button")].find((r) => r.textContent?.includes("two")) as HTMLButtonElement;
+    expect(row).toBeTruthy();
+    act(() => row.click());
     expect(picked).toBe("MS-2");
   });
 

@@ -59,7 +59,7 @@ describe("conversation shell rendering and accessibility", () => {
     expect(container.textContent).not.toContain("Stale activity");
   });
 
-  it("keeps Debug, Causal, and Memory and supports arrow-key tab navigation", () => {
+  it("keeps Debug, Causal, and Memory and supports arrow-key tab navigation", async () => {
     useConversationStore.setState({
       selectedThreadId: "t1",
       threads: [{
@@ -73,9 +73,12 @@ describe("conversation shell rendering and accessibility", () => {
     const labels = [...container.querySelectorAll('[role="tab"]')].map((node) => node.textContent);
     expect(labels).toEqual(["Debug", "Causal", "Memory"]);
     const debug = container.querySelector('[role="tab"][aria-selected="true"]') as HTMLButtonElement;
+    // Radix tabs move focus (and activate) on the next tick, and activate a pressed tab on mousedown.
     act(() => debug.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Causal");
-    act(() => (container.querySelector("#detail-tab-memory") as HTMLButtonElement).click());
+    const memory = [...container.querySelectorAll('[role="tab"]')].find((node) => node.textContent === "Memory") as HTMLButtonElement;
+    act(() => memory.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, ctrlKey: false })));
     expect(container.textContent).toContain("Saved memories");
   });
 
@@ -96,6 +99,7 @@ describe("conversation shell rendering and accessibility", () => {
   });
 
   it("provides functional conversation and detail panel controls", () => {
+    useShellStore.setState({ sidebarOpen: true, detailsOpen: true });
     act(() => root.render(<App />));
     const sidebarToggle = container.querySelector('[aria-label="Toggle conversations"]') as HTMLButtonElement;
     const detailsToggle = container.querySelector('[aria-label="Toggle conversation details"]') as HTMLButtonElement;

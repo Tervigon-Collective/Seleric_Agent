@@ -79,6 +79,7 @@ from seleric_swarm.recovery import (
     RunWorkQueue,
 )
 from seleric_swarm.runtime import SwarmRuntime
+from seleric_swarm.services.mcp_query import scope_date_axis
 
 _log = logging.getLogger("seleric.api.conversations")
 
@@ -691,14 +692,18 @@ class MetricDefinitionView(BaseModel):
 
 
 @router.get("/metrics/definitions")
-def list_metric_definitions(request: Request) -> list[MetricDefinitionView]:
+async def list_metric_definitions(request: Request) -> list[MetricDefinitionView]:
     _authenticated_principal(request)
-    registry = getattr(_runtime(request), "metrics", None)
+    runtime = _runtime(request)
+    registry = getattr(runtime, "metrics", None)
+    bootstrap = getattr(runtime, "bootstrap", None)
+    if registry is not None and bootstrap is not None:
+        await bootstrap.refresh_if_stale()
     if registry is None:
         raise HTTPException(status_code=503, detail="metric registry is not configured")
     views: list[MetricDefinitionView] = []
     for definition in registry.all():
-        key = definition.catalogue_metric or definition.id.removeprefix("metric.")
+        key = definition.id
         views.append(
             MetricDefinitionView(
                 id=definition.id,
@@ -710,7 +715,7 @@ def list_metric_definitions(request: Request) -> list[MetricDefinitionView]:
                 grain=definition.grain,
                 domain=definition.domain,
                 version=definition.version,
-                aliases=sorted({*definition.aliases, key.replace("_", " ")}),
+                aliases=[key.replace("_", " ")],
             )
         )
     return views
@@ -1346,6 +1351,8 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
                 continue  # placed ahead of the text above
             elif ptype == "TABLE" and isinstance(content, dict):
                 parts.append(MessagePart(type=MessagePartType.TABLE, content=content))
+            elif ptype == "APPROVAL" and isinstance(content, dict) and content.get("approval_id"):  # the email preview card
+                parts.append(MessagePart(type=MessagePartType.APPROVAL, content=content))
             elif ptype == "CHART" and isinstance(content, dict) and not raw_charts:
                 # Prefer explicit charts list when present; otherwise accept assembler charts.
                 chart_type = str(content.get("chart_type") or "bar")
@@ -1455,6 +1462,7 @@ async def _execute_submission(
     as_of: str | None,
     request_id: str,
     execution_mode: str,
+    date_axis: str | None = None,
     assistant_message_id: str,
     full_diagnostic: bool = True,
     full_prediction: bool = True,
@@ -1575,6 +1583,7 @@ async def _execute_submission(
             query=query,
             timezone=timezone,
             as_of=as_of,
+            date_axis=date_axis,
             session_id=run.thread_id,
             request_id=request_id,
             full_diagnostic=full_diagnostic,
@@ -1941,6 +1950,7 @@ class SubmissionRunExecutor:
             ),
             request_id=str(submission.get("request_id") or run.id),
             execution_mode=str(submission.get("execution_mode") or "development"),
+            date_axis=submission.get("date_axis") or None,
             assistant_message_id=assistant_message_id,
             full_diagnostic=bool(submission.get("full_diagnostic", True)),
             full_prediction=bool(submission.get("full_prediction", True)),
@@ -2030,6 +2040,10 @@ async def submit_message(
             raise HTTPException(status_code=409, detail="attachment is already associated")
         attachments.append(attachment)
 
+    try:
+        date_axis = scope_date_axis(body.scope)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     context_bundle = ContextBuilder(repositories).build(
         thread,
         query=query,
@@ -2123,6 +2137,7 @@ async def submit_message(
                         "metadata": {
                             **run.metadata,
                             "context_bundle": bundle_data,
+                            "context_composition": bundle_data.get("composition") or {},
                             "submission": {
                                 "query": query,
                                 "timezone": str(
@@ -2130,6 +2145,7 @@ async def submit_message(
                                 ),
                                 "as_of": body.scope.get("as_of")
                                 or body.scope.get("asOf"),
+                                "date_axis": date_axis,
                                 "request_id": request_id,
                                 "execution_mode": body.execution_mode,
                                 "assistant_message_id": assistant_message.id,

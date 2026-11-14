@@ -4,6 +4,7 @@ import type { MissionRef } from "../types";
 import { SelericEventProvider } from "../providers/seleric";
 import type { ProviderHandlers, SwarmEventProvider } from "../providers/types";
 import { OfficeCanvas } from "../render/OfficeCanvas";
+import { AppFrame } from "./AppFrame";
 import { TopBar } from "./TopBar";
 import { MissionHeader } from "./MissionHeader";
 import { MissionBoard } from "./MissionBoard";
@@ -12,17 +13,10 @@ import { MissionTimeline } from "./MissionTimeline";
 import { AgentHoverCard } from "./AgentHoverCard";
 import { AgentInspector } from "./AgentInspector";
 import { DebugPanel } from "./DebugPanel";
+import type { Workspace } from "../stores/shell";
 import { readRoute, writeRoute } from "../routing";
 
-export function OfficeWorkspace({
-  dark,
-  onToggleTheme,
-  onOpenConversations,
-}: {
-  dark: boolean;
-  onToggleTheme: () => void;
-  onOpenConversations: () => void;
-}) {
+export function OfficeWorkspace({ dark }: { dark: boolean; onToggleTheme?: () => void; onSwitch?: (w: Workspace) => void }) {
   const hydrate = useOffice((s) => s.hydrate);
   const ingestEvent = useOffice((s) => s.ingestEvent);
   const setConn = useOffice((s) => s.setConn);
@@ -80,14 +74,20 @@ export function OfficeWorkspace({
   }, []);
 
   return (
-    <div className="office-workspace">
-      <TopBar missions={missions} missionId={missionId} onPickMission={setMissionId} dark={dark} onToggleTheme={onToggleTheme} onOpenConversations={onOpenConversations} />
-      <div className="stage" onMouseMove={(event) => setPointer({ x: event.clientX, y: event.clientY })}>
+    <AppFrame
+      workspace="office"
+      sidebarLabel="Office navigation"
+      toggleLabel="Toggle navigation"
+      header={<TopBar missions={missions} missionId={missionId} onPickMission={setMissionId} />}
+    >
+    <div className="page-enter grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto]">
+      <div data-slot="stage" className="relative overflow-hidden bg-[#12181e]" onMouseMove={(event) => setPointer({ x: event.clientX, y: event.clientY })}>
         <OfficeCanvas dark={dark} /><MissionHeader /><MissionBoard />
         <AgentHoverCard x={pointer.x} y={pointer.y} /><AgentInspector />
         <MissionMinimap missions={missions} missionId={missionId} onPick={setMissionId} /><DebugPanel />
       </div>
       <MissionTimeline />
     </div>
+    </AppFrame>
   );
 }

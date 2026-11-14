@@ -1,0 +1,40 @@
+/* Motion layer: one easing, short durations, entrances only. Neutralised by the reduced-motion guard in index.css. */
+@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes collapsible-down { from { height: 0; opacity: 0; } to { height: var(--radix-collapsible-content-height); opacity: 1; } }
+@keyframes collapsible-up { from { height: var(--radix-collapsible-content-height); opacity: 1; } to { height: 0; opacity: 0; } }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: none; } }
+
+/* Lists and card grids settle in one after another instead of all at once. */
+.stagger > * { animation: fade-up 260ms var(--ease-out) both; }
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 35ms; }
+.stagger > *:nth-child(3) { animation-delay: 70ms; }
+.stagger > *:nth-child(4) { animation-delay: 105ms; }
+.stagger > *:nth-child(5) { animation-delay: 140ms; }
+.stagger > *:nth-child(6) { animation-delay: 175ms; }
+.stagger > *:nth-child(7) { animation-delay: 210ms; }
+.stagger > *:nth-child(8) { animation-delay: 245ms; }
+.stagger > *:nth-child(9) { animation-delay: 280ms; }
+.stagger > *:nth-child(10) { animation-delay: 315ms; }
+.stagger > *:nth-child(11) { animation-delay: 350ms; }
+.stagger > *:nth-child(12) { animation-delay: 350ms; }
+
+/* Disclosure rows glide open and shut. */
+[data-slot="collapsible-content"] { overflow: hidden; }
+[data-slot="collapsible-content"][data-state="open"] { animation: collapsible-down 200ms var(--ease-out); }
+[data-slot="collapsible-content"][data-state="closed"] { animation: collapsible-up 160ms var(--ease-out); }
+
+/* Whole-page crossfade for 300ms when the theme changes, then removed so it never slows hover states. */
+html.theme-fade, html.theme-fade *, html.theme-fade *::before, html.theme-fade *::after {
+  transition: background-color 250ms ease, color 250ms ease, border-color 250ms ease, fill 250ms ease, stroke 250ms ease !important;
+}
+
+/* Workspace and page content rises in when the route changes (key the element to re-trigger). */
+.page-enter { animation: fade-up 240ms var(--ease-out) both; }
+.pop-in { animation: pop-in 160ms var(--ease-out) both; }
+
+/* Sidebar rows and cards: gentle lift and a firm press. */
+[data-slot="app-sidebar"] [data-slot="button"] { transition: background-color 150ms ease, color 150ms ease, transform 120ms var(--ease-out); }
+[data-slot="app-sidebar"] [data-slot="button"]:active { transform: scale(0.98); }
+[data-slot="ops-card"], [data-slot="ops-row"] { transition: box-shadow 200ms ease, transform 200ms var(--ease-out), background-color 150ms ease; }
+[data-slot="ops-card"]:hover { transform: translateY(-1px); }

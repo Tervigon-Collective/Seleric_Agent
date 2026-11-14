@@ -93,13 +93,11 @@ class SelericDeps:
     # CatalogueBootstrap. The agent resolves metric ids against this full list
     # instead of a Qdrant top-k guess; Cube still validates the chosen id.
     catalogue: CatalogueSnapshot = field(default_factory=CatalogueSnapshot)
-    # Spelling authority for metric ids. The catalogue snapshot above knows
-    # which ids exist; only the registry knows that two of them ("metric.atc_rate"
-    # and "session_atc_rate") are the same metric. Any code comparing an id it
-    # declared against an id an EvidenceArtifact was stamped with must collapse
-    # both through `canonical_id` first. None leaves
-    # every spelling distinct, so production paths must pass the real registry.
+    # The catalogue as the agent's metric registry (identity, unit, direction_bad, domain). The snapshot above is the same list.
     metrics: MetricRegistry | None = None
+    # The date axis the user picked for this chat ("order_date" | "event_date"); None leaves it to Core's default.
+    # Applied to MCP calls by the tool layer (mcp_toolset, toolsets/_data), never written into the prompt.
+    date_axis: str | None = None
     # Real per-mission execution-limit enforcement (agent/limits.py). Not a
     # dataclass default_factory: ExecutionBudgetTracker needs this same
     # instance's own `limits`, so it's built in __post_init__ instead — every
@@ -118,20 +116,3 @@ class SelericDeps:
     def budget(self) -> ExecutionBudgetTracker:
         assert self._budget is not None  # set unconditionally in __post_init__
         return self._budget
-
-    def canonical_metric_id(self, metric_id: str) -> str:
-        """One spelling of *metric_id*, for code that compares ids with ``==``.
-
-        toolsets/_data.py stamps an EvidenceArtifact with the id the caller
-        actually fetched, verbatim and deliberately: two spellings of one metric
-        must reach Cube unchanged and be independently attributed (bug #2's
-        regression guard forbids collapsing them there). The other half of that
-        rule is that anything *comparing* ids must collapse them first —
-        otherwise one metric fetched under two spellings looks like two metrics
-        and the comparison silently finds nothing. swarm_v2 did this through
-        MetricRegistry; carry it wherever an id this code declared meets an id
-        an artifact was stamped with. Unknown ids pass through unchanged.
-        """
-        if self.metrics is None:
-            return metric_id
-        return self.metrics.canonical_id(metric_id)

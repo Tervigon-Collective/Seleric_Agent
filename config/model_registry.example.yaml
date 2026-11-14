@@ -4,7 +4,7 @@ models:
     type: anomaly
     status: candidate
     owner: ml_platform
-    target: metric.cac
+    target: channel_cac
     applicability:
       minimum_history_days: 56
       supports_seasonality: true
@@ -17,7 +17,7 @@ models:
     type: forecast
     status: candidate
     owner: ml_platform
-    target: metric.orders
+    target: orders
     feature_set: features.orders.daily.v1
     forecast_horizon_days: 7
     drift_policy: block_if_red

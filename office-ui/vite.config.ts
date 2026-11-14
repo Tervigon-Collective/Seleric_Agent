@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import { fileURLToPath } from "node:url";
 
 // The Seleric API (FastAPI) local port. Override with SELERIC_API_URL.
 // Default matches API_PORT in the repo .env used by scripts/run_dev.py.
@@ -40,7 +42,10 @@ function devConfigJs(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [devConfigJs(), react()],
+  plugins: [devConfigJs(), react(), tailwindcss()],
+  resolve: {
+    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+  },
   server: {
     host: "127.0.0.1",
     port: 5173,

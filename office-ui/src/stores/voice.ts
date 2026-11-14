@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { Room, RoomEvent, Track } from "livekit-client";
+import type { Room } from "livekit-client";
 import { mintVoiceToken } from "../api/voice";
 import { useConversationStore } from "./conversation";
 
@@ -9,12 +9,15 @@ interface VoiceState {
   status: VoiceStatus;
   muted: boolean;
   error: string | null;
+  /** false = docked bar in place of the composer; true = full-screen takeover. */
+  expanded: boolean;
+  setExpanded: (expanded: boolean) => void;
   /** Live captions for the voice screen: what you said, and what Seleric is saying. */
   captions: { user: string; assistant: string };
   /** Audio streams the voice screen analyses to animate the orb. */
   micStream: MediaStream | null;
   agentStream: MediaStream | null;
-  start: () => Promise<void>;
+  start: (expanded?: boolean) => Promise<void>;
   stop: () => Promise<void>;
   toggleMute: () => Promise<void>;
 }
@@ -37,11 +40,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   status: "idle",
   muted: false,
   error: null,
+  expanded: false,
+  setExpanded: (expanded) => set({ expanded }),
   captions: { user: "", assistant: "" },
   micStream: null,
   agentStream: null,
 
-  start: async () => {
+  start: async (expanded = false) => {
     if (get().status !== "idle" && get().status !== "error") return;
     if (!navigator?.mediaDevices?.getUserMedia) {
       set({
@@ -51,15 +56,18 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       return;
     }
     const generation = ++attempt;
-    set({ status: "connecting", muted: false, error: null, captions: { user: "", assistant: "" } });
+    set({ status: "connecting", muted: false, error: null, expanded, captions: { user: "", assistant: "" } });
     await leaving;
     if (generation !== attempt) return;
     const conversation = useConversationStore.getState();
     try {
-      if (!conversation.selectedThreadId) await conversation.createThread();
-      const threadId = useConversationStore.getState().selectedThreadId;
+      const threadId = await conversation.ensureThread();
       if (!threadId) throw new Error("Unable to start a conversation for voice");
-      const { url, token } = await mintVoiceToken(threadId);
+      // livekit is large and only needed once voice starts; fetch it alongside the token.
+      const [{ url, token }, { Room, RoomEvent, Track }] = await Promise.all([
+        mintVoiceToken(threadId),
+        import("livekit-client"),
+      ]);
       if (generation !== attempt) return;
 
       const next = new Room({ adaptiveStream: true, dynacast: true });

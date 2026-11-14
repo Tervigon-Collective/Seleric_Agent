@@ -1,0 +1,21 @@
+"Platform-reported vs Seleric-attributed (brand 20). Seleric = Core channel_orders / order_pnl_net_sales (order_date axis, default attribution model) grouped by ad_platform+campaign_id[+ad_id]; platform = gold ad tables (Meta purchases/purchase_value, Google conversions/conversion_value).",,,,,,,,,,,,
+,,,,,,,,,,,,
+Window,Platform,Spend,Platform conversions,Platform conv. value,Platform ROAS,Seleric orders,Seleric net sales,Seleric ROAS (net sales/spend),Seleric orders / platform conv.,Net sales on ids with no delivery (orphans),Spend with 0 attributed orders,Share of spend with 0 orders
+yesterday,meta,23618.53,12.0,22395.7,0.9482258209973272,13.0,19588.57744750414,0.8293732695262636,1.0833333333333333,0,12028.56,0.5092848708196488
+yesterday,google,19490.915595000002,12.947617999999999,20667.4018384,1.0603607479425852,14.0,18713.15733712058,0.9600963713536916,1.081279969798306,0,5814.413313999999,0.2983140163765097
+yesterday,(no paid platform: organic/direct/unattributed),0.0,0.0,0.0,,2.0,3218.65,,,0,0,
+yesterday,TOTAL attributed (check = Cube total),,,,,29.0,41520.38478462472,,,,,
+yesterday,Cube total (no grouping),,,,,29.0,41520.38478462472,,,,,
+last7,meta,208154.3,99.0,251556.69999999998,1.2085107057601019,97.0,177847.18961219926,0.854400747965328,0.9797979797979798,1906.02,37019.48,0.17784633802904867
+last7,google,92699.84888700001,56.915865000000004,142766.91731159997,1.5400987059388964,67.0,137181.4279216206,1.4798452162402453,1.1771761704754904,0,23318.868840999996,0.25155239324527284
+last7,(no paid platform: organic/direct/unattributed),0.0,0.0,0.0,,20.0,35560.275336814724,,,0,0,
+last7,TOTAL attributed (check = Cube total),,,,,184.0,350588.8928706346,,,,,
+last7,Cube total (no grouping),,,,,184.0,350588.8928706347,,,,,
+last30,meta,1107747.8800000001,709.0,1677374.3,1.514220275465569,661.0,1168286.3448729673,1.0546500390259985,0.9322990126939351,16759.59065723587,85198.06,0.07691105669279186
+last30,google,318251.784025,211.47189999999995,507877.70465300005,1.5958361591245758,257.0,496941.20546997053,1.5614718610059188,1.2152914878998111,0,4707.266355,0.014791013252042679
+last30,(no paid platform: organic/direct/unattributed),0.0,0.0,0.0,,88.0,184550.19051575896,,,0,0,
+last30,TOTAL attributed (check = Cube total),,,,,1006.0,1849777.7408586966,,,,,
+last30,Cube total (no grouping),,,,,1006.0,1849777.7408586964,,,,,
+,,,,,,,,,,,,
+"Meta attribution mart (gold.mart_meta_ad_daily_attribution, last30): attributed_orders = 576, net_revenue_excl_tax = 1,070,681.73, ads = 97.",,,,,,,,,,,,
+"Reading it: platform conversions are the platform's own (their attribution window, view-through included); Seleric orders use its own last_non_direct model, so they are expected to differ. The checks that must hold are: attributed totals = Cube total, and no sales on ids that never delivered.",,,,,,,,,,,,

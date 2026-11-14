@@ -1,0 +1,77 @@
+Domain,Check,Window,Axis,Left,Left value,Right,Right value,|Delta|,Status,Note
+Product,product_order_net_sales: Σ by ad_platform = total,today,order_date,total product_order_net_sales,13978.90017469738,Σ over 2 ad_platform groups,13978.900174697379,1.8189894035458565e-12,PASS,
+Product,product_order_net_sales: Σ by ad_platform = total,yesterday,order_date,total product_order_net_sales,41520.384784624715,Σ over 3 ad_platform groups,41520.384784624715,0.0,PASS,"null/unset share of value = 3,218.65"
+Product,product_order_net_sales: Σ by ad_platform = total,last7,order_date,total product_order_net_sales,350588.89287063456,Σ over 3 ad_platform groups,350588.8928706346,5.820766091346741e-11,PASS,"null/unset share of value = 35,560.28"
+Product,product_order_net_sales: Σ by ad_platform = total,last30,order_date,total product_order_net_sales,1849777.7408586976,Σ over 3 ad_platform groups,1849777.7408586985,9.313225746154785e-10,PASS,"null/unset share of value = 184,550.19"
+Product,product_order_net_sales: Σ by ad_platform = total,today,event_date,total product_order_net_sales,10337.284696958512,Σ over 2 ad_platform groups,10337.284696958512,0.0,PASS,
+Product,product_order_net_sales: Σ by ad_platform = total,yesterday,event_date,total product_order_net_sales,41520.38478462472,Σ over 3 ad_platform groups,41520.384784624715,7.275957614183426e-12,PASS,"null/unset share of value = 3,218.65"
+Product,product_order_net_sales: Σ by ad_platform = total,last7,event_date,total product_order_net_sales,305373.8729235982,Σ over 3 ad_platform groups,305373.8729235982,0.0,PASS,"null/unset share of value = 25,100.86"
+Product,product_order_net_sales: Σ by ad_platform = total,last30,event_date,total product_order_net_sales,875901.6158115016,Σ over 3 ad_platform groups,875901.6158115001,1.5133991837501526e-09,PASS,"null/unset share of value = -44,222.56"
+Product,product_order_net_sales: Σ by campaign_id = total,today,order_date,total product_order_net_sales,13978.90017469738,Σ over 4 campaign_id groups,13978.900174697379,1.8189894035458565e-12,PASS,
+Product,product_order_net_sales: Σ by campaign_id = total,yesterday,order_date,total product_order_net_sales,41520.384784624715,Σ over 10 campaign_id groups,41520.38478462472,7.275957614183426e-12,PASS,"null/unset share of value = 9,824.01"
+Product,product_order_net_sales: Σ by campaign_id = total,last7,order_date,total product_order_net_sales,350588.89287063456,Σ over 35 campaign_id groups,350588.8928706346,5.820766091346741e-11,PASS,"null/unset share of value = 50,887.67"
+Product,product_order_net_sales: Σ by campaign_id = total,last30,order_date,total product_order_net_sales,1849777.7408586976,Σ over 96 campaign_id groups,1849777.740858696,1.6298145055770874e-09,PASS,"null/unset share of value = 329,994.24"
+Product,product_order_net_sales: Σ by campaign_id = total,today,event_date,total product_order_net_sales,10337.284696958512,Σ over 4 campaign_id groups,10337.28469695851,1.8189894035458565e-12,PASS,
+Product,product_order_net_sales: Σ by campaign_id = total,yesterday,event_date,total product_order_net_sales,41520.38478462472,Σ over 10 campaign_id groups,41520.38478462472,0.0,PASS,"null/unset share of value = 9,824.01"
+Product,product_order_net_sales: Σ by campaign_id = total,last7,event_date,total product_order_net_sales,305373.8729235982,Σ over 49 campaign_id groups,305373.87292359816,5.820766091346741e-11,PASS,"null/unset share of value = 37,168.08"
+Product,product_order_net_sales: Σ by campaign_id = total,last30,event_date,total product_order_net_sales,875901.6158115016,Σ over 204 campaign_id groups,875901.6158115015,1.1641532182693481e-10,PASS,"null/unset share of value = 6,051.42"
+Product,product_order_net_sales: Σ by product_title = total,today,order_date,total product_order_net_sales,13978.90017469738,Σ over 8 product_title groups,13978.90017469738,0.0,PASS,null/unset share of value = 630.51
+Product,product_order_net_sales: Σ by product_title = total,yesterday,order_date,total product_order_net_sales,41520.384784624715,Σ over 29 product_title groups,41520.38478462472,7.275957614183426e-12,PASS,"null/unset share of value = 1,171.18"
+Product,product_order_net_sales: Σ by product_title = total,last7,order_date,total product_order_net_sales,350588.89287063456,Σ over 104 product_title groups,350588.8928706346,5.820766091346741e-11,PASS,"null/unset share of value = 8,029.49"
+Product,product_order_net_sales: Σ by product_title = total,last30,order_date,total product_order_net_sales,1849777.7408586976,Σ over 203 product_title groups,1849777.7408586966,9.313225746154785e-10,PASS,"null/unset share of value = 41,666.68"
+Product,product_order_net_sales: Σ by product_title = total,today,event_date,total product_order_net_sales,10337.284696958512,Σ over 10 product_title groups,10337.284696958512,0.0,PASS,null/unset share of value = 800.76
+Product,product_order_net_sales: Σ by product_title = total,yesterday,event_date,total product_order_net_sales,41520.38478462472,Σ over 29 product_title groups,41520.38478462472,0.0,PASS,"null/unset share of value = 1,171.18"
+Product,product_order_net_sales: Σ by product_title = total,last7,event_date,total product_order_net_sales,305373.8729235982,Σ over 113 product_title groups,305373.8729235982,0.0,PASS,"null/unset share of value = 8,458.42"
+Product,product_order_net_sales: Σ by product_title = total,last30,event_date,total product_order_net_sales,875901.6158115016,Σ over 235 product_title groups,875901.6158115021,4.656612873077393e-10,PASS,"null/unset share of value = 24,897.57"
+Product,product_order_net_sales: Σ by product_type = total,today,order_date,total product_order_net_sales,13978.90017469738,Σ over 6 product_type groups,13978.900174697379,1.8189894035458565e-12,PASS,null/unset share of value = 630.51
+Product,product_order_net_sales: Σ by product_type = total,yesterday,order_date,total product_order_net_sales,41520.384784624715,Σ over 20 product_type groups,41520.38478462472,7.275957614183426e-12,PASS,"null/unset share of value = 1,171.18"
+Product,product_order_net_sales: Σ by product_type = total,last7,order_date,total product_order_net_sales,350588.89287063456,Σ over 51 product_type groups,350588.8928706347,1.1641532182693481e-10,PASS,"null/unset share of value = 8,029.49"
+Product,product_order_net_sales: Σ by product_type = total,last30,order_date,total product_order_net_sales,1849777.7408586976,Σ over 71 product_type groups,1849777.740858697,4.656612873077393e-10,PASS,"null/unset share of value = 41,666.68"
+Product,product_order_net_sales: Σ by product_type = total,today,event_date,total product_order_net_sales,10337.284696958512,Σ over 7 product_type groups,10337.284696958512,0.0,PASS,null/unset share of value = 800.76
+Product,product_order_net_sales: Σ by product_type = total,yesterday,event_date,total product_order_net_sales,41520.38478462472,Σ over 20 product_type groups,41520.38478462472,0.0,PASS,"null/unset share of value = 1,171.18"
+Product,product_order_net_sales: Σ by product_type = total,last7,event_date,total product_order_net_sales,305373.8729235982,Σ over 56 product_type groups,305373.8729235983,5.820766091346741e-11,PASS,"null/unset share of value = 8,458.42"
+Product,product_order_net_sales: Σ by product_type = total,last30,event_date,total product_order_net_sales,875901.6158115016,Σ over 78 product_type groups,875901.6158115019,2.3283064365386963e-10,PASS,"null/unset share of value = 24,897.57"
+Product,product_order_net_sales: Σ by sku = total,today,order_date,total product_order_net_sales,13978.90017469738,Σ over 10 sku groups,13978.90017469738,0.0,PASS,null/unset share of value = 630.51
+Product,product_order_net_sales: Σ by sku = total,yesterday,order_date,total product_order_net_sales,41520.384784624715,Σ over 31 sku groups,41520.38478462472,7.275957614183426e-12,PASS,"null/unset share of value = 1,171.18"
+Product,product_order_net_sales: Σ by sku = total,last7,order_date,total product_order_net_sales,350588.89287063456,Σ over 147 sku groups,350588.8928706346,5.820766091346741e-11,PASS,"null/unset share of value = 8,029.49"
+Product,product_order_net_sales: Σ by sku = total,last30,order_date,total product_order_net_sales,1849777.7408586976,Σ over 339 sku groups,1849777.7408586969,6.984919309616089e-10,PASS,"null/unset share of value = 41,666.68"
+Product,product_order_net_sales: Σ by sku = total,today,event_date,total product_order_net_sales,10337.284696958512,Σ over 16 sku groups,10337.284696958512,0.0,PASS,null/unset share of value = 800.76
+Product,product_order_net_sales: Σ by sku = total,yesterday,event_date,total product_order_net_sales,41520.38478462472,Σ over 31 sku groups,41520.38478462472,0.0,PASS,"null/unset share of value = 1,171.18"
+Product,product_order_net_sales: Σ by sku = total,last7,event_date,total product_order_net_sales,305373.8729235982,Σ over 175 sku groups,305373.8729235982,0.0,PASS,"null/unset share of value = 8,458.42"
+Product,product_order_net_sales: Σ by sku = total,last30,event_date,total product_order_net_sales,875901.6158115016,Σ over 429 sku groups,875901.615811502,3.4924596548080444e-10,PASS,"null/unset share of value = 24,897.57"
+Product,product_order_net_sales: Σ by vendor = total,today,order_date,total product_order_net_sales,13978.90017469738,Σ over 2 vendor groups,13978.900174697379,1.8189894035458565e-12,PASS,null/unset share of value = 630.51
+Product,product_order_net_sales: Σ by vendor = total,yesterday,order_date,total product_order_net_sales,41520.384784624715,Σ over 2 vendor groups,41520.38478462472,7.275957614183426e-12,PASS,"null/unset share of value = 1,171.18"
+Product,product_order_net_sales: Σ by vendor = total,last7,order_date,total product_order_net_sales,350588.89287063456,Σ over 2 vendor groups,350588.8928706344,1.7462298274040222e-10,PASS,"null/unset share of value = 8,029.49"
+Product,product_order_net_sales: Σ by vendor = total,last30,order_date,total product_order_net_sales,1849777.7408586976,Σ over 2 vendor groups,1849777.7408587153,1.7695128917694092e-08,PASS,"null/unset share of value = 41,666.68"
+Product,product_order_net_sales: Σ by vendor = total,today,event_date,total product_order_net_sales,10337.284696958512,Σ over 2 vendor groups,10337.284696958512,0.0,PASS,null/unset share of value = 800.76
+Product,product_order_net_sales: Σ by vendor = total,yesterday,event_date,total product_order_net_sales,41520.38478462472,Σ over 2 vendor groups,41520.38478462472,0.0,PASS,"null/unset share of value = 1,171.18"
+Product,product_order_net_sales: Σ by vendor = total,last7,event_date,total product_order_net_sales,305373.8729235982,Σ over 2 vendor groups,305373.8729235979,2.9103830456733704e-10,PASS,"null/unset share of value = 8,458.42"
+Product,product_order_net_sales: Σ by vendor = total,last30,event_date,total product_order_net_sales,875901.6158115016,Σ over 2 vendor groups,875901.6158114994,2.2118911147117615e-09,PASS,"null/unset share of value = 24,897.57"
+Product,units_sold: Σ by product_title = total,today,order_date,total units_sold,10.0,Σ over 8 product_title groups,10.0,0.0,PASS,
+Product,units_sold: Σ by product_title = total,yesterday,order_date,total units_sold,35.0,Σ over 29 product_title groups,35.0,0.0,PASS,
+Product,units_sold: Σ by product_title = total,last7,order_date,total units_sold,251.0,Σ over 104 product_title groups,251.0,0.0,PASS,
+Product,units_sold: Σ by product_title = total,last30,order_date,total units_sold,1287.0,Σ over 203 product_title groups,1287.0,0.0,PASS,
+Product,units_sold: Σ by product_title = total,today,event_date,total units_sold,8.0,Σ over 10 product_title groups,8.0,0.0,PASS,
+Product,units_sold: Σ by product_title = total,yesterday,event_date,total units_sold,35.0,Σ over 29 product_title groups,35.0,0.0,PASS,
+Product,units_sold: Σ by product_title = total,last7,event_date,total units_sold,225.0,Σ over 113 product_title groups,225.0,0.0,PASS,
+Product,units_sold: Σ by product_title = total,last30,event_date,total units_sold,730.0,Σ over 235 product_title groups,730.0,0.0,PASS,null/unset share of value = -4.00
+Product,units_sold: Σ by sku = total,today,order_date,total units_sold,10.0,Σ over 10 sku groups,10.0,0.0,PASS,
+Product,units_sold: Σ by sku = total,yesterday,order_date,total units_sold,35.0,Σ over 31 sku groups,35.0,0.0,PASS,
+Product,units_sold: Σ by sku = total,last7,order_date,total units_sold,251.0,Σ over 147 sku groups,251.0,0.0,PASS,
+Product,units_sold: Σ by sku = total,last30,order_date,total units_sold,1287.0,Σ over 339 sku groups,1287.0,0.0,PASS,
+Product,units_sold: Σ by sku = total,today,event_date,total units_sold,8.0,Σ over 16 sku groups,8.0,0.0,PASS,
+Product,units_sold: Σ by sku = total,yesterday,event_date,total units_sold,35.0,Σ over 31 sku groups,35.0,0.0,PASS,
+Product,units_sold: Σ by sku = total,last7,event_date,total units_sold,225.0,Σ over 175 sku groups,225.0,0.0,PASS,
+Product,units_sold: Σ by sku = total,last30,event_date,total units_sold,730.0,Σ over 429 sku groups,730.0,0.0,PASS,null/unset share of value = -4.00
+Product-Ads,product_ad_spend: Σ by ad_platform = total,today,-,total product_ad_spend,18580.005474999998,Σ over 2 ad_platform groups,18580.005474999998,0.0,PASS,
+Product-Ads,product_ad_spend: Σ by ad_platform = total,yesterday,-,total product_ad_spend,43108.049403000005,Σ over 3 ad_platform groups,43108.049403000005,0.0,PASS,
+Product-Ads,product_ad_spend: Σ by ad_platform = total,last7,-,total product_ad_spend,300852.75269500003,Σ over 3 ad_platform groups,300852.752695,5.820766091346741e-11,PASS,
+Product-Ads,product_ad_spend: Σ by ad_platform = total,last30,-,total product_ad_spend,1425998.2678330003,Σ over 3 ad_platform groups,1425998.2678329991,1.1641532182693481e-09,PASS,
+Product-Ads,product_ad_spend: Σ by campaign_id = total,today,-,total product_ad_spend,18580.005474999998,Σ over 40 campaign_id groups,18580.005474999998,0.0,PASS,
+Product-Ads,product_ad_spend: Σ by campaign_id = total,yesterday,-,total product_ad_spend,43108.049403000005,Σ over 75 campaign_id groups,43108.049403,7.275957614183426e-12,PASS,
+Product-Ads,product_ad_spend: Σ by campaign_id = total,last7,-,total product_ad_spend,300852.75269500003,Σ over 185 campaign_id groups,300852.752695,5.820766091346741e-11,PASS,
+Product-Ads,product_ad_spend: Σ by campaign_id = total,last30,-,total product_ad_spend,1425998.2678330003,Σ over 319 campaign_id groups,1425998.2678330003,0.0,PASS,
+Product-Ads,product_ad_spend: Σ by product_title = total,today,-,total product_ad_spend,18580.005474999998,Σ over 8 product_title groups,18580.005474999998,0.0,PASS,"null/unset share of value = 15,130.16"
+Product-Ads,product_ad_spend: Σ by product_title = total,yesterday,-,total product_ad_spend,43108.049403000005,Σ over 29 product_title groups,43108.049403000005,0.0,PASS,"null/unset share of value = 17,841.58"
+Product-Ads,product_ad_spend: Σ by product_title = total,last7,-,total product_ad_spend,300852.75269500003,Σ over 104 product_title groups,300852.752695,5.820766091346741e-11,PASS,"null/unset share of value = 129,842.95"
+Product-Ads,product_ad_spend: Σ by product_title = total,last30,-,total product_ad_spend,1425998.2678330003,Σ over 203 product_title groups,1425998.2678329998,4.656612873077393e-10,PASS,"null/unset share of value = 485,330.19"

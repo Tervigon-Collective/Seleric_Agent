@@ -41,6 +41,7 @@ _TOOL_LABELS: dict[str, str] = {
     "catalogue_get_metric": "Reading a metric definition",
     "metrics_query": "Fetching metric data",
     "metrics_drilldown": "Drilling into segments",
+    "build_dataset_query": "Building the dataset",
     "insights_explain": "Explaining the movement",
     "diagnose_metric_change": "Diagnosing what changed and why",
     "break_down_metric": "Breaking the metric down",

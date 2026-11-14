@@ -2,12 +2,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import App from "../App";
-import { DetailPanel, groupActivityPhases } from "../components/DetailPanel";
+import { groupActivityPhases } from "../components/DetailPanel";
 import { ThreadSidebar, isEvalThread } from "../components/ThreadSidebar";
 import type { SwarmUIEvent } from "../types";
 import { useConversationStore } from "../stores/conversation";
 import { useShellStore } from "../stores/shell";
-import { useOffice } from "../store";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -60,13 +59,15 @@ describe("eval thread separation", () => {
     const nav = container.querySelector('[aria-label="Conversation list"]');
     expect(nav?.textContent).toContain("Why did ROAS decline?");
     // The eval thread must not appear as a regular date-grouped row.
-    const dateGroups = [...container.querySelectorAll(".thread-group-label")].filter(
-      (el) => el.tagName === "DIV",
-    );
-    expect(dateGroups.some((el) => el.textContent?.includes("GOLDEN"))).toBe(false);
-    const evalGroup = container.querySelector(".thread-eval-group");
-    expect(evalGroup?.textContent).toContain("Evaluation runs (1)");
-    expect(evalGroup?.textContent).toContain("GOLDEN Q18");
+    const rows = [...container.querySelectorAll('[data-slot="thread-row"]')];
+    const regular = rows.filter((row) => !row.closest('[data-slot="collapsible-content"]'));
+    expect(regular.some((row) => row.textContent?.includes("GOLDEN"))).toBe(false);
+    // Evaluation runs sit in their own collapsed group, opened on demand.
+    const trigger = [...container.querySelectorAll("button")].find((b) => b.textContent?.includes("Evaluation runs (1)")) as HTMLButtonElement;
+    expect(trigger).toBeTruthy();
+    act(() => trigger.click());
+    const evalRows = [...container.querySelectorAll('[data-slot="collapsible-content"] [data-slot="thread-row"]')];
+    expect(evalRows.map((row) => row.textContent).join(" ")).toContain("GOLDEN Q18");
   });
 });
 
@@ -105,11 +106,27 @@ describe("compact thread context", () => {
     useConversationStore.setState({
       selectedThreadId: "t1",
       threads: [thread("t1", "Why did ROAS decline?")],
+      messages: {
+        t1: [{
+          id: "m1", thread_id: "t1", workspace_id: "w", user_id: "u", role: "USER",
+          parts: [{ type: "TEXT", content: "Why did ROAS decline?" }],
+          run_id: null, parent_message_id: null, created_at: "now",
+        }],
+      },
+    });
+    act(() => root.render(<App />));
+    const context = container.querySelector('[data-slot="thread-context"]');
+    expect(context?.textContent).toContain("Why did ROAS decline?");
+    expect(context?.querySelector("h2")).toBeNull();
+  });
+
+  it("hides the context line on empty threads", () => {
+    useConversationStore.setState({
+      selectedThreadId: "t1",
+      threads: [thread("t1", null)],
       messages: { t1: [] },
     });
     act(() => root.render(<App />));
-    const context = container.querySelector(".thread-context");
-    expect(context?.textContent).toContain("Why did ROAS decline?");
-    expect(context?.querySelector("h2")).toBeNull();
+    expect(container.querySelector('[data-slot="thread-context"]')).toBeNull();
   });
 });

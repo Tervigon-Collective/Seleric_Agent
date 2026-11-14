@@ -42,7 +42,7 @@ Seleric_Agent/
 1. Read `docs/00_PROJECT_CHARTER.md`.
 2. Read `docs/CURRENT_ARCHITECTURE.md`.
 3. Configure your MCP endpoint in `.env`.
-4. Define canonical metrics in `config/metric_registry.yaml`.
+4. Metrics are defined once, in the Agent Core catalogue (`catalogue_v3`); the agent reads them from the MCP. Agent policy (`direction_bad`, owning domain) lives in `catalogue_v3_src/agent_policy.yaml` there.
 5. Forecasting (UI + Chronos): `docs/features/forecasting/README.md`.
 
 ## Non-goals

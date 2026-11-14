@@ -1,0 +1,57 @@
+Domain,Check,Window,Axis,Left,Left value,Right,Right value,|Delta|,Status,Note
+Ads,Ad spend: delivery vs P&L: same quantity in two domains,yesterday,-,ad_spend,43108.049403000005,order_pnl_ad_spend,43108.049403000005,0.0,PASS,cross-view identity
+Ads,Ad spend: delivery vs P&L: same quantity in two domains,last7,-,ad_spend,300852.75269500003,order_pnl_ad_spend,300852.752695,5.820766091346741e-11,PASS,cross-view identity
+Ads,Ad spend: delivery vs P&L: same quantity in two domains,last30,-,ad_spend,1425998.267833,order_pnl_ad_spend,1425998.267833,0.0,PASS,cross-view identity
+Ads,Ad spend: delivery vs P&L: same quantity in two domains,today,-,ad_spend,18580.005475,order_pnl_ad_spend,18580.005475,0.0,PASS,cross-view identity
+Ads,Ad spend: delivery vs product-allocated: same quantity in two domains,yesterday,-,ad_spend,43108.049403000005,product_ad_spend,43108.049403000005,0.0,PASS,cross-view identity
+Ads,Ad spend: delivery vs product-allocated: same quantity in two domains,last7,-,ad_spend,300852.75269500003,product_ad_spend,300852.75269500003,0.0,PASS,cross-view identity
+Ads,Ad spend: delivery vs product-allocated: same quantity in two domains,last30,-,ad_spend,1425998.267833,product_ad_spend,1425998.2678330003,2.3283064365386963e-10,PASS,cross-view identity
+Ads,Ad spend: delivery vs product-allocated: same quantity in two domains,today,-,ad_spend,18580.005475,product_ad_spend,18580.005474999998,3.637978807091713e-12,PASS,cross-view identity
+Ads,ad_spend: Σ by account_id = total,today,-,total ad_spend,19406.556272,Σ over 3 account_id groups,19406.556271999998,3.637978807091713e-12,PASS,
+Ads,ad_spend: Σ by account_id = total,yesterday,-,total ad_spend,43109.445595000005,Σ over 3 account_id groups,43109.44559500001,7.275957614183426e-12,PASS,
+Ads,ad_spend: Σ by account_id = total,last7,-,total ad_spend,300854.148887,Σ over 3 account_id groups,300854.148887,0.0,PASS,
+Ads,ad_spend: Σ by account_id = total,last30,-,total ad_spend,1425999.664025,Σ over 3 account_id groups,1425999.6640249991,9.313225746154785e-10,PASS,
+Ads,ad_spend: Σ by ad_key = total,today,-,total ad_spend,19406.556272,Σ over 40 ad_key groups,19406.556272,0.0,PASS,
+Ads,ad_spend: Σ by ad_key = total,yesterday,-,total ad_spend,43109.445595000005,Σ over 78 ad_key groups,43109.445595000005,0.0,PASS,
+Ads,ad_spend: Σ by ad_key = total,last7,-,total ad_spend,300854.148887,Σ over 202 ad_key groups,300854.148887,0.0,PASS,
+Ads,ad_spend: Σ by ad_key = total,last30,-,total ad_spend,1425999.664025,Σ over 370 ad_key groups,1425999.664025,0.0,PASS,
+Ads,ad_spend: Σ by ad_platform = total,today,-,total ad_spend,19406.556272,Σ over 2 ad_platform groups,19406.556271999998,3.637978807091713e-12,PASS,
+Ads,ad_spend: Σ by ad_platform = total,yesterday,-,total ad_spend,43109.445595000005,Σ over 2 ad_platform groups,43109.44559500001,7.275957614183426e-12,PASS,
+Ads,ad_spend: Σ by ad_platform = total,last7,-,total ad_spend,300854.148887,Σ over 2 ad_platform groups,300854.148887,0.0,PASS,
+Ads,ad_spend: Σ by ad_platform = total,last30,-,total ad_spend,1425999.664025,Σ over 2 ad_platform groups,1425999.6640249991,9.313225746154785e-10,PASS,
+Ads,ad_spend: Σ by adset_id = total,today,-,total ad_spend,19406.556272,Σ over 39 adset_id groups,19406.556272,0.0,PASS,"null/unset share of value = 1,893.33"
+Ads,ad_spend: Σ by adset_id = total,yesterday,-,total ad_spend,43109.445595000005,Σ over 73 adset_id groups,43109.445595000005,0.0,PASS,"null/unset share of value = 4,924.44"
+Ads,ad_spend: Σ by adset_id = total,last7,-,total ad_spend,300854.148887,Σ over 186 adset_id groups,300854.148887,0.0,PASS,"null/unset share of value = 33,345.60"
+Ads,ad_spend: Σ by adset_id = total,last30,-,total ad_spend,1425999.664025,Σ over 331 adset_id groups,1425999.664025,0.0,PASS,"null/unset share of value = 117,507.19"
+Ads,ad_spend: Σ by campaign_key = total,today,-,total ad_spend,19406.556272,Σ over 41 campaign_key groups,19406.556272,0.0,PASS,
+Ads,ad_spend: Σ by campaign_key = total,yesterday,-,total ad_spend,43109.445595000005,Σ over 75 campaign_key groups,43109.445595,7.275957614183426e-12,PASS,
+Ads,ad_spend: Σ by campaign_key = total,last7,-,total ad_spend,300854.148887,Σ over 185 campaign_key groups,300854.148887,0.0,PASS,
+Ads,ad_spend: Σ by campaign_key = total,last30,-,total ad_spend,1425999.664025,Σ over 319 campaign_key groups,1425999.664025,0.0,PASS,
+Ads,clicks: Σ by ad_key = total,today,-,total clicks,755.0,Σ over 40 ad_key groups,755.0,0.0,PASS,
+Ads,clicks: Σ by ad_key = total,yesterday,-,total clicks,2025.0,Σ over 78 ad_key groups,2025.0,0.0,PASS,
+Ads,clicks: Σ by ad_key = total,last7,-,total clicks,18449.0,Σ over 202 ad_key groups,18449.0,0.0,PASS,
+Ads,clicks: Σ by ad_key = total,last30,-,total clicks,105497.0,Σ over 370 ad_key groups,105497.0,0.0,PASS,
+Ads,clicks: Σ by ad_platform = total,today,-,total clicks,755.0,Σ over 2 ad_platform groups,755.0,0.0,PASS,
+Ads,clicks: Σ by ad_platform = total,yesterday,-,total clicks,2025.0,Σ over 2 ad_platform groups,2025.0,0.0,PASS,
+Ads,clicks: Σ by ad_platform = total,last7,-,total clicks,18449.0,Σ over 2 ad_platform groups,18449.0,0.0,PASS,
+Ads,clicks: Σ by ad_platform = total,last30,-,total clicks,105497.0,Σ over 2 ad_platform groups,105497.0,0.0,PASS,
+Ads,clicks: Σ by campaign_key = total,today,-,total clicks,755.0,Σ over 41 campaign_key groups,755.0,0.0,PASS,
+Ads,clicks: Σ by campaign_key = total,yesterday,-,total clicks,2025.0,Σ over 75 campaign_key groups,2025.0,0.0,PASS,
+Ads,clicks: Σ by campaign_key = total,last7,-,total clicks,18449.0,Σ over 185 campaign_key groups,18449.0,0.0,PASS,
+Ads,clicks: Σ by campaign_key = total,last30,-,total clicks,105497.0,Σ over 319 campaign_key groups,105497.0,0.0,PASS,
+Ads,impressions: Σ by ad_key = total,today,-,total impressions,37622.0,Σ over 40 ad_key groups,37622.0,0.0,PASS,
+Ads,impressions: Σ by ad_key = total,yesterday,-,total impressions,101919.0,Σ over 78 ad_key groups,101919.0,0.0,PASS,
+Ads,impressions: Σ by ad_key = total,last7,-,total impressions,868259.0,Σ over 202 ad_key groups,868259.0,0.0,PASS,
+Ads,impressions: Σ by ad_key = total,last30,-,total impressions,4757263.0,Σ over 370 ad_key groups,4757263.0,0.0,PASS,
+Ads,impressions: Σ by ad_platform = total,today,-,total impressions,37622.0,Σ over 2 ad_platform groups,37622.0,0.0,PASS,
+Ads,impressions: Σ by ad_platform = total,yesterday,-,total impressions,101919.0,Σ over 2 ad_platform groups,101919.0,0.0,PASS,
+Ads,impressions: Σ by ad_platform = total,last7,-,total impressions,868259.0,Σ over 2 ad_platform groups,868259.0,0.0,PASS,
+Ads,impressions: Σ by ad_platform = total,last30,-,total impressions,4757263.0,Σ over 2 ad_platform groups,4757263.0,0.0,PASS,
+Ads,impressions: Σ by adset_id = total,today,-,total impressions,37622.0,Σ over 39 adset_id groups,37622.0,0.0,PASS,"null/unset share of value = 8,265.00"
+Ads,impressions: Σ by adset_id = total,yesterday,-,total impressions,101919.0,Σ over 73 adset_id groups,101919.0,0.0,PASS,"null/unset share of value = 24,382.00"
+Ads,impressions: Σ by adset_id = total,last7,-,total impressions,868259.0,Σ over 186 adset_id groups,868259.0,0.0,PASS,"null/unset share of value = 169,481.00"
+Ads,impressions: Σ by adset_id = total,last30,-,total impressions,4757263.0,Σ over 331 adset_id groups,4757263.0,0.0,PASS,"null/unset share of value = 616,980.00"
+Ads,impressions: Σ by campaign_key = total,today,-,total impressions,37622.0,Σ over 41 campaign_key groups,37622.0,0.0,PASS,
+Ads,impressions: Σ by campaign_key = total,yesterday,-,total impressions,101919.0,Σ over 75 campaign_key groups,101919.0,0.0,PASS,
+Ads,impressions: Σ by campaign_key = total,last7,-,total impressions,868259.0,Σ over 185 campaign_key groups,868259.0,0.0,PASS,
+Ads,impressions: Σ by campaign_key = total,last30,-,total impressions,4757263.0,Σ over 319 campaign_key groups,4757263.0,0.0,PASS,

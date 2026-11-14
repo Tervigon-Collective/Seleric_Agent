@@ -1,0 +1,264 @@
+ClickHouse object,Column used,Latest value,Rows,
+gold.mart_geo_whitespace,report_date,1970-01-01,0,
+gold.dim_sku_cost_aliases,_loaded_at,1970-01-01 00:00:00,0,
+gold.int_payment_reconciliation__dbt_backup,_loaded_at,1970-01-01 00:00:00,0,
+gold.raw_th_sku_seasonal_map,_loaded_at,2026-06-23 10:00:26,213,
+gold.mart_geo_product_opportunity,report_date,2026-06-24,595,
+gold.v_geo_discovery,report_date,2026-06-24,,
+gold.v_geo_region_rollup,report_date,2026-06-24,,
+gold.mart_city_weather_sales_lag,order_date,2026-07-02,,
+gold.fct_product_variant_cost_history__bak_20261001,_loaded_at,2026-10-01 02:03:35.835832,13855,
+gold.dim_neurohack,_loaded_at,2026-10-05 08:21:16.898514,550,
+serve.mart_period_profit_closed,refreshed_at,2026-10-16 11:25:32,,
+serve.mart_pnl_event_closed,refreshed_at,2026-10-16 11:25:32,,
+gold.fct_amazon_return_items,order_date,2026-10-18 00:00:00,1231,
+serve.purchase_request_items,order_date,2026-10-22,,
+gold.dim_vendor,_loaded_at,2026-10-23 11:23:59.721643,110,
+serve.quality_checks,inspection_date,2026-10-24,,
+gold.dim_ad_neurohack_map,_loaded_at,2026-10-24 06:08:51.414505,4242,
+gold.fct_quality_checks,_loaded_at,2026-10-24 07:23:19.032202,610,
+gold.fct_web_events__old_20261024,_loaded_at,2026-10-24 12:14:07.855694,3157307,
+gold.fct_product_variant_cost_history,_loaded_at,2026-10-24 22:15:59.577397,12313,
+serve.commerce_order_events,order_date,2026-10-25,,
+serve.refund_events,order_date,2026-10-25,,
+serve.return_lifecycle,order_date,2026-10-25,,
+serve.google_ads_status_history,changed_at,2026-10-25 18:31:37.041526,,
+gold.fct_google_ads_status_history,_loaded_at,2026-10-25 18:39:01.746544,342,
+gold.dim_ad,_loaded_at,2026-10-25 18:41:43.952173,3554,
+gold.fct_amazon_ads_ad_groups_daily,report_date,2026-10-26,2081,
+gold.fct_amazon_ads_ad_order_attribution,report_date,2026-10-26,594,
+gold.fct_amazon_ads_ads_daily,report_date,2026-10-26,12455,
+gold.fct_amazon_ads_campaigns_daily,report_date,2026-10-26,1819,
+gold.fct_order_attribution_credit,order_date,2026-10-26,30529,
+gold.mart_city_campaign_attributed,order_date,2026-10-26,,
+gold.mart_city_product_sales,order_date,2026-10-26,,
+serve.ad_delivery_daily,report_date,2026-10-26,,
+serve.ad_delivery_hourly,report_date,2026-10-26,,
+serve.attribution_paths,order_date,2026-10-26,,
+serve.channel_attribution_daily,report_date,2026-10-26,,
+serve.commerce_orders,order_date,2026-10-26,,
+serve.commerce_performance_daily,report_date,2026-10-26,,
+serve.fct_ad_delivery,report_date,2026-10-26,,
+serve.fct_ad_delivery_hourly,report_date,2026-10-26,,
+serve.fct_order,order_date,2026-10-26,,
+serve.fct_order_commerce,order_date,2026-10-26,,
+serve.fct_order_line,order_date,2026-10-26,,
+serve.fct_paid_media_daily,report_date,2026-10-26,,
+serve.fct_paid_media_hourly,report_date,2026-10-26,,
+serve.fct_payment,transaction_date,2026-10-26,,
+serve.fct_web_event,event_date,2026-10-26,,
+serve.fct_web_session,session_date,2026-10-26,,
+serve.funnel_daily,report_date,2026-10-26,,
+serve.funnel_orders,order_date,2026-10-26,,
+serve.google_ads_daily,report_date,2026-10-26,,
+serve.google_ads_hourly,report_date,2026-10-26,,
+serve.inventory_item_daily,movement_date,2026-10-26,,
+serve.inventory_movements,movement_date,2026-10-26,,
+serve.meta_ads_breakdown_daily,report_date,2026-10-26,,
+serve.meta_ads_daily,report_date,2026-10-26,,
+serve.meta_ads_hourly,report_date,2026-10-26,,
+serve.order_attribution,order_date,2026-10-26,,
+serve.payments,transaction_date,2026-10-26,,
+serve.platform_attribution_commerce,report_date,2026-10-26,,
+serve.product_performance,order_date,2026-10-26,,
+serve.purchase_sequence,order_date,2026-10-26,,
+serve.session_funnel,session_date,2026-10-26,,
+serve.touchpoints,order_date,2026-10-26,,
+serve.web_events,event_date,2026-10-26,,
+serve.web_events_daily,report_date,2026-10-26,,
+gold.fct_amazon_daily_pnl,report_date,2026-10-26 00:00:00,308,
+gold.fct_amazon_returns_daily,report_date,2026-10-26 00:00:00,120,
+serve.ad_changes,changed_at,2026-10-26 04:02:49.552848,,
+serve.meta_ads_status_history,changed_at,2026-10-26 04:02:49.552848,,
+gold.fct_meta_ads_status_history,_loaded_at,2026-10-26 04:05:37.494457,10334,
+serve.inventory_sync_errors,created_at,2026-10-26 05:45:04.874000,,
+gold.fct_refunds,_loaded_at,2026-10-26 06:30:13.683222,3767,
+gold.fct_refund_line_items,_loaded_at,2026-10-26 06:30:25.820336,4265,
+gold.fct_web_events,_loaded_at,2026-10-26 06:35:15.243750,1623388,
+gold.fct_inventory_movements,_loaded_at,2026-10-26 06:36:04.475905,6800,
+gold.fct_inventory_receipt_layers,_loaded_at,2026-10-26 06:36:06.871761,608,
+gold.fct_inventory_item_daily,_loaded_at,2026-10-26 06:36:09.528037,3630,
+gold.dim_inventory_stock_current,_loaded_at,2026-10-26 06:36:10.936024,1065,
+gold.dim_adset,_loaded_at,2026-10-26 06:36:57.224233,2135,
+gold.dim_campaign,_loaded_at,2026-10-26 06:36:58.273552,1307,
+gold.fct_session_funnel_sync_tmp_635022,_loaded_at,2026-10-26 06:38:45.373468,184000,
+gold.mart_meta_ad_breakdown_daily,_loaded_at,2026-10-26 06:40:07.616423,348846,
+serve.purchase_requests,updated_at,2026-10-26 06:58:46.115000,,
+gold.mart_web_events_daily,_loaded_at,2026-10-26 07:07:53.621917,9000,
+gold.fct_procurement_sampling,_loaded_at,2026-10-26 07:08:40.428659,501,
+gold.fct_session_funnel,_loaded_at,2026-10-26 07:11:05.468999,327653,
+gold.fct_ad_channel_pnl_daily,_loaded_at,2026-10-26 07:11:14.687459,35308,
+gold.mart_funnel_daily,_loaded_at,2026-10-26 07:11:19.489574,3142,
+gold.mart_landing_page_daily,_loaded_at,2026-10-26 07:11:22.445958,31798,
+gold.dim_customers,_loaded_at,2026-10-26 07:12:04.403142,44160,
+gold.mart_meta_ad_daily_attribution,_loaded_at,2026-10-26 07:12:53.790469,4019,
+gold.mart_meta_ad_daily_performance,_loaded_at,2026-10-26 07:12:55.406044,24460,
+gold.mart_ad_funnel_daily,_loaded_at,2026-10-26 07:12:57.464249,32175,
+gold.mart_meta_ad_daily_combined,_loaded_at,2026-10-26 07:13:07.845681,24663,
+gold.mart_meta_ad_neurotag_daily,_loaded_at,2026-10-26 07:13:14.022943,39971,
+gold.dim_shopify_inventory_items,_loaded_at,2026-10-26 07:21:32.944910,1279,
+gold.int_payment_reconciliation,_loaded_at,2026-10-26 07:21:33.835870,24551,
+gold.fct_product_variant_cost,_loaded_at,2026-10-26 07:21:42.404510,1523,
+gold.fct_shopify_product_cost_history,_loaded_at,2026-10-26 07:21:44.780000,8992,
+gold.fct_orders,_loaded_at,2026-10-26 07:21:57.374952,24552,
+gold.fct_payments,_loaded_at,2026-10-26 07:22:05.782385,34432,
+gold.fct_order_items,_loaded_at,2026-10-26 07:22:15.740912,30903,
+gold.int_finance_order_lines,_loaded_at,2026-10-26 07:22:15.740912,30903,
+gold.dim_creative,_loaded_at,2026-10-26 07:23:48.824752,12390,
+gold.fct_meta_ads_breakdown_daily,_loaded_at,2026-10-26 07:23:51.387140,348846,
+gold.fct_meta_ads_daily,_loaded_at,2026-10-26 07:23:54.684009,25159,
+gold.fct_meta_ads_hourly,_loaded_at,2026-10-26 07:23:57.121806,159430,
+gold.fct_google_ads_daily,_loaded_at,2026-10-26 07:24:43.646011,32035,
+gold.fct_google_campaigns_hourly,_loaded_at,2026-10-26 07:24:46.704699,256785,
+gold.fct_inventory_sync_errors,_loaded_at,2026-10-26 07:26:35.218008,2722,
+gold.fct_purchase_request_items,_loaded_at,2026-10-26 07:26:37.289795,649,
+gold.fct_purchase_requests,_loaded_at,2026-10-26 07:26:40.235044,165,
+gold.int_finance_daily_rollups,_loaded_at,2026-10-26 07:27:33.248057,707,
+gold.fct_daily_pnl,_loaded_at,2026-10-26 07:27:50.677643,1195,
+gold.fct_finance_waterfall_daily,_loaded_at,2026-10-26 07:27:56.709267,1195,
+gold.fct_order_attribution,_loaded_at,2026-10-26 07:29:17.025007,24552,
+serve.dim_product_variant,refreshed_at,2026-10-26 07:30:00,,
+serve.dim_traffic_source,refreshed_at,2026-10-26 07:30:00,,
+serve.traffic_unmapped,refreshed_at,2026-10-26 07:30:00,,
+serve.bridge_order_attribution,refreshed_at,2026-10-26 07:30:22,,
+serve.ledger_order_component,refreshed_at,2026-10-26 07:30:23,,
+serve.mart_period_profit,refreshed_at,2026-10-26 07:30:23,,
+serve.mart_pnl_event,refreshed_at,2026-10-26 07:30:23,,
+serve.mart_product_ad_allocated,refreshed_at,2026-10-26 07:30:23,,
+serve.mart_product_ad_profit,refreshed_at,2026-10-26 07:30:23,,
+serve.mart_product_profit,refreshed_at,2026-10-26 07:30:23,,
+serve.mart_profit,refreshed_at,2026-10-26 07:30:23,,
+gold.fct_product_variant_cost__stage,_loaded_at,"ERR Received ClickHouse exception, code: 60, server response: Code: 60. DB::Exceptio",1541,
+serve.ad_channel_pnl_daily,report_date,"ERR Received ClickHouse exception, code: 60, server response: Code: 60. DB::Exceptio",,
+serve.canonical_pnl,report_date,"ERR Received ClickHouse exception, code: 60, server response: Code: 60. DB::Exceptio",,
+serve.channel_pnl,order_date,"ERR Received ClickHouse exception, code: 60, server response: Code: 60. DB::Exceptio",,
+serve.finance_waterfall_daily,report_date,"ERR Received ClickHouse exception, code: 60, server response: Code: 60. DB::Exceptio",,
+serve.ltv_cac_daily,report_date,"ERR Received ClickHouse exception, code: 60, server response: Code: 60. DB::Exceptio",,
+serve.meta_ad_attribution_daily,report_date,"ERR Received ClickHouse exception, code: 60, server response: Code: 60. DB::Exceptio",,
+serve.order_pnl_daily,refreshed_at,"ERR Received ClickHouse exception, code: 60, server response: Code: 60. DB::Exceptio",,
+serve.orders_all_channels,report_date,"ERR Received ClickHouse exception, code: 60, server response: Code: 60. DB::Exceptio",,
+serve.pnl_daily,refreshed_at,"ERR Received ClickHouse exception, code: 60, server response: Code: 60. DB::Exceptio",,
+serve.product_ad_line,order_date,"ERR Received ClickHouse exception, code: 60, server response: Code: 60. DB::Exceptio",,
+serve.product_pnl,order_date,"ERR Received ClickHouse exception, code: 60, server response: Code: 60. DB::Exceptio",,
+serve.returns_cancels_all_channels,report_date,"ERR Received ClickHouse exception, code: 60, server response: Code: 60. DB::Exceptio",,
+serve.sales_all_channels,report_date,"ERR Received ClickHouse exception, code: 60, server response: Code: 60. DB::Exceptio",,
+gold._ch_sync_snapshot_state,,,81,
+gold.dim_adset_geo,,,1580,
+gold.dim_amazon_ads_campaigns,,,473,
+gold.dim_amazon_charge_type,,,40,
+gold.dim_amazon_listings,,,765,
+gold.dim_amazon_settlement_charge_type,,,25,
+gold.dim_th_sku_seasonal_map,,,,
+gold.fct_amazon_order_items,,,4212,
+gold.fct_amazon_sp_finance_events,,,35824,
+gold.fct_amazon_sp_finance_items,,,4241,
+gold.fct_amazon_sp_order_pnl,,,3919,
+gold.fct_amazon_sp_orders,,,3919,
+gold.fct_amazon_sp_settlement_lines,,,12330,
+gold.fct_amazon_sp_settlement_order_pnl,,,986,
+gold.fct_amazon_sp_settlements,,,37,
+gold.fct_attribution_paths,,,26476,
+gold.fct_city_weather_day,,,392,
+gold.fct_order_cogs_scd2,,,,
+gold.fct_order_price_scd2,,,,
+gold.fct_touchpoints,,,10853,
+gold.int_amazon_return_amount_reconciliation,,,1565,
+gold.int_amazon_return_label_reconciliation,,,1231,
+gold.int_amazon_return_reconciliation,,,1231,
+gold.int_amazon_sp_settlement_reconciliation,,,83,
+serve.campaign_products,,,,
+serve.cfg_traffic_platforms,,,,
+serve.cfg_traffic_source_rules,,,,
+serve.customer_data,,,,
+serve.customer_ltv,,,,
+serve.dim_ad,,,,
+serve.dim_adset,,,,
+serve.dim_brand,,,,
+serve.dim_campaign,,,,
+serve.dim_funnel_channel,,,,
+serve.fct_customer,,,,
+serve.inventory_receipt_layers,,,,
+serve.inventory_stock_current,,,,
+serve.procurement_sampling,,,,
+serve.product_hierarchy_conflicts,,,,
+serve.traffic_hierarchy_conflicts,,,,
+serve.vendors,,,,
+,,,,
+,,,,
+Load-time drift CH gold vs Iceberg gold (max _loaded_at; INFO only - content parity is on Sync tab),,,,
+Table,Column,ClickHouse max,Iceberg max,Lag (minutes)
+dim_amazon_charge_type,_gold_created_at,2026-10-01 03:26:38.628955,2026-10-26 07:31:59.693479,36245.3510754
+dim_amazon_settlement_charge_type,_gold_created_at,2026-10-01 03:26:43.061079,2026-10-26 07:32:03.526606,36245.341092116665
+dim_neurohack,_loaded_at,2026-10-05 08:21:16.898514,2026-10-26 07:27:32.677726,30186.262986866666
+dim_vendor,_loaded_at,2026-10-23 11:23:59.721643,2026-10-26 07:26:33.818896,4082.56828755
+dim_ad_neurohack_map,_loaded_at,2026-10-24 06:08:51.414505,2026-10-26 07:27:55.950949,2959.0756074
+fct_quality_checks,_loaded_at,2026-10-24 07:23:19.032202,2026-10-26 07:26:38.158439,2883.3187706166664
+fct_product_variant_cost_history,_loaded_at,2026-10-24 22:15:59.577397,2026-10-26 07:21:43.525630,1985.73247055
+dim_ad,_loaded_at,2026-10-25 18:41:43.952173,2026-10-26 07:27:45.214910,766.0210456166666
+fct_google_ads_status_history,_loaded_at,2026-10-25 18:39:01.746544,2026-10-26 07:24:45.179629,765.7238847499999
+dim_amazon_ads_campaigns,_gold_created_at,2026-10-25 18:49:07.814592,2026-10-26 07:26:51.671498,757.7309484333333
+fct_amazon_sp_settlement_order_pnl,_gold_created_at,2026-10-25 22:38:53.169064,2026-10-26 07:32:16.722669,533.3925600833334
+fct_meta_ads_status_history,_loaded_at,2026-10-26 04:05:37.494457,2026-10-26 07:23:59.013925,198.3586578
+fct_amazon_return_items,_gold_created_at,2026-10-26 05:00:23.798688,2026-10-26 07:32:05.838331,151.70066071666668
+int_amazon_return_amount_reconciliation,_gold_created_at,2026-10-26 05:00:44.684389,2026-10-26 07:32:18.637334,151.56588241666668
+fct_amazon_order_items,_gold_created_at,2026-10-26 06:17:55.266000,2026-10-26 07:32:04.145000,74.14798333333333
+fct_amazon_ads_campaigns_daily,_gold_created_at,2026-10-26 06:18:08.663478,2026-10-26 07:32:15.232189,74.10947851666667
+fct_amazon_ads_ad_groups_daily,_gold_created_at,2026-10-26 06:32:12.650663,2026-10-26 07:27:03.759055,54.85180653333334
+fct_amazon_ads_ad_order_attribution,_gold_created_at,2026-10-26 06:32:14.508577,2026-10-26 07:27:05.143936,54.843922649999996
+fct_amazon_ads_ads_daily,_gold_created_at,2026-10-26 06:32:19.807093,2026-10-26 07:27:09.920919,54.83523043333333
+fct_amazon_sp_settlements,_gold_created_at,2026-10-26 06:37:39.341372,2026-10-26 07:32:17.934602,54.6432205
+fct_refunds,_loaded_at,2026-10-26 06:30:13.683222,2026-10-26 07:22:13.817801,52.00224298333333
+fct_refund_line_items,_loaded_at,2026-10-26 06:30:25.820336,2026-10-26 07:22:25.825561,52.000087083333334
+dim_campaign,_loaded_at,2026-10-26 06:36:58.273552,2026-10-26 07:27:47.507960,50.820573466666666
+dim_adset,_loaded_at,2026-10-26 06:36:57.224233,2026-10-26 07:27:46.293026,50.817813216666664
+fct_web_events,_loaded_at,2026-10-26 06:35:15.243750,2026-10-26 07:25:49.287809,50.56740098333333
+fct_inventory_movements,_loaded_at,2026-10-26 06:36:04.475905,2026-10-26 07:26:34.407811,50.498865099999996
+fct_inventory_receipt_layers,_loaded_at,2026-10-26 06:36:06.871761,2026-10-26 07:26:36.484135,50.49353956666666
+fct_inventory_item_daily,_loaded_at,2026-10-26 06:36:09.528037,2026-10-26 07:26:38.961843,50.490563433333335
+dim_inventory_stock_current,_loaded_at,2026-10-26 06:36:10.936024,2026-10-26 07:26:39.464678,50.47547756666667
+fct_touchpoints,_gold_created_at,2026-10-26 07:11:11.984478,2026-10-26 07:29:29.146244,18.286029433333333
+fct_attribution_paths,_gold_created_at,2026-10-26 07:11:29.403937,2026-10-26 07:29:41.020891,18.1936159
+fct_order_attribution_credit,_gold_created_at,2026-10-26 07:11:42.667776,2026-10-26 07:29:49.036954,18.106152966666667
+fct_procurement_sampling,_loaded_at,2026-10-26 07:08:40.428659,2026-10-26 07:26:35.752056,17.92205661666667
+dim_amazon_listings,_gold_created_at,2026-10-26 07:32:00.205715,2026-10-26 07:32:00.205715,0.0
+dim_creative,_loaded_at,2026-10-26 07:23:48.824752,2026-10-26 07:23:48.824752,0.0
+dim_customers,_loaded_at,2026-10-26 07:30:07.036504,2026-10-26 07:30:07.036504,0.0
+dim_shopify_inventory_items,_loaded_at,2026-10-26 07:21:32.944910,2026-10-26 07:21:32.944910,0.0
+dim_sku_cost_aliases,_loaded_at,1970-01-01 00:00:00,None,
+fct_ad_channel_pnl_daily,_loaded_at,2026-10-26 07:29:32.084301,2026-10-26 07:29:32.084301,0.0
+fct_amazon_daily_pnl,_gold_created_at,2026-10-26 07:32:31.467000,2026-10-26 07:32:31.467000,0.0
+fct_amazon_returns_daily,_gold_created_at,2026-10-26 07:32:30.362564,2026-10-26 07:32:30.362564,0.0
+fct_amazon_sp_finance_events,_gold_created_at,2026-10-26 07:32:06.673002,2026-10-26 07:32:06.673002,0.0
+fct_amazon_sp_finance_items,_gold_created_at,2026-10-26 07:32:12.054835,2026-10-26 07:32:12.054835,0.0
+fct_amazon_sp_order_pnl,_gold_created_at,2026-10-26 07:32:21.183515,2026-10-26 07:32:21.183515,0.0
+fct_amazon_sp_orders,_gold_created_at,2026-10-26 07:32:07.907000,2026-10-26 07:32:07.907000,0.0
+fct_amazon_sp_settlement_lines,_gold_created_at,2026-10-26 06:37:31.156529,2026-10-26 06:37:31.156529,0.0
+fct_daily_pnl,_loaded_at,2026-10-26 07:27:50.677643,2026-10-26 07:27:50.677643,0.0
+fct_finance_waterfall_daily,_loaded_at,2026-10-26 07:27:56.709267,2026-10-26 07:27:56.709267,0.0
+fct_google_ads_daily,_loaded_at,2026-10-26 07:24:43.646011,2026-10-26 07:24:43.646011,0.0
+fct_google_campaigns_hourly,_loaded_at,2026-10-26 07:24:46.704699,2026-10-26 07:24:46.704699,0.0
+fct_inventory_sync_errors,_loaded_at,2026-10-26 07:26:35.218008,2026-10-26 07:26:35.218008,0.0
+fct_meta_ads_breakdown_daily,_loaded_at,2026-10-26 07:23:51.387140,2026-10-26 07:23:51.387140,0.0
+fct_meta_ads_daily,_loaded_at,2026-10-26 07:23:54.684009,2026-10-26 07:23:54.684009,0.0
+fct_meta_ads_hourly,_loaded_at,2026-10-26 07:23:57.121806,2026-10-26 07:23:57.121806,0.0
+fct_order_attribution,_loaded_at,2026-10-26 07:29:17.025007,2026-10-26 07:29:17.025007,0.0
+fct_order_items,_loaded_at,2026-10-26 07:22:15.740912,2026-10-26 07:22:15.740912,0.0
+fct_orders,_loaded_at,2026-10-26 07:21:57.374952,2026-10-26 07:21:57.374952,0.0
+fct_payments,_loaded_at,2026-10-26 07:22:05.782385,2026-10-26 07:22:05.782385,0.0
+fct_product_variant_cost,_loaded_at,2026-10-26 07:21:42.404510,2026-10-26 07:21:42.404510,0.0
+fct_purchase_request_items,_loaded_at,2026-10-26 07:26:37.289795,2026-10-26 07:26:37.289795,0.0
+fct_purchase_requests,_loaded_at,2026-10-26 07:26:40.235044,2026-10-26 07:26:40.235044,0.0
+fct_session_funnel,_loaded_at,2026-10-26 07:29:22.799333,2026-10-26 07:29:22.799333,0.0
+fct_shopify_product_cost_history,_loaded_at,2026-10-26 07:21:44.780000,2026-10-26 07:21:44.780000,0.0
+int_amazon_return_label_reconciliation,_gold_created_at,2026-10-26 07:32:14.271178,2026-10-26 07:32:14.271178,0.0
+int_amazon_return_reconciliation,_gold_created_at,2026-10-26 07:32:29.114556,2026-10-26 07:32:29.114556,0.0
+int_amazon_sp_settlement_reconciliation,_gold_created_at,2026-10-26 07:32:27.666507,2026-10-26 07:32:27.666507,0.0
+int_finance_daily_rollups,_loaded_at,2026-10-26 07:27:33.248057,2026-10-26 07:27:33.248057,0.0
+int_finance_order_lines,_loaded_at,2026-10-26 07:22:15.740912,2026-10-26 07:22:15.740912,0.0
+int_payment_reconciliation,_loaded_at,2026-10-26 07:21:33.835870,2026-10-26 07:21:33.835870,0.0
+mart_meta_ad_breakdown_daily,_loaded_at,2026-10-26 07:30:45.486390,2026-10-26 07:30:45.486390,0.0
+mart_meta_ad_daily_attribution,_loaded_at,2026-10-26 07:30:46.744429,2026-10-26 07:30:46.744429,0.0
+mart_meta_ad_daily_combined,_loaded_at,2026-10-26 07:30:56.538006,2026-10-26 07:30:56.538006,0.0
+mart_meta_ad_daily_performance,_loaded_at,2026-10-26 07:30:48.209441,2026-10-26 07:30:48.209441,0.0
+mart_meta_ad_neurotag_daily,_loaded_at,2026-10-26 07:30:59.987514,2026-10-26 07:30:59.987514,0.0
+mart_web_events_daily,_loaded_at,2026-10-26 07:25:54.198487,2026-10-26 07:25:54.198487,0.0

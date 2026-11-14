@@ -1,4 +1,7 @@
 import React from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 
 /**
  * Isolation boundaries: with no boundary, a single malformed event payload
@@ -23,12 +26,14 @@ export class PanelErrorBoundary extends React.Component<
   render(): React.ReactNode {
     if (this.state.failed) {
       return (
-        <div className="panel-crash" role="alert">
-          <p>This panel hit a problem and was contained — the rest of Seleric still works.</p>
-          <button type="button" onClick={() => window.location.reload()}>
-            Reload app
-          </button>
-        </div>
+        <Alert data-slot="panel-crash" variant="destructive" role="alert" className="m-3 w-auto">
+          <AlertDescription className="flex flex-col items-start gap-2">
+            <p className="m-0">This panel hit a problem and was contained — the rest of Seleric still works.</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => window.location.reload()}>
+              Reload app
+            </Button>
+          </AlertDescription>
+        </Alert>
       );
     }
     return this.props.children;
@@ -52,14 +57,16 @@ export class AppErrorBoundary extends React.Component<
   render(): React.ReactNode {
     if (this.state.failed) {
       return (
-        <div className="app-crash" role="alert">
-          <span className="brand-mark">S</span>
-          <h1>Something went wrong</h1>
-          <p>Seleric hit an unexpected problem. Reloading usually clears it.</p>
-          <button type="button" onClick={() => window.location.reload()}>
-            Reload Seleric
-          </button>
-        </div>
+        <Empty data-slot="app-crash" role="alert" className="h-screen">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">S</EmptyMedia>
+            <EmptyTitle>Something went wrong</EmptyTitle>
+            <EmptyDescription>Seleric hit an unexpected problem. Reloading usually clears it.</EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button type="button" onClick={() => window.location.reload()}>Reload Seleric</Button>
+          </EmptyContent>
+        </Empty>
       );
     }
     return this.props.children;

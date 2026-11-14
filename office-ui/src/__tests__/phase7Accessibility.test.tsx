@@ -33,13 +33,18 @@ describe("Phase 7 accessibility", () => {
     await act(async () => { root.render(<App />); });
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));
-      await Promise.resolve();
     });
-    const dialog = container.querySelector('[role="dialog"][aria-modal="true"]');
+    // The dialog is a lazy chunk rendered into a portal: poll with act() so React can flush its Suspense resolution.
+    await vi.waitFor(async () => {
+      await act(async () => {});
+      expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+    }, { timeout: 10000 });
+    const dialog = document.querySelector('[role="dialog"]');
     const input = dialog?.querySelector("input");
-    expect(dialog?.getAttribute("aria-labelledby")).toBe("search-title");
+    const labelledBy = dialog?.getAttribute("aria-labelledby") ?? "";
+    expect(document.getElementById(labelledBy)?.textContent).toBe("Search conversations");
     expect(document.activeElement).toBe(input);
-    expect(input?.getAttribute("aria-controls")).toBe("search-results");
+    expect(input?.getAttribute("aria-controls")).toBeTruthy();
   });
 
   it("exposes approval decisions as a labelled keyboard-operable group", async () => {

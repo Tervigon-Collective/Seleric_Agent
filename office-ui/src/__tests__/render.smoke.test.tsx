@@ -69,12 +69,18 @@ describe("render smoke", () => {
     "mounts the live office and runs its animation loop without throwing",
     { timeout: 30000 },
     async () => {
-      vi.useFakeTimers();
       act(() => root.render(<App />));
+      // The office workspace is a lazy chunk; poll with act() on real timers before faking them.
+      await vi.waitFor(async () => {
+        await act(async () => {});
+        expect(container.querySelector("canvas.office-canvas")).toBeTruthy();
+      }, { timeout: 10000 });
+      vi.useFakeTimers();
 
       // let providers connect + the rAF loop spin
       await act(async () => {
         await vi.advanceTimersByTimeAsync(2000);
+        await vi.dynamicImportSettled(); // the workspaces are code-split behind lazy()
       });
       vi.useRealTimers();
 

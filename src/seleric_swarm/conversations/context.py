@@ -50,6 +50,13 @@ _CANDIDATES: tuple[tuple[re.Pattern[str], MemoryType], ...] = (
         MemoryType.DECISION,
     ),
 )
+_LIVE_MEMORY = frozenset({MemoryStatus.ACTIVE, MemoryStatus.PENDING_CONSENT})
+_DEFAULT_PERMISSIONS = {
+    "read_messages": True,
+    "read_memory": True,
+    "read_artifacts": True,
+    "read_workspace_config": True,
+}
 
 
 def normalize_memory_content(value: str | dict[str, Any]) -> str:
@@ -85,6 +92,26 @@ def _text(message: Message) -> str:
         and isinstance(part.content, str)
         and part.content.strip()
     )
+
+
+def memory_identity(item: MemoryItem) -> tuple[Any, ...]:
+    """Canonical identity for the scope that owns the fact.
+
+    USER ignores thread/project; THREAD is per-thread; PROJECT/EPISODIC are per-project.
+    """
+    normalized = item.normalized_content or normalize_memory_content(item.content)
+    if item.scope is MemoryScope.USER:
+        return (item.scope, "", "", item.type, normalized)
+    if item.scope is MemoryScope.THREAD:
+        return (item.scope, "", item.thread_id or "", item.type, normalized)
+    return (item.scope, item.project_id or "", "", item.type, normalized)
+
+
+def validated_memory(item: MemoryItem, **updates: Any) -> MemoryItem:
+    """Apply updates and re-run MemoryItem validators (model_copy alone does not)."""
+    data = item.model_dump(mode="python")
+    data.update(updates)
+    return MemoryItem.model_validate(data)
 
 
 class ThreadSummaryService:
@@ -179,6 +206,9 @@ class MemoryCandidateExtractor:
 
 
 def memories_contradict(left: MemoryItem, right: MemoryItem) -> bool:
+    # Same identity dimensions (scope-aware) — not cross-scope.
+    if memory_identity(left)[:3] != memory_identity(right)[:3]:
+        return False
     left_key = str(left.structured_data.get("subject_key") or "")
     right_key = str(right.structured_data.get("subject_key") or "")
     if not left_key or not right_key:
@@ -215,29 +245,29 @@ class MemoryService:
             ).opted_out:
                 continue
             normalized = candidate.normalized_content or normalize_memory_content(candidate.content)
-            candidate = candidate.model_copy(update={"normalized_content": normalized})
+            candidate = validated_memory(candidate, normalized_content=normalized)
+            # USER memories are cross-thread: do not narrow the duplicate/conflict
+            # scan by the candidate's source thread_id.
+            list_thread = None if candidate.scope is MemoryScope.USER else candidate.thread_id
+            list_project = (
+                candidate.project_id
+                if candidate.scope in {MemoryScope.PROJECT, MemoryScope.EPISODIC}
+                else None
+            )
             existing = self.repositories.memories.list(
                 candidate.workspace_id,
                 candidate.owner_user_id,
-                project_id=candidate.project_id,
-                thread_id=candidate.thread_id,
+                project_id=list_project,
+                thread_id=list_thread,
                 include_inactive=True,
                 limit=500,
             )
+            candidate_id = memory_identity(candidate)
             duplicate = next(
                 (
                     item
                     for item in existing
-                    if item.normalized_content == normalized
-                    and item.type is candidate.type
-                    # Only LIVE memories can absorb an observation — a new fact
-                    # must never merge into a SUPERSEDED/ARCHIVED/DELETED tombstone.
-                    and item.status
-                    not in {
-                        MemoryStatus.SUPERSEDED,
-                        MemoryStatus.ARCHIVED,
-                        MemoryStatus.DELETED,
-                    }
+                    if item.status in _LIVE_MEMORY and memory_identity(item) == candidate_id
                 ),
                 None,
             )
@@ -247,11 +277,7 @@ class MemoryService:
                         [
                             *duplicate.source_message_ids,
                             *candidate.source_message_ids,
-                            *(
-                                [candidate.source_message_id]
-                                if candidate.source_message_id
-                                else []
-                            ),
+                            *([candidate.source_message_id] if candidate.source_message_id else []),
                         ]
                     )
                 )
@@ -260,77 +286,83 @@ class MemoryService:
                         [*duplicate.source_evidence_ids, *candidate.source_evidence_ids]
                     )
                 )
+                # Observation metadata only — do not bump updated_at (recency uses created_at).
                 duplicate_provenance = {
                     **duplicate.provenance,
                     "duplicate_observations": int(
                         duplicate.provenance.get("duplicate_observations", 0)
                     )
                     + 1,
+                    "last_observed_at": now.isoformat(),
                     "latest_duplicate_provenance": candidate.provenance,
                 }
                 self.repositories.memories.update(
-                    duplicate.model_copy(
-                        update={
-                            "source_message_ids": merged_message_ids,
-                            "source_evidence_ids": merged_evidence_ids,
-                            "provenance": duplicate_provenance,
-                            "updated_at": now,
-                        }
+                    validated_memory(
+                        duplicate,
+                        source_message_ids=merged_message_ids,
+                        source_evidence_ids=merged_evidence_ids,
+                        provenance=duplicate_provenance,
                     )
                 )
                 continue
-            conflict = next((item for item in existing if memories_contradict(item, candidate)), None)
+            # Only ACTIVE memories can be contradicted; tombstones and pending drafts cannot.
+            conflict = next(
+                (
+                    item
+                    for item in existing
+                    if item.status is MemoryStatus.ACTIVE and memories_contradict(item, candidate)
+                ),
+                None,
+            )
             if conflict:
-                # Contradictions always require explicit confirmation — never auto-confirm.
-                candidate = candidate.model_copy(
-                    update={
-                        "status": MemoryStatus.PENDING_CONSENT,
-                        "supersedes_id": conflict.id,
-                        "provenance": {**candidate.provenance, "contradicts_id": conflict.id},
-                    }
+                candidate = validated_memory(
+                    candidate,
+                    status=MemoryStatus.PENDING_CONSENT,
+                    supersedes_id=conflict.id,
+                    provenance={**candidate.provenance, "contradicts_id": conflict.id},
                 )
             elif candidate.scope is MemoryScope.THREAD:
-                # Thread-scoped, non-conflicting memories are auto-confirmed.
-                # MemoryItem.validate_scope_and_consent requires consented_at when
-                # status=ACTIVE — always set both together.
-                candidate = candidate.model_copy(
-                    update={
-                        "status": MemoryStatus.ACTIVE,
-                        "requires_confirmation": False,
-                        "consented_at": now,
-                        "updated_at": now,
-                    }
+                candidate = validated_memory(
+                    candidate,
+                    status=MemoryStatus.ACTIVE,
+                    requires_confirmation=False,
+                    consented_at=now,
+                    updated_at=now,
                 )
             created.append(self.repositories.memories.create(candidate))
         return created
 
     def confirm(self, memory: MemoryItem) -> MemoryItem:
         now = datetime.now(UTC)
-        confirmed = memory.model_copy(
-            update={
-                "status": MemoryStatus.ACTIVE,
-                "consented_at": now,
-                "requires_confirmation": False,
-                "updated_at": now,
-            }
-        )
-        confirmed = self.repositories.memories.update(confirmed)
-        if confirmed.supersedes_id:
-            prior = self.repositories.memories.get(
-                confirmed.supersedes_id, confirmed.workspace_id, confirmed.owner_user_id
-            )
-            if prior:
-                self.repositories.memories.update(
-                    prior.model_copy(
-                        update={
-                            "status": MemoryStatus.SUPERSEDED,
-                            "superseded_by_id": confirmed.id,
-                            "valid_to": now,
-                            "updated_at": now,
-                        }
-                    )
+
+        def _apply(writes: ConversationRepositories) -> MemoryItem:
+            confirmed = writes.memories.update(
+                validated_memory(
+                    memory,
+                    status=MemoryStatus.ACTIVE,
+                    consented_at=now,
+                    requires_confirmation=False,
+                    updated_at=now,
                 )
-        return confirmed
+            )
+            if confirmed.supersedes_id:
+                prior = writes.memories.get(
+                    confirmed.supersedes_id, confirmed.workspace_id, confirmed.owner_user_id
+                )
+                if prior:
+                    writes.memories.update(
+                        validated_memory(
+                            prior,
+                            status=MemoryStatus.SUPERSEDED,
+                            superseded_by_id=confirmed.id,
+                            valid_to=now,
+                            updated_at=now,
+                        )
+                    )
+            return confirmed
+
+        with self.repositories.transaction() as writes:
+            return _apply(writes)
 
     def expire(
         self,
@@ -347,8 +379,8 @@ class MemoryService:
         ):
             if item.status is MemoryStatus.ACTIVE and item.expires_at and item.expires_at <= now:
                 expired = self.repositories.memories.update(
-                    item.model_copy(
-                        update={"status": MemoryStatus.ARCHIVED, "archived_at": now, "updated_at": now}
+                    validated_memory(
+                        item, status=MemoryStatus.ARCHIVED, archived_at=now, updated_at=now
                     )
                 )
                 if on_expired:
@@ -370,17 +402,16 @@ class MemoryService:
             return None
         now = datetime.now(UTC)
         revoked = self.repositories.memories.update(
-            item.model_copy(
-                update={
-                    "status": MemoryStatus.ARCHIVED,
-                    "valid_to": now,
-                    "archived_at": now,
-                    "updated_at": now,
-                    "provenance": {
-                        **item.provenance,
-                        "revocation": {"reason": reason, "revoked_at": now.isoformat()},
-                    },
-                }
+            validated_memory(
+                item,
+                status=MemoryStatus.ARCHIVED,
+                valid_to=now,
+                archived_at=now,
+                updated_at=now,
+                provenance={
+                    **item.provenance,
+                    "revocation": {"reason": reason, "revoked_at": now.isoformat()},
+                },
             )
         )
         if on_revoked:
@@ -423,7 +454,8 @@ class ContextBuilder:
         query_words = set(_WORD.findall(query.casefold()))
         memory_words = set(memory.normalized_content.split())
         lexical = len(query_words & memory_words) / max(1, len(query_words | memory_words))
-        age_days = max(0.0, (now - memory.updated_at).total_seconds() / 86400)
+        # Recency from created_at: re-observing a duplicate must not refresh the score.
+        age_days = max(0.0, (now - memory.created_at).total_seconds() / 86400)
         recency = 1 / (1 + age_days / 30)
         phrase = 0.2 if normalize_memory_content(query) in memory.normalized_content else 0.0
         provenance = 0.05 if (
@@ -452,37 +484,56 @@ class ContextBuilder:
         preference = self.repositories.memories.get_preference(
             thread.workspace_id, thread.owner_user_id
         )
-        messages = self.repositories.messages.list_for_thread(thread.id, limit=500)
+        # None → allow defaults. An explicit dict is deny-by-default for omitted keys
+        # (so permissions={} denies everything; permissions or {...} must never be used).
+        if permissions is None:
+            requested_permissions = {
+                **_DEFAULT_PERMISSIONS,
+                "read_memory": not preference.opted_out,
+            }
+        else:
+            requested_permissions = {
+                key: bool(permissions.get(key, False)) for key in _DEFAULT_PERMISSIONS
+            }
+            requested_permissions["read_memory"] = (
+                requested_permissions["read_memory"] and not preference.opted_out
+            )
+
+        messages: list[Message] = []
+        if requested_permissions.get("read_messages", False):
+            messages = self.repositories.messages.list_for_thread(thread.id, limit=500)
+
         summary = self.repositories.thread_summaries.latest(
             thread.id, thread.workspace_id, thread.owner_user_id
         )
-        candidates = [] if preference.opted_out else self.repositories.memories.list(
-            thread.workspace_id,
-            thread.owner_user_id,
-            project_id=thread.project_id,
-            thread_id=thread.id,
-            limit=500,
-        )
-        memories = [
-            item
-            for item in candidates
-            # Only ACTIVE memories are injected into context. PENDING_CONSENT,
-            # ARCHIVED, SUPERSEDED, and DELETED items must never reach the
-            # agent prompt — they are either unconfirmed or invalidated.
-            if item.status is MemoryStatus.ACTIVE
-            and (
-                item.scope is MemoryScope.USER
-                or (
-                    item.scope in {MemoryScope.PROJECT, MemoryScope.EPISODIC}
-                    and thread.project_id is not None
-                    and item.project_id == thread.project_id
-                )
-                or (item.scope is MemoryScope.THREAD and item.thread_id == thread.id)
+
+        memories: list[MemoryItem] = []
+        if requested_permissions.get("read_memory", False) and not preference.opted_out:
+            candidates = self.repositories.memories.list(
+                thread.workspace_id,
+                thread.owner_user_id,
+                project_id=thread.project_id,
+                thread_id=thread.id,
+                limit=500,
             )
-        ]
-        deduplicated: dict[tuple[MemoryType, str], MemoryItem] = {}
+            memories = [
+                item
+                for item in candidates
+                if item.status is MemoryStatus.ACTIVE
+                and (
+                    item.scope is MemoryScope.USER
+                    or (
+                        item.scope in {MemoryScope.PROJECT, MemoryScope.EPISODIC}
+                        and thread.project_id is not None
+                        and item.project_id == thread.project_id
+                    )
+                    or (item.scope is MemoryScope.THREAD and item.thread_id == thread.id)
+                )
+            ]
+
+        deduplicated: dict[tuple[Any, ...], MemoryItem] = {}
         for item in memories:
-            key = (item.type, item.normalized_content or normalize_memory_content(item.content))
+            key = memory_identity(item)
             current = deduplicated.get(key)
             if current is None or (item.pinned, item.updated_at) > (
                 current.pinned,
@@ -492,15 +543,24 @@ class ContextBuilder:
         memories = list(deduplicated.values())
         now = datetime.now(UTC)
         vector_scores = self.vector_scorer(query, memories) if self.vector_scorer else {}
-        memories.sort(
-            key=lambda item: self._score(query, item, now) + vector_scores.get(item.id, 0.0),
-            reverse=True,
-        )
+        memory_scores = {
+            item.id: self._score(query, item, now) + vector_scores.get(item.id, 0.0)
+            for item in memories
+        }
+        memories.sort(key=lambda item: memory_scores[item.id], reverse=True)
 
         remaining = self.total_characters
         remaining_tokens = self.total_tokens
+        omissions: list[dict[str, Any]] = []
 
-        def take(values: Iterable[Any], budget: int, render: Callable[[Any], str]) -> list[Any]:
+        def take(
+            values: Iterable[Any],
+            budget: int,
+            render: Callable[[Any], str],
+            *,
+            kind: str,
+            id_of: Callable[[Any], str],
+        ) -> list[Any]:
             nonlocal remaining, remaining_tokens
             selected: list[Any] = []
             used = 0
@@ -509,6 +569,7 @@ class ContextBuilder:
                 size = len(rendered)
                 tokens = approximate_token_count(rendered)
                 if size > budget - used or size > remaining or tokens > remaining_tokens:
+                    omissions.append({"kind": kind, "id": id_of(value), "reason": "budget"})
                     continue
                 selected.append(value)
                 used += size
@@ -516,63 +577,79 @@ class ContextBuilder:
                 remaining_tokens -= tokens
             return selected
 
-        requested_permissions = dict(
-            permissions
-            or {
-                "read_messages": True,
-                "read_memory": not preference.opted_out,
-                "read_artifacts": True,
-                "read_workspace_config": True,
-            }
-        )
-        rendered_permissions = _json(requested_permissions)
-        permission_tokens = approximate_token_count(rendered_permissions)
-        if (
-            len(rendered_permissions) <= remaining
-            and permission_tokens <= remaining_tokens
-        ):
-            explicit_permissions = requested_permissions
-            remaining -= len(rendered_permissions)
-            remaining_tokens -= permission_tokens
-        else:
-            explicit_permissions = {}
+        # Permissions are ACL metadata for the run record, not prompt content —
+        # always keep them even when the content budget is tight.
+        explicit_permissions = requested_permissions
+        if not requested_permissions.get("read_messages", False):
+            omissions.append({"kind": "messages", "id": "*", "reason": "permission_denied"})
+        if not requested_permissions.get("read_memory", False):
+            omissions.append({"kind": "memories", "id": "*", "reason": "permission_denied"})
+        if preference.opted_out:
+            omissions.append({"kind": "memories", "id": "*", "reason": "opted_out"})
+        if not requested_permissions.get("read_artifacts", False):
+            omissions.append({"kind": "artifacts", "id": "*", "reason": "permission_denied"})
 
+        covered = set(summary.covered_message_ids) if summary else set()
+        excluded_by_summary = [m.id for m in messages if m.id in covered]
+        # Prefer messages not already represented in the extractive summary.
+        packable = [m for m in messages if m.id not in covered] or messages
         recent = take(
-            reversed(messages),
+            reversed(packable),
             self.source_budgets["messages"],
             _text,
+            kind="message",
+            id_of=lambda m: m.id,
         )
         recent.reverse()
+
         chosen_summary = summary
         summary_rendered = summary.summary if summary else ""
         summary_tokens = approximate_token_count(summary_rendered)
+        summary_omitted_reason: str | None = None
         if summary and (
             len(summary_rendered) > min(self.source_budgets["summary"], remaining)
             or summary_tokens > remaining_tokens
         ):
             chosen_summary = None
+            summary_omitted_reason = "budget"
+            omissions.append({"kind": "summary", "id": summary.through_message_id or "*", "reason": "budget"})
         elif summary:
             remaining -= len(summary_rendered)
             remaining_tokens -= summary_tokens
+
         chosen_memories = take(
             memories,
             self.source_budgets["memories"],
             lambda item: str(item.content),
+            kind="memory",
+            id_of=lambda item: item.id,
         )
+
+        artifact_candidates: list[Artifact] = []
         artifacts: list[Artifact] = []
-        list_context = getattr(self.repositories.artifacts, "list_for_context", None)
-        if callable(list_context):
-            artifacts = take(
-                list_context(thread.workspace_id, thread.id),
-                self.source_budgets["artifacts"],
-                lambda item: _json(item.payload),
+        if requested_permissions.get("read_artifacts", False):
+            list_context = getattr(self.repositories.artifacts, "list_for_context", None)
+            if callable(list_context):
+                artifact_candidates = list(list_context(thread.workspace_id, thread.id))
+                artifacts = take(
+                    artifact_candidates,
+                    self.source_budgets["artifacts"],
+                    lambda item: _json(item.payload),
+                    kind="artifact",
+                    id_of=lambda item: item.id,
+                )
+
+        config: dict[str, Any] = {}
+        if requested_permissions.get("read_workspace_config", False):
+            config_items = take(
+                [dict(workspace_config or {})],
+                remaining,
+                _json,
+                kind="workspace_config",
+                id_of=lambda _: "workspace_config",
             )
-        config_items = take(
-            [dict(workspace_config or {})],
-            remaining,
-            _json,
-        )
-        config = config_items[0] if config_items else {}
+            config = config_items[0] if config_items else {}
+
         provenance = {
             item.id: {
                 "scope": item.scope.value,
@@ -597,7 +674,34 @@ class ContextBuilder:
                 allowed_provenance[memory_id] = details
                 remaining -= len(rendered)
                 remaining_tokens -= tokens
+            else:
+                omissions.append({"kind": "memory_provenance", "id": memory_id, "reason": "budget"})
         character_count = self.total_characters - remaining
+        token_estimate = self.total_tokens - remaining_tokens
+        composition = {
+            "builder": "phase6-v1",
+            "message_ids": [message.id for message in recent],
+            "excluded_by_summary": excluded_by_summary,
+            "memories": [
+                {"id": item.id, "score": round(memory_scores.get(item.id, 0.0), 4)}
+                for item in chosen_memories
+            ],
+            "artifact_ids": [item.id for item in artifacts],
+            "summary": (
+                None
+                if chosen_summary is None
+                else {
+                    "through_message_id": chosen_summary.through_message_id,
+                    "covered_message_ids": list(chosen_summary.covered_message_ids),
+                    "mode": chosen_summary.mode,
+                }
+            ),
+            "summary_omitted_reason": summary_omitted_reason,
+            "omissions": omissions[:100],
+            "token_estimate": token_estimate,
+            "token_budget": self.total_tokens,
+            "character_count": character_count,
+        }
         return ContextBundle(
             permissions=explicit_permissions,
             workspace_config=config,
@@ -609,6 +713,7 @@ class ContextBuilder:
             artifact_ids=[item.id for item in artifacts],
             provenance=allowed_provenance,
             character_count=character_count,
-            token_estimate=self.total_tokens - remaining_tokens,
+            token_estimate=token_estimate,
             token_budget=self.total_tokens,
+            composition=composition,
         )

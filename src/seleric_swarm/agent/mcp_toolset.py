@@ -30,6 +30,7 @@ from pydantic_ai.tools import Tool
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+from seleric_swarm.services.mcp_query import relabel_undated, with_date_axis
 
 _log = logging.getLogger("seleric.agent.mcp_toolset")
 
@@ -38,13 +39,17 @@ ALLOW: tuple[str, ...] = (
     "catalogue_search_metrics", "catalogue_get_metrics", "catalogue_get_metric", "catalogue_list_dimensions",
     "catalogue_resolve_dimension", "catalogue_resolve_term", "catalogue_resolve_concept", "catalogue_resolve_values",
     "catalogue_resolve_brand", "catalogue_list_brands", "catalogue_get_ontology", "catalogue_related_metrics",
-    "modules_list", "metrics_query", "metrics_drilldown", "insights_explain",
+    "modules_list", "metrics_query", "metrics_drilldown", "insights_explain", "build_dataset_query",
 )
 QUERY_TOOLS = frozenset({"metrics_query", "metrics_drilldown"})
+DATASET_TOOL = "build_dataset_query"
+DATASET_PAGE = 5000  # rows per get page (the server's maximum)
+MAX_DATASET_EVIDENCE = int(os.getenv("AGENT_MAX_DATASET_EVIDENCE", "5000"))  # evidence points per dataset (an artifact write each; raise only after timing the store)
 
 MAX_ROWS = int(os.getenv("AGENT_MAX_ROWS", "60"))  # list cap inside a tool result
 MAX_RESULT_CHARS = int(os.getenv("AGENT_MAX_RESULT_CHARS", "14000"))
 TOOL_TIMEOUT_S = float(os.getenv("AGENT_TOOL_TIMEOUT_S", "45"))
+QUERY_ROW_LIMIT = int(os.getenv("AGENT_QUERY_ROW_LIMIT", "100000"))  # = Core max_row_limit and Cube CUBEJS_DB_QUERY_LIMIT (mage-ai/infra/cube/.env); Cube refuses above its own
 MAX_EVIDENCE_ROWS = 5000  # evidence points (row × measure) written per query result; going over is flagged, never silent
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -63,7 +68,7 @@ def _shrink(o: Any, cap: int) -> Any:
                 if k not in DROP_KEYS and (v not in ([], {}, "") or (k in KEEP_WHEN_EMPTY and v == []))}
     if isinstance(o, list):
         out = [_shrink(v, cap) for v in o[:cap]]
-        return out + [f"... {len(o) - cap} more items truncated (narrow the query or sort+limit)"] if len(o) > cap else out
+        return out + [f"... {len(o) - cap} more items truncated (the full result is not shown: rank, total and filter it in run_python, show it with show_table)"] if len(o) > cap else out
     return o
 
 
@@ -150,8 +155,9 @@ def flag_partial(payload: Any, today: date) -> None:
         return
     parts = [p for p in payload.get("parts") or [] if isinstance(p, dict)]
     for source in [payload, *parts]:
-        end = _iso_day(((source.get("provenance") or {}).get("time_range") or {}).get("end"))
-        if end is not None and end >= today:
+        prov = source.get("provenance") or {}
+        end = _iso_day((prov.get("time_range") or {}).get("end"))
+        if end is not None and end >= today and not prov.get("compare_cutoff"):  # the server already cut the comparison at the same hour
             payload.setdefault("warnings", []).append(
                 f"Window ends {end}, which is not a complete day (today is {today}, data keeps arriving): treat it as partial; "
                 "do not compare it with a full period or call it a drop without the same cut-off on both sides.")
@@ -169,6 +175,22 @@ def _entity(row: dict[str, Any]) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """(the names of the label columns, their values) of one result row."""
     labels = {k: v for k, v in row.items() if isinstance(v, str) and _as_num(v) is None}
     return tuple(sorted(labels)), tuple(labels[k] for k in sorted(labels))
+
+
+def flag_row_limit(payload: Any) -> None:
+    """The server cut the result at the row limit: whatever is computed from it covers only part of the data."""
+    prov = payload.get("provenance") if isinstance(payload, dict) else None
+    if isinstance(prov, dict) and prov.get("row_limit_hit"):
+        payload.setdefault("warnings", []).append(
+            f"The result hit the {prov.get('row_limit')}-row limit, so it is incomplete: any total, ranking or share from it "
+            "covers only part of the data. Say so in the answer, or narrow the period or the breakdown and fetch again.")
+
+
+def with_full_limit(defn: dict[str, Any] | None, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Queries always run at the maximum row limit, whatever the model passed: no row is dropped before run_python sees it
+    (top-N and sorting happen there). A dataset get keeps its own ``limit``, which is the page size."""
+    props = ((defn or {}).get("schema") or {}).get("properties") or {}
+    return {**args, "limit": QUERY_ROW_LIMIT} if name in QUERY_TOOLS and "limit" in props else args
 
 
 def flag_composed(payload: Any) -> None:
@@ -297,11 +319,11 @@ def _flag_evidence_cut(payload: dict[str, Any], provenance: ArtifactProvenance, 
     provenance.source_metadata["evidence_truncated"] = f"{kept} of {total} rows{covered}"
     payload.setdefault("warnings", []).append(
         f"Only the first {kept} of {total} rows are kept as evidence{covered}: a total, average or chart computed from "
-        "evidence covers less than the window asked about. Re-query a coarser grain (day instead of hour), a shorter "
-        "window or fewer measures before stating a period total.")
+        "that evidence covers less than the window asked about (run_python reads every row of this result, so compute "
+        "totals there).")
 
 
-def write_evidence(payload: dict[str, Any], args: dict[str, Any], deps: SelericDeps) -> list[str]:
+def write_evidence(payload: dict[str, Any], args: dict[str, Any], deps: SelericDeps, *, max_points: int | None = None) -> list[str]:
     """Persist a query result's rows (and compare rows) as evidence; returns the artifact ids."""
     prov = payload.get("provenance") or {}
     columns = [c for c in payload.get("columns") or [] if isinstance(c, str)]
@@ -324,7 +346,7 @@ def write_evidence(payload: dict[str, Any], args: dict[str, Any], deps: SelericD
             continue
         rows = [r for r in rows if isinstance(r, dict)]
         # Whole rows only: a cut through a row would give one measure more days than another.
-        keep = max(MAX_EVIDENCE_ROWS // len(measures), 1)
+        keep = max((max_points or MAX_EVIDENCE_ROWS) // len(measures), 1)
         if len(rows) > keep:
             _flag_evidence_cut(payload, provenance, kept=keep, total=len(rows), rows=rows[:keep], columns=columns)
             rows = rows[:keep]
@@ -349,6 +371,55 @@ def write_evidence(payload: dict[str, Any], args: dict[str, Any], deps: SelericD
     return ids
 
 
+def all_evidence(payload: dict[str, Any], args: dict[str, Any], deps: SelericDeps) -> list[EvidenceArtifact]:
+    """Every (row, measure) of a query result as evidence items, uncapped and not stored: what run_python computes over.
+    write_evidence keeps only the first MAX_EVIDENCE_ROWS values as artifacts (citations, charts, tables)."""
+    prov = payload.get("provenance") or {}
+    columns = [c for c in payload.get("columns") or [] if isinstance(c, str)]
+    measures = [m for m in prov.get("metric_ids") or [] if m in columns]
+    if not measures:
+        return []
+    currency = str(prov.get("currency") or "").strip()
+    batches = [(payload.get("rows"), _window(prov.get("time_range")), "current")]
+    if payload.get("compare_rows"):
+        batches.append((payload.get("compare_rows"), _window(prov.get("compare_period")), "previous"))
+    out: list[EvidenceArtifact] = []
+    for rows, window, period in batches:
+        if isinstance(rows, list):
+            out += _rows_evidence([r for r in rows if isinstance(r, dict)], columns=columns, measures=measures,
+                                  window=window, args=args, deps=deps, currency=currency, period=period)
+    return out
+
+
+def full_evidence_rows(state: TurnState, query_ids: list[str], deps: SelericDeps) -> list[dict[str, Any]] | None:
+    """The complete rows of the named results fetched this turn, as the dicts run_python's ``evidence`` holds.
+    None when a query id has no payload this turn (an earlier turn's result keeps its stored evidence)."""
+    rows: list[dict[str, Any]] = []
+    for qid in query_ids:
+        results: list[dict[str, Any]] = []
+        for p in state.payloads:
+            if not isinstance(p, dict):
+                continue
+            parts = [x for x in p.get("parts") or [] if isinstance(x, dict)]
+            if p.get("query_id") == qid:
+                results = parts or [p]
+            else:
+                results = [x for x in parts if x.get("query_id") == qid]
+            if results:
+                break
+        if not results:
+            return None
+        args = next((e.get("args") or {} for e in state.evidence if e.get("query_id") == qid), {})
+        for res in results:
+            for item in all_evidence(res, args, deps):
+                row = item.model_dump(mode="json")
+                row["query_id"] = str(res.get("query_id") or qid)
+                for key, value in (row.get("dimensions") or {}).items():
+                    row.setdefault(key, value)
+                rows.append(row)
+    return rows
+
+
 def write_query_evidence(payload: dict[str, Any], args: dict[str, Any], deps: SelericDeps) -> dict[str, list[str]]:
     """Evidence ids per query id. A multi-view result holds one full sub-result per part (own query id, columns, rows):
     each part is written on its own, and the parent id maps to all of them, so any of those ids can be passed on."""
@@ -363,6 +434,56 @@ def write_query_evidence(payload: dict[str, Any], args: dict[str, Any], deps: Se
     if payload.get("query_id"):
         out[str(payload["query_id"])] = list(dict.fromkeys(i for ids in out.values() for i in ids))
     return out
+
+
+# ---- datasets (build_dataset_query) ------------------------------------------------------------
+def _stamp(bucket: Any) -> str:
+    """'2026-10-22 09:00' / '2026-10-22' as a Cube-style time bucket, which the evidence and table code read."""
+    text = str(bucket or "")
+    return f"{text[:10]}T{text[11:16]}:00.000" if len(text) >= 16 else f"{text[:10]}T00:00:00.000"
+
+
+def dataset_as_query_payload(payload: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """A dataset (server schema + every row) in the shape of a metrics_query result, so evidence, tables, charts and
+    run_python treat its handle like any query_id. Time column ``bucket.<grain>``; measures are the catalogue ids."""
+    schema = [c for c in payload.get("columns") or [] if isinstance(c, dict)]
+    prov = payload.get("provenance") if isinstance(payload.get("provenance"), dict) else {}
+    grain = str(payload.get("grain") or prov.get("grain") or "day")
+    measures = [c["name"] for c in schema if c.get("role") == "measure"]
+    dims = [c["name"] for c in schema if c.get("role") == "dimension"]
+    time_col = f"bucket.{grain}"
+    out_rows = [{time_col: _stamp(r.get("bucket")), **{k: r.get(k) for k in (*dims, *measures)}} for r in rows]
+    handle = str(payload.get("handle") or payload.get("query_id") or "")
+    return {
+        "query_id": handle, "handle": handle, "dataset": True,
+        "columns": [time_col, *dims, *measures], "schema": schema, "rows": out_rows,
+        "row_count": len(out_rows), "grain": grain,
+        "provenance": {**prov, "query_id": handle, "metric_ids": measures, "freshness": {"sources": prov.get("sources")}},
+        "warnings": list(payload.get("warnings") or []),
+        "notes": payload.get("notes"), "limitations": payload.get("limitations"), "stats": payload.get("stats"),
+        "partial_bucket": payload.get("partial_bucket"),
+    }
+
+
+async def load_dataset(gateway: Any, handle: str, today: date | None) -> tuple[list[dict[str, Any]], dict[str, Any], str | None]:
+    """(every row, the first page's envelope: schema columns and provenance, why it stopped or None) of a dataset."""
+    rows: list[dict[str, Any]] = []
+    first: dict[str, Any] = {}
+    offset: int | None = 0
+    while offset is not None:
+        page, is_err = await _execute(gateway, DATASET_TOOL,
+                                      {"action": "get", "handle": handle, "offset": offset, "limit": DATASET_PAGE}, today)
+        if is_err or not isinstance(page, dict):
+            return rows, first, compact(page)[:300]
+        first = first or page
+        rows.extend(r for r in page.get("rows") or [] if isinstance(r, dict))
+        offset = page.get("next_offset")
+    return rows, first, None
+
+
+async def load_dataset_rows(gateway: Any, handle: str, today: date | None) -> tuple[list[dict[str, Any]], str | None]:
+    rows, _, stopped = await load_dataset(gateway, handle, today)
+    return rows, stopped
 
 
 # ---- per-turn state and the tools --------------------------------------------------------------
@@ -413,7 +534,45 @@ async def _execute(gateway: Any, name: str, args: dict[str, Any], today: date | 
     if not is_err and isinstance(payload, dict):
         flag_partial(payload, today or ist_today())
         flag_composed(payload)
+        flag_row_limit(payload)
+        relabel_undated(payload)
     return payload, is_err
+
+
+async def _take_dataset(ctx: RunContext[SelericDeps], gateway: Any, state: TurnState, args: dict[str, Any],
+                        payload: dict[str, Any]) -> dict[str, Any] | None:
+    """A dataset the turn has not loaded yet: a build (or a saved slice), or a get on a handle from an earlier turn.
+    Load every row, record it as evidence under its handle and as a fetched result, and return what the model sees:
+    a build shows schema, preview, stats and notes (not the rows); a get shows the page it asked for."""
+    handle = str(payload["handle"])
+    rows, first, stopped = await load_dataset(gateway, handle, state.today)
+    is_build = "preview" in payload
+    base = payload if is_build else {**first, "handle": handle, "query_id": handle, "row_count": first.get("row_count", len(rows))}
+    full = dataset_as_query_payload(base, rows)
+    if stopped:
+        full.setdefault("warnings", []).append(f"Only {len(rows)} of {base.get('row_count')} rows could be loaded ({stopped}).")
+    state.payloads.append(full)
+    state.evidence.append({"tool": DATASET_TOOL, "args": args, "query_id": handle})
+    ids = write_evidence(full, args, ctx.deps, max_points=MAX_DATASET_EVIDENCE)
+    state.evidence_ids.extend(i for i in ids if i not in state.evidence_ids)
+    state.by_query[handle] = ids
+    note = (f"All {len(rows)} rows are loaded: pass query_id={handle!r} to run_python, show_chart or show_table. "
+            "Quote the notes, the latest complete bucket per source and the limitations. A null cell is missing data, not zero.")
+    if is_build:
+        seen = {k: v for k, v in payload.items() if k not in ("provenance", "how_to_use")}
+        seen["rows_loaded"] = len(rows)
+    else:
+        seen = dict(payload)
+    seen["agent_note"] = note
+    if full.get("warnings"):
+        seen["warnings"] = [*seen.get("warnings", []), *full["warnings"]]
+    return seen
+
+
+def _takes_date_axis(definition: dict[str, Any] | None, args: dict[str, Any]) -> bool:
+    """The tool's published schema has a ``date_axis`` and this call builds or queries (not a dataset get / delete)."""
+    props = ((definition or {}).get("schema") or {}).get("properties") or {}
+    return "date_axis" in props and args.get("action", "build") == "build"
 
 
 def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnState) -> list[Tool[SelericDeps]]:
@@ -423,6 +582,9 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
     def make(name: str) -> Any:
         async def call(ctx: RunContext[SelericDeps], **raw_args: Any) -> str:
             args = {k: v for k, v in raw_args.items() if v is not None}  # some models emit explicit nulls
+            if _takes_date_axis(defs.get(name), args):
+                args = with_date_axis(args, ctx.deps.date_axis, ctx.deps.catalogue)
+            args = with_full_limit(defs.get(name), name, args)
             started = time.perf_counter()
             err = validate(defs, name, args)
             if err:
@@ -443,6 +605,11 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
                 if is_err:
                     state.seen.pop(key, None)  # a failure is not cached: the model's retry must run again
                     state.errors.append(f"{name}: {compact(payload)[:300]}")
+                elif (name == DATASET_TOOL and isinstance(payload, dict) and payload.get("handle")
+                      and ("preview" in payload or (args.get("action") == "get" and payload["handle"] not in state.by_query))):
+                    shown = await _take_dataset(ctx, gateway, state, args, payload)
+                    if shown is not None:
+                        payload = shown
                 else:
                     state.payloads.append(payload)
                     qid = payload.get("query_id") if isinstance(payload, dict) else None

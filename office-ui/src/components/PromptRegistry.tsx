@@ -1,3 +1,6 @@
+import { Badge } from "@/components/ui/badge";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Button } from "@/components/ui/button";
 import { useAui } from "@assistant-ui/react";
 import { useMemo, useState } from "react";
 import {
@@ -32,34 +35,33 @@ function PromptChip({
 }) {
   const badges = showBadges
     ? [
-        prompt.level === "L1" ? "L1" : null,
-        prompt.tags.includes("golden") ? "Golden" : null,
+        prompt.tags.includes("exec") ? "Executive" : null,
         prompt.tags.includes("diagnosis") ? "Diagnosis" : null,
       ].filter(Boolean)
     : [];
 
   return (
-    <button
+    <Button
       type="button"
-      className="prompt-chip"
+      variant="outline"
+      size="sm"
+      className="h-auto w-auto max-w-full justify-start rounded-full bg-card px-4 py-2 text-left text-[14px] font-normal text-wrap whitespace-normal"
       onClick={() => onSelect(prompt.text)}
       title="Add to input — edit before sending"
     >
-      <span className="prompt-chip-text">{prompt.text}</span>
+      <span>{prompt.text}</span>
       {badges.length > 0 && (
-        <span className="prompt-chip-badges" aria-hidden="true">
-          {badges.map((badge) => (
-            <span key={badge} className="prompt-chip-badge">{badge}</span>
-          ))}
+        <span className="ml-auto flex gap-1" aria-hidden="true">
+          {badges.map((badge) => <Badge key={badge} variant="outline">{badge}</Badge>)}
         </span>
       )}
-    </button>
+    </Button>
   );
 }
 
 export function PromptRegistry({
   onPicked,
-  defaultChip = "L1",
+  defaultChip = "exec",
   surface = "browse",
 }: {
   onPicked?: () => void;
@@ -86,58 +88,51 @@ export function PromptRegistry({
   };
 
   return (
-    <div className={`prompt-registry${front ? " front" : ""}`} role="region" aria-label={front ? "Suggested questions" : "Prompt registry"}>
+    <div className="flex w-full flex-col gap-3" role="region" aria-label={front ? "Suggested questions" : "Prompt registry"}>
       {!front && (
         <>
-          <div className="prompt-filters" role="toolbar" aria-label="Filter prompts">
-            <div className="prompt-filter-row" role="group" aria-label="Kind">
-              {FILTER_CHIPS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`prompt-filter${chip === item.id ? " active" : ""}`}
-                  aria-pressed={chip === item.id}
-                  onClick={() => setChip(item.id)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-            <div className="prompt-filter-row" role="group" aria-label="Domain">
-              {DOMAIN_FILTERS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`prompt-filter subtle${domain === item.id ? " active" : ""}`}
-                  aria-pressed={domain === item.id}
-                  onClick={() => setDomain(item.id)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-col gap-2" role="toolbar" aria-label="Filter prompts">
+            <ToggleGroup type="single" variant="outline" size="sm" className="flex-wrap" aria-label="Kind" value={chip} onValueChange={(value) => value && setChip(value as FilterChipId)}>
+              {FILTER_CHIPS.map((item) => <ToggleGroupItem key={item.id} value={item.id}>{item.label}</ToggleGroupItem>)}
+            </ToggleGroup>
+            <ToggleGroup type="single" variant="outline" size="sm" className="flex-wrap" aria-label="Domain" value={domain} onValueChange={(value) => value && setDomain(value as "all" | PromptDomain)}>
+              {DOMAIN_FILTERS.map((item) => <ToggleGroupItem key={item.id} value={item.id}>{item.label}</ToggleGroupItem>)}
+            </ToggleGroup>
           </div>
 
-          <p className="prompt-registry-hint">
+          <p className="text-xs text-muted-foreground">
             Click a question to place it in the input — edit, then send.
           </p>
         </>
       )}
 
       {groups.length === 0 ? (
-        <p className="empty-note" role="status">No prompts match these filters.</p>
+        <p className="text-sm text-muted-foreground" role="status">No prompts match these filters.</p>
       ) : front ? (
-        <div className="empty-suggestions prompt-chips" role="list">
-          {filtered.map((prompt) => (
-            <PromptChip key={prompt.id} prompt={prompt} onSelect={selectPrompt} showBadges={false} />
-          ))}
+        <div className="flex w-full max-w-xl flex-col items-center gap-2">
+          <p className="sr-only">Suggested</p>
+          <div className="stagger flex flex-wrap justify-center gap-2.5" role="list">
+            {filtered.slice(0, 3).map((prompt) => (
+              <PromptChip key={prompt.id} prompt={prompt} onSelect={selectPrompt} showBadges={false} />
+            ))}
+          </div>
+          {filtered.length > 3 && (
+            <details className="group text-sm">
+              <summary className="cursor-pointer list-none py-1 text-muted-foreground transition-colors hover:text-foreground">More prompts ({filtered.length - 3})</summary>
+              <div className="stagger mt-2 flex flex-wrap justify-center gap-2.5" role="list">
+                {filtered.slice(3).map((prompt) => (
+                  <PromptChip key={prompt.id} prompt={prompt} onSelect={selectPrompt} showBadges={false} />
+                ))}
+              </div>
+            </details>
+          )}
         </div>
       ) : (
-        <div className="prompt-groups" role="list">
+        <div className="flex flex-col gap-4" role="list">
           {groups.map((group) => (
-            <div key={group.domain} className="prompt-group" role="listitem">
-              <p className="prompt-group-label">{DOMAIN_LABELS[group.domain]}</p>
-              <div className="empty-suggestions prompt-chips">
+            <div key={group.domain} className="flex flex-col gap-2" role="listitem">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{DOMAIN_LABELS[group.domain]}</p>
+              <div className="flex flex-col gap-2">
                 {group.prompts.map((prompt) => (
                   <PromptChip key={prompt.id} prompt={prompt} onSelect={selectPrompt} showBadges />
                 ))}

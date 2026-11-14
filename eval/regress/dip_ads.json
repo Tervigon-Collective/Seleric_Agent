@@ -1,0 +1,32 @@
+[
+ {
+  "q": "Which products can be scaled? Also show the ADS performance and their PDP performance.",
+  "aspect": "dip_ads",
+  "session": "dip_ads",
+  "checks": []
+ },
+ {
+  "q": "Which ads? Our products have seen a dip in their sales and engagement in the last 7 days.",
+  "aspect": "dip_ads",
+  "session": "dip_ads",
+  "tool_checks": "dip_ads",
+  "checks": [
+   {
+    "not_lead": "Verdict: Four products"
+   },
+   {
+    "not_contains": "ready to scale"
+   },
+   {
+    "contains_any": [
+     "campaign",
+     "ad set",
+     "creative"
+    ]
+   },
+   {
+    "max_revisions": 1
+   }
+  ]
+ }
+]

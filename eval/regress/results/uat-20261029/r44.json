@@ -1,0 +1,43 @@
+{
+ "n": 44,
+ "aspect": "uat_strategy",
+ "q": "What's the catch with that? What could I be getting wrong?",
+ "thread": "thread_0c8faa88027d4cb19bfc7974c7f0e067",
+ "mission": "MS3-4b682dcd2d",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 63,
+ "elapsed_s": 57.222,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 20,
+  "measured": 20,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "audit_entities",
+  "escalate",
+  "metrics_query",
+  "audit_entities"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "Short answer: the headline product-level recommendations are fragile \u2014 almost half the product-ad spend (\u20b91,44,857 of \u20b91,68,844, 46.2%) is unallocated to any product, so the product ROAS rankings ignore a huge chunk of spend and can mislead which products truly drove returns. This data is by order date.\n\nWhat to watch (biggest catches)\n- Unallocated spend is huge: \u20b91,44,857 (46.2% of the \u20b91,68,844 product-ad portfolio). The unallocated row has no attributed orders, so you cannot tell from these product rows whether that spend helped the winners you\u2019d scale.\n- Small-sample volatility: many top-ROAS products have very low spend, so their performance is an \u201cearly signal\u201d not a proven scale winner. Examples: Pawveralls Suspender Boots \u2014 spend \u20b94,660, net ROAS ~3.8x, net profit \u20b913,169; TangleGuard Leash \u2014 spend \u20b92,699, net ROAS ~3.6x, net profit \u20b97,016; Pet Pocket Hoodie \u2014 spend \u20b91,575, net ROAS ~2.6x, net profit \u20b92,597.\n- Profit vs ROAS and loss pockets: ROAS>1 doesn't always mean a big dollar profit at scale. Some high-spend items are loss-making: WildTrail Boots \u2014 spend \u20b913,331, net ROAS 0.7x, net profit \u2212\u20b94,363. Also, the top 3 spenders (Pawveralls Pro Suspender Boots, WildTrail Boots, Sofa Seat Cover) concentrate ~23.7% of spend \u2014 risk of single-product exposure.\n- Attribution & timing limits: this is an allocated, order-date view. Allocation model assumptions and later returns/cancels (finance/event-date) can change the true P&L; check P&L lines before large-scale budget moves.\n\nWorth checking:\n- Break down the unallocated spend by campaign and ad platform (to see where that \u20b91,44,857 is coming from).\n- Require a minimum spend or order threshold (e.g., test scale only after X days or Y orders) before increasing budgets on \u201cearly signal\u201d products.\n\nPeriod: 2026-10-22 to 2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break down the unallocated spend by campaign and ad platform."
+}

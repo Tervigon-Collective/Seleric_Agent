@@ -61,8 +61,8 @@ async def test_fake_llm_classify_combined_leadership_query():
     )
     assert result.value.query_class == "lookup"
     assert result.value.domain_lead == "performance_agent"
-    assert "metric.cac" in result.value.metric_hints
-    assert "metric.net_sales" in result.value.metric_hints
+    assert "channel_cac" in result.value.metric_hints
+    assert "net_sales" in result.value.metric_hints
 
 
 @pytest.mark.asyncio
@@ -87,8 +87,8 @@ async def test_fake_llm_classify_gross_and_net_sale_singular():
     )
     assert result.value.query_class == "lookup"
     assert result.value.domain_lead == "commerce_agent"
-    assert "metric.gross_sales" in result.value.metric_hints
-    assert "metric.net_sales" in result.value.metric_hints
+    assert "gross_sales" in result.value.metric_hints
+    assert "net_sales" in result.value.metric_hints
 
 
 @pytest.mark.asyncio
@@ -99,7 +99,7 @@ async def test_fake_llm_metric_map():
             messages=[
                 ChatMessage(
                     role="user",
-                    content="Query: What were gross sales yesterday?\nAllowed metric ids: metric.net_sales, metric.gross_sales\nMetric hints: metric.gross_sales",
+                    content="Query: What were gross sales yesterday?\nAllowed metric ids: net_sales, gross_sales\nMetric hints: gross_sales",
                 )
             ],
             model="fake",
@@ -107,7 +107,7 @@ async def test_fake_llm_metric_map():
         ),
         MetricMappingV1,
     )
-    assert result.value.metric_ids == ["metric.gross_sales"]
+    assert result.value.metric_ids == ["gross_sales"]
 
 
 @pytest.mark.asyncio

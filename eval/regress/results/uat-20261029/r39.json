@@ -1,0 +1,45 @@
+{
+ "n": 39,
+ "aspect": "uat_ads",
+ "q": "What did we spend on Google last week and what did we get for it? Does anything look off?",
+ "thread": "thread_095a6c8bdba245c99f4c8645b6c16ffb",
+ "mission": "MS3-4e1ebe72e2",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 55,
+ "elapsed_s": 50.723,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [
+   "47%",
+   "23%",
+   "51%"
+  ],
+  "numbers": 21,
+  "measured": 18,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "Last week, we spent \u20b992,699 on Google ads, generating 4,03,859 impressions and 9,030 clicks. The click-through rate (CTR) was 2.2%, with a cost per click (CPC) of \u20b910.27 and a cost per thousand impressions (CPM) of \u20b9229.53.\n\nCompared to the previous week:\n- Spend increased by 47% (\u20b962,933 to \u20b992,699).\n- Impressions dropped by 23% (5,26,717 to 4,03,859).\n- Clicks fell by 51% (18,438 to 9,030).\n- CTR decreased significantly from 3.5% to 2.2%.\n- CPC rose sharply from \u20b93.41 to \u20b910.27.\n- CPM nearly doubled from \u20b9119.48 to \u20b9229.53.\n\nThis suggests inefficiency: higher spend brought fewer clicks and impressions, with costs per click and per impression rising steeply. The CTR drop indicates weaker engagement.\n\nWorth checking:\n- Campaign targeting and ad quality: are they optimized for the audience?\n- Any changes in bid strategy or budget allocation.\n\nPeriod: 2026-10-19 to 2026-10-25 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28\nNext: Break this down by campaign to pinpoint the issue."
+}

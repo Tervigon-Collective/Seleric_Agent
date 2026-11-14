@@ -34,6 +34,7 @@ _HYPHENS = "-‐‑‒–—−"  # hyphen, non-breaking hyphen, dashes, minus: 
 
 # A payload with at most this many numbers may combine freely.
 SMALL_POOL = 40
+SERIES_LINE = 3  # out-of-scope rows on one line that make it a series listing, not a swapped figure
 
 
 # ---- answer numbers -------------------------------------------------------------------------
@@ -136,11 +137,11 @@ def _unit_after(text: str, end: int) -> str:
     return ""
 
 
-def answer_numbers(text: str) -> list[dict[str, Any]]:
+def answer_numbers(text: str, *, small: bool = False) -> list[dict[str, Any]]:
     """Numbers stated in an answer with their rounding tolerance. Skips dates, times, years and small bare integers.
 
     Each: ``{text, value, pct, tol}``. ``value`` is scaled by a lakh/crore/k/m suffix, ``tol`` is one unit of the
-    last digit shown (scaled the same way) and never below 0.01.
+    last digit shown (scaled the same way) and never below 0.01. ``small=True`` keeps the bare integers under 32.
     """
     out: list[dict[str, Any]] = []
     i, n = 0, len(text)
@@ -179,7 +180,7 @@ def answer_numbers(text: str) -> list[dict[str, Any]]:
         unit = _unit_after(text, i)
         if not unit and i < n and text[i].isalpha():  # glued to letters that are no unit: 500ml, 4XL, 26SEP -> part of a name
             continue
-        if not unit and decimals < 0 and not grouped and (value < 32 or 1990 <= value <= 2100):
+        if not unit and decimals < 0 and not grouped and ((value < 32 and not small) or 1990 <= value <= 2100):
             continue
         mult = _UNIT_SCALE.get(unit, 1)
         tol = max(10 ** -max(decimals, 0) * mult, 0.01)
@@ -381,7 +382,8 @@ def placeholders(answer: str) -> list[str]:
             core = t.strip(_LEADING_MARKS)
             if core == "?":
                 out.append("?")
-            elif core.endswith("?") and i < len(toks) - 1 and _as_num(core[:-1].lstrip("₹$").rstrip("%")) is not None:
+            elif (core.endswith("?") and i < len(toks) - 1 and _as_num(core[:-1].lstrip("₹$").rstrip("%")) is not None
+                  and not toks[i + 1].lstrip("(\"'*_")[:1].isupper()):  # "2025? (I will…" ends a question
                 out.append(core)
     return out
 
@@ -436,18 +438,20 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
     scoped: dict[str, set[str]] = {}
     line_operands: dict[str, list[float]] = {}  # figure -> the other non-percent figures on its line
     carry: set[str] = set()
-    for line in answer.split("\n"):
+    line_of: dict[str, int] = {}  # figure -> index of its answer line
+    for li, line in enumerate(answer.split("\n")):
         if not line.strip():
             carry = set()
             continue
         ents = _entities(_norm(line), by_label)
         line_nums = answer_numbers(line)
+        line_all = answer_numbers(line, small=True)  # a count under 32 is not checked itself but is what "28 -> 42 (+50%)" follows from
         for n in line_nums:
             # The figures a percentage can be a claim about: the other amounts on its line, and the other unsigned percentages
             # (rate levels: CTR 2.670% -> 2.854% = -6.4%). A signed percentage is itself a change, never an operand.
             line_operands.setdefault(
                 n["text"] + "|" + str(n["value"]),
-                [abs(o["value"]) for o in line_nums if o is not n and (not o["pct"] or not o["sign"])],
+                [abs(o["value"]) for o in line_all if (o["text"], o["value"]) != (n["text"], n["value"]) and (not o["pct"] or not o["sign"])],
             )
         scope = ents or carry
         if ents and not line_nums and max(map(len, ents)) * 2 >= len(_norm(line.strip("#*-|: "))):
@@ -455,6 +459,7 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
         for n in line_nums:
             if scope:
                 scoped.setdefault(n["text"] + "|" + str(n["value"]), scope)
+                line_of.setdefault(n["text"] + "|" + str(n["value"]), li)
 
     def group(scope: set[str]) -> set[float]:
         return set(loose).union(*(by_label[lab] for lab in scope)) if scope else set(loose)
@@ -488,6 +493,7 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
         if len(left) == len(pending):
             break
         pending = left
+    swapped: dict[int, list[str]] = {}  # answer line -> the "wrong row" notes it would raise
     for i, an in enumerate(ans_nums):
         kind = status.get(i)
         if kind == "sign":
@@ -504,9 +510,13 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
         if scope and not classify(an, sorted(group(scope)), [group(scope) | accepted, *small]):
             owners = sorted(lab for lab, ns in by_label.items() if lab not in scope and classify(an, sorted(ns)) == "measured")
             if len(owners) == 1:  # a figure found in several rows is a coincidence, not a swap
-                out["misbound"].append(
+                swapped.setdefault(line_of.get(an["text"] + "|" + str(an["value"]), -1), []).append(
                     f"{an['text']} on the line about {', '.join(sorted(shown[s] for s in scope))} is not in that row; "
                     f"it is in the row for {', '.join(shown[o] for o in owners[:3])}")
+    # shortcut: 3+ out-of-scope rows on one line = a series listing ("week 10-20 -> 10-26: a, b, c, d"), not a swapped figure
+    for notes in swapped.values():
+        if len(notes) < SERIES_LINE:
+            out["misbound"].extend(notes)
     return out
 
 
@@ -532,6 +542,8 @@ def problems(g: dict[str, Any]) -> list[str]:
     pcts = [u for u in g["unmatched"] if u.rstrip().endswith("%")]
     other = [u for u in g["unmatched"] if u not in pcts]
     return ([f"figures in no tool result and not one arithmetic step from them: {', '.join(other)}"] if other else []) + \
+        ([f"figures you calculated in the text (only tool and run_python results may be quoted): {', '.join(g.get('derived') or [])}"]
+         if g.get("derived") else []) + \
         ([f"percentages that do not follow from the figures written beside them (recompute from those figures): {', '.join(pcts)}"] if pcts else []) + \
         ([f"sign differs from the data (the same figure appears there with the opposite sign): {', '.join(g['sign_mismatch'])}"]
          if g.get("sign_mismatch") else []) + \
@@ -543,7 +555,7 @@ CORRECTION = (
     "Verification found problems in the draft:\n- {issues}\n"
     "Fix only those figures. Replace each with the exact value from the tool results (rounding for display is fine), "
     "or, if the data does not hold it, say it is unavailable - a '?' or a guessed value is never acceptable. If a flagged "
-    "figure was a sum you computed, fetch the total with a tool (granularity none) instead of adding rows. "
+    "figure was a sum, difference, ratio or percentage you computed, get it from a tool (compare_period, granularity none) or compute it with run_python and quote that result. "
     "Keep everything else the user asked for: every table, row, breakdown and period stays in the answer. "
     "Write the complete final answer without mentioning this check and without repeating any figure you are removing."
 )
@@ -558,13 +570,14 @@ def unverified_note(issues: list[str]) -> str:
 
 
 def grounded_count(g: dict[str, Any]) -> int:
-    """Figures of an answer that check out (measured + derived)."""
-    return int(g.get("measured", 0)) + len(g.get("derived") or [])
+    """Figures of an answer that check out: copied from a result (a figure derived in the text is a problem, not a pass)."""
+    return int(g.get("measured", 0))
 
 
 def lost_substance(before: dict[str, Any], after: dict[str, Any]) -> bool:
     """A correction that cut the answer's verified figures to under 60% of what the draft had verified (while the draft
     had at most a quarter of its figures flagged) traded the answer for a clean-looking one: keep the draft."""
-    flagged = len(before.get("unmatched") or []) + len(before.get("misbound") or []) + len(before.get("sign_mismatch") or [])
+    flagged = (len(before.get("unmatched") or []) + len(before.get("misbound") or []) + len(before.get("sign_mismatch") or [])
+               + len(before.get("derived") or []))
     mostly_fine = before.get("numbers", 0) > 0 and flagged * 4 <= before["numbers"]
     return mostly_fine and grounded_count(after) < 0.6 * grounded_count(before)

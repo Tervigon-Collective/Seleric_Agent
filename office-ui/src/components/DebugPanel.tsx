@@ -1,3 +1,5 @@
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { useOffice } from "../store";
 import { LoopDebugConsole } from "./LoopDebugConsole";
 
@@ -17,19 +19,19 @@ export function DebugPanel() {
 
   if (!debug) return null;
   return (
-    <div className="debug">
+    <Card size="sm" data-slot="debug-panel" className="absolute bottom-[210px] left-3 z-[8] max-h-[40vh] w-80 overflow-auto font-mono text-xs shadow-lg"><CardContent className="flex flex-col gap-1.5">
       <div><b>mission</b> {missionId ?? "—"}</div>
       <div><b>provider</b> {providerMode} · <b>conn</b> {conn}</div>
       <div><b>lastSeq</b> {lastSeq} · <b>seen</b> {seen}</div>
       {traceRequestId && <div><b>request_id</b> {traceRequestId}</div>}
       {traceUrl && (
         <div>
-          <a href={traceUrl} target="_blank" rel="noreferrer" style={{ color: "var(--st-working)" }}>
+          <a href={traceUrl} target="_blank" rel="noreferrer" className="text-primary underline">
             open Langfuse trace ↗
           </a>
         </div>
       )}
-      <hr style={{ borderColor: "var(--line)" }} />
+      <Separator />
       <LoopDebugConsole
         missionId={missionId}
         timeline={timeline}
@@ -38,11 +40,11 @@ export function DebugPanel() {
         steps={loopDebug?.steps}
         live={status === "running" || status === "intake"}
       />
-      <hr style={{ borderColor: "var(--line)" }} />
+      <Separator />
       <div><b>last event</b></div>
-      <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>
+      <pre className="m-0 whitespace-pre-wrap">
         {last ? JSON.stringify(last, null, 2) : "—"}
       </pre>
-    </div>
+    </CardContent></Card>
   );
 }

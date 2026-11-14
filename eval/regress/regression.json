@@ -206,5 +206,769 @@
     "not_contains": "2026-09-01..2026-09-01"
    }
   ]
+ },
+ {
+  "q": "How are we doing this week compared to last week? Give me the one-minute version.",
+  "aspect": "uat_founder",
+  "session": "uat1",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Okay, what's the one thing I should actually worry about?",
+  "aspect": "uat_founder",
+  "session": "uat1",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Are we actually making money, or just buying revenue? Be honest.",
+  "aspect": "uat_founder",
+  "session": "uat2",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   },
+   {
+    "contains_any": [
+     "profit",
+     "margin"
+    ]
+   }
+  ]
+ },
+ {
+  "q": "Which products are dragging that down?",
+  "aspect": "uat_founder",
+  "session": "uat2",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Anything weird going on today that I should know about?",
+  "aspect": "uat_founder",
+  "session": "uat3",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Which Meta campaigns should I scale and which should I kill this week?",
+  "aspect": "uat_ads",
+  "session": "uat4",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "The second one's cost per purchase jumped. Is that the creative getting tired, or are we just paying more to reach people?",
+  "aspect": "uat_ads",
+  "session": "uat4",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   },
+   {
+    "contains_any": [
+     "CPM",
+     "CTR",
+     "frequency"
+    ]
+   }
+  ]
+ },
+ {
+  "q": "Meta says our ROAS is great but finance doesn't see it. What's going on?",
+  "aspect": "uat_ads",
+  "session": "uat5",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "What did we spend on Google last week and what did we get for it? Does anything look off?",
+  "aspect": "uat_ads",
+  "session": "uat6",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Where are people dropping off between landing on the site and paying? Is mobile worse than desktop?",
+  "aspect": "uat_web",
+  "session": "uat7",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   },
+   {
+    "contains_any": [
+     "mobile",
+     "device"
+    ]
+   }
+  ]
+ },
+ {
+  "q": "Which product pages lose the most people?",
+  "aspect": "uat_web",
+  "session": "uat7",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Which traffic sources bring people who actually buy, not just visit, and what are we paying for them?",
+  "aspect": "uat_web",
+  "session": "uat8",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Which products should we push harder in ads and which should we stop advertising?",
+  "aspect": "uat_strategy",
+  "session": "uat9",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "What's the catch with that? What could I be getting wrong?",
+  "aspect": "uat_strategy",
+  "session": "uat9",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "What are our competitors spending on ads for the same products?",
+  "aspect": "uat_strategy",
+  "session": "uat9",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Give me a read on September: what worked, what didn't, and what should we change for November?",
+  "aspect": "uat_strategy",
+  "session": "uat10",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Which cities have the worst returns and is cash on delivery the reason?",
+  "aspect": "uat_strategy",
+  "session": "uat10",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Walk me through September: how much did we sell, what did it cost us to get those sales, and what was left at the end?",
+  "aspect": "bi_drill",
+  "session": "bi1",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   },
+   {
+    "contains_sql": "select round(sum(net_sales)) from serve.mart_profit FINAL WHERE brand_id=20 AND row_type='orders' AND order_date BETWEEN '2026-09-01' AND '2026-09-30'"
+   },
+   {
+    "contains_sql": "select round(sum(ad_spend)) from serve.mart_profit FINAL WHERE brand_id=20 AND row_type='ad_spend' AND order_date BETWEEN '2026-09-01' AND '2026-09-30'"
+   },
+   {
+    "contains_sql": "select round(sum(contribution_after_ads)) from serve.mart_profit FINAL WHERE brand_id=20 AND order_date BETWEEN '2026-09-01' AND '2026-09-30'"
+   }
+  ]
+ },
+ {
+  "q": "Which channel pulled in the most of that?",
+  "aspect": "bi_drill",
+  "session": "bi1",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   },
+   {
+    "contains_sql": "select round(sum(net_sales)) from serve.mart_profit FINAL WHERE brand_id=20 AND row_type='orders' AND finance_channel='meta' AND order_date BETWEEN '2026-09-01' AND '2026-09-30'"
+   }
+  ]
+ },
+ {
+  "q": "Inside that channel, which campaign was the biggest, and was it actually profitable?",
+  "aspect": "bi_drill",
+  "session": "bi1",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Do the channel numbers add up to the September total you gave me?",
+  "aspect": "bi_reconcile",
+  "session": "bi1",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Net sales fell a lot from August to September. How much of that was fewer orders, how much was smaller baskets, and how much was discounting?",
+  "aspect": "bi_decompose",
+  "session": "bi2",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   },
+   {
+    "contains_sql": "select round(sum(net_sales)) from serve.mart_profit FINAL WHERE brand_id=20 AND row_type='orders' AND order_date BETWEEN '2026-08-01' AND '2026-08-31'"
+   }
+  ]
+ },
+ {
+  "q": "Which of those can we actually fix?",
+  "aspect": "bi_decompose",
+  "session": "bi2",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "I think cash on delivery is the reason we're losing money. Is that true?",
+  "aspect": "bi_hypothesis",
+  "session": "bi3",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "What would happen to profit if we stopped COD completely?",
+  "aspect": "bi_hypothesis",
+  "session": "bi3",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "What share of our customers have ordered more than once, and are new customers or repeat customers worth more?",
+  "aspect": "bi_customers",
+  "session": "bi4",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Which channel brings us the most repeat customers?",
+  "aspect": "bi_customers",
+  "session": "bi4",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "In October so far, what was our best day and our worst day for profit, and what was different about them?",
+  "aspect": "bi_anomaly",
+  "session": "bi5",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   },
+   {
+    "contains_sql": "select round(min(c)) from (select sum(contribution_after_ads) c from serve.mart_profit FINAL WHERE brand_id=20 AND order_date BETWEEN '2026-10-01' AND '2026-10-28' group by order_date)"
+   },
+   {
+    "contains_any": [
+     "2026-10-09",
+     "9 Oct",
+     "Oct 9",
+     "October 9",
+     "09 Oct"
+    ]
+   }
+  ]
+ },
+ {
+  "q": "Why was the worst day so bad?",
+  "aspect": "bi_anomaly",
+  "session": "bi5",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "If we cut Meta spend by 30% next month, what would happen to our profit?",
+  "aspect": "bi_whatif",
+  "session": "bi6",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "What's the safest way to test that before committing?",
+  "aspect": "bi_whatif",
+  "session": "bi6",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "What kinds of questions can you answer for me, and what can't you answer?",
+  "aspect": "bi_capability",
+  "session": "bi7",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "What's the difference between net ROAS and the ROAS Meta shows, and which should I trust for budget decisions?",
+  "aspect": "bi_capability",
+  "session": "bi7",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Is there any data you're missing or that looks stale right now?",
+  "aspect": "bi_capability",
+  "session": "bi7",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Show me a chart of daily net sales against ad spend for October, and point out the days we spent a lot but sold little.",
+  "aspect": "bi_chart",
+  "session": "bi8",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Which products get lots of page views but few sales?",
+  "aspect": "bi_cross",
+  "session": "bi9",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Are we spending ad money on those same products?",
+  "aspect": "bi_cross",
+  "session": "bi9",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "So for the worst one, what would you change first?",
+  "aspect": "bi_cross",
+  "session": "bi9",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "whats our cac",
+  "aspect": "bi_human",
+  "session": "bi10",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "just for new customers",
+  "aspect": "bi_human",
+  "session": "bi10",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "why did it jump in september?",
+  "aspect": "bi_trap",
+  "session": "bi10",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Why did our Google cost per click go up so much last week?",
+  "aspect": "why_rootcause",
+  "session": "why1",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   },
+   {
+    "contains_all_words": [
+     "search",
+     "demand gen"
+    ]
+   }
+  ]
+ },
+ {
+  "q": "Is that a problem, or is it just a different mix of campaigns?",
+  "aspect": "why_rootcause",
+  "session": "why1",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Why did we get fewer orders in the week of 19 October than the week before?",
+  "aspect": "why_rootcause",
+  "session": "why2",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   },
+   {
+    "contains_any": [
+     "traffic",
+     "sessions",
+     "visitors"
+    ]
+   }
+  ]
+ },
+ {
+  "q": "So is this a website problem or an ads problem?",
+  "aspect": "why_rootcause",
+  "session": "why2",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Why did Meta spend jump so much yesterday?",
+  "aspect": "why_rootcause",
+  "session": "why3",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   },
+   {
+    "contains_any": [
+     "TRAVELPODBED",
+     "TH-475",
+     "DIWALI",
+     "new campaign",
+     "launched"
+    ]
+   }
+  ]
+ },
+ {
+  "q": "Why are we losing money in September when every order has a positive margin?",
+  "aspect": "why_rootcause",
+  "session": "why4",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   },
+   {
+    "contains_sql": "select round(sum(contribution_before_ads)/sumIf(orders,row_type='orders')) from serve.mart_profit FINAL WHERE brand_id=20 AND order_date BETWEEN '2026-09-01' AND '2026-09-30'"
+   },
+   {
+    "contains_sql": "select round(sumIf(ad_spend,row_type='ad_spend')/sumIf(orders,row_type='orders')) from serve.mart_profit FINAL WHERE brand_id=20 AND order_date BETWEEN '2026-09-01' AND '2026-09-30'"
+   }
+  ]
+ },
+ {
+  "q": "What would it take to break even?",
+  "aspect": "why_rootcause",
+  "session": "why4",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Do our ads actually cause more orders, or do the two just move together?",
+  "aspect": "why_causal",
+  "session": "why5",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   },
+   {
+    "contains_any": [
+     "correlat",
+     "causal",
+     "cause"
+    ]
+   }
+  ]
+ },
+ {
+  "q": "If it is causal, how many extra orders would another ten thousand rupees of spend buy?",
+  "aspect": "why_causal",
+  "session": "why5",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
+ },
+ {
+  "q": "Why did sales drop on 9 October?",
+  "aspect": "why_rootcause",
+  "session": "why6",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   },
+   {
+    "contains_any": [
+     "conversion",
+     "checkout",
+     "purchase rate"
+    ]
+   }
+  ]
+ },
+ {
+  "q": "Someone told me the website was down that day. Can you tell if that's true?",
+  "aspect": "why_trap",
+  "session": "why6",
+  "checks": [
+   {
+    "not_contains": "{'"
+   },
+   {
+    "not_contains": "traceback"
+   }
+  ]
  }
 ]

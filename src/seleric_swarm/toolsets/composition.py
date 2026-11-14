@@ -26,7 +26,7 @@ from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.exploration.space import default_brand_id, scope_dimensions
-from seleric_swarm.services.mcp_query import dimension_value
+from seleric_swarm.services.mcp_query import applied_axes, axis_statement, dimension_value
 from seleric_swarm.toolsets import _data, diagnosis
 from seleric_swarm.toolsets.analytics import _refuse
 
@@ -126,18 +126,20 @@ def _num(raw: Any) -> float | None:
 
 
 async def _totals(
-    ctx: RunContext[SelericDeps], metrics: list[str], start: date, end: date, filters: dict[str, Any]
+    ctx: RunContext[SelericDeps], metrics: list[str], start: date, end: date, filters: dict[str, Any],
+    applied: dict[str, str] | None = None,
 ) -> tuple[dict[str, float], dict[str, Any] | None, list[str], str | None, str | None]:
     """Every line's total over [start, end] in one query (same view, same filters)."""
-    values, args, dropped, error, currency, _ = await _totals_by(ctx, metrics, start, end, filters, None)
+    values, args, dropped, error, currency, _ = await _totals_by(ctx, metrics, start, end, filters, None, applied)
     return values, args, dropped, error, currency
 
 
 async def _totals_by(
     ctx: RunContext[SelericDeps], metrics: list[str], start: date, end: date, filters: dict[str, Any],
-    by: str | None,
+    by: str | None, applied: dict[str, str] | None = None,
 ) -> tuple[dict[str, float], dict[str, Any] | None, list[str], str | None, str | None, dict[str, dict[str, float]]]:
-    """Totals, and with ``by`` every line per value of that dimension (one query either way)."""
+    """Totals, and with ``by`` every line per value of that dimension (one query either way). ``applied`` collects the
+    date axis Core reports for each line."""
     flt, dropped = diagnosis._filters_for(ctx, metrics[0], filters)
     args: dict[str, Any] = {
         "measures": list(metrics),
@@ -157,6 +159,8 @@ async def _totals_by(
     result = await _data.cached_metrics_query(ctx, args)
     if result.get("error"):
         return {}, None, dropped, str(result.get("error")), None, {}
+    if applied is not None:
+        applied.update(applied_axes(result))
     values: dict[str, float] = {}
     segments: dict[str, dict[str, float]] = {}
     for row in result.get("rows") or []:
@@ -193,6 +197,7 @@ def _fmt(v: float) -> str:
 def _waterfall_spec(
     definitions: dict[str, Any], root: Any, leaves: list[Any], values_by: dict[str, dict[str, float]],
     metric_id: str, currency: str | None, window: tuple[date, date], compare_window: tuple[date, date] | None,
+    axis: str | None = None,
 ) -> dict[str, Any] | None:
     """The walk as a ``waterfall`` chart spec: a period's lines (each signed as it enters the top metric) ending in
     the total, or a bridge from the comparison period's total to the period's through each line's effect."""
@@ -214,6 +219,8 @@ def _waterfall_spec(
                 for n in leaves]
         data.append({"name": total_label, "value": period[metric_id], "kind": "total"})
         title = f"{total_label} {window[0]}..{window[1]}"
+    if axis:
+        title += f" ({axis.split(' (')[0].replace('_', ' ')})"
     return {
         "title": title, "chart_type": "waterfall", "metrics": [metric_id], "dimensions": [],
         "series": [{"key": "value", "name": total_label, "type": "waterfall", "metric": metric_id}],
@@ -241,8 +248,8 @@ async def break_down_metric(
     and date basis, so they reconcile exactly (the result names any gap). period_start/period_end default to the
     question's period; compare_start/compare_end make a bridge (each line's change and signed contribution);
     filters scope every line; depth limits expansion; by (a dimension of the view) splits every line by it.
-    metric_id is the order-date id by default (net_profit, net_sales); the pnl_ id (Finance P&L by event date)
-    only when the user asks for the P&L, the books or finance. Present lines in the order returned with their
+    metric_id is the base id (net_profit, net_sales); the chat's date axis (order date or event date) is applied
+    to the queries and the result names it. Never pass a pnl_ id to change it. Present lines in the order returned with their
     signs and the given subtotals; add no lines from other metrics (another basis, they will not reconcile).
     """
     definitions = await diagnosis._all_definitions(ctx)
@@ -312,8 +319,9 @@ async def break_down_metric(
     evidence_ids: list[str] = []
     currency: str | None = None
     dropped_any: list[str] = []
+    applied: dict[str, str] = {}
     for key, p_start, p_end in periods:
-        values, args, dropped, error, cur = await _totals(ctx, metrics, p_start, p_end, filt)
+        values, args, dropped, error, cur = await _totals(ctx, metrics, p_start, p_end, filt, applied)
         if args is None:
             return _data.fetch_failure(f"break_down_metric({metric_id})", error)
         currency = currency or cur
@@ -382,6 +390,7 @@ async def break_down_metric(
         for n in leaves
     )
     reconciled = not gaps
+    axis = axis_statement(applied)
     summary_parts = [
         f"{_label(definitions, metric_id)} ({metric_id}) over {start}..{end} = {_fmt(values_by['period'][metric_id])}"
         f" {cur_label}".rstrip()
@@ -390,6 +399,12 @@ async def break_down_metric(
         "Reconciled: every line equals the signed sum of its parts."
         if reconciled
         else "NOT reconciled — " + "; ".join(gaps),
+        *([f"Date axis: {axis}. Say it in the first line of the answer."] if axis else []),
+        ("Signs: the '+' / '−' before a line is how it enters its parent, and the amount beside it is unsigned (a negative "
+         "amount on a '+' line is an adjustment that lowers the total). Write the sign once, in front of the amount: "
+         "'− Returns ₹9,40,949', '+ Shipping revenue ₹36,136', '− Exchange price adjustment ₹6,240'. Every deduction "
+         "(cancellations, RTO, returns, costs) carries a minus; never list one as a bare positive amount, and never "
+         "write both a sign word and a negative number."),
         "\n".join(lines),
         f"Waterfall (leaves → total): {walk} = {_fmt(values_by['period'][metric_id])}",
     ]
@@ -494,7 +509,7 @@ async def break_down_metric(
     ctx.deps.scratchpad.note(f"break_down_metric({metric_id}, {start}..{end}) → {'reconciled' if reconciled else 'GAP'}")
     chart_ids: list[str] = []
     if reconciled and not by:
-        spec = _waterfall_spec(definitions, root, leaves, values_by, metric_id, currency, (start, end), periods[1][1:] if compare else None)
+        spec = _waterfall_spec(definitions, root, leaves, values_by, metric_id, currency, (start, end), periods[1][1:] if compare else None, axis)
         if spec is not None:
             chart = ctx.deps.artifact_store.put(Artifact(
                 workspace_id=ctx.deps.principal.workspace_id, artifact_type="chart_spec", payload=spec,
@@ -514,7 +529,7 @@ async def break_down_metric(
                 # the lines as a table the answer can attach (``show_table(finding_id)``): rows, not markdown to re-parse
                 "table": {"columns": table_cols, "rows": table_rows, "total_rows": len(table_rows), "state": "ok",
                           "caption": f"{_label(definitions, metric_id)}{f' ({currency})' if currency else ''}, "
-                                     f"{start}..{end}; " + ("lines reconcile" if reconciled else "lines do NOT reconcile")
+                                     f"{start}..{end}{f'; {axis}' if axis else ''}; " + ("lines reconcile" if reconciled else "lines do NOT reconcile")
                                      + (f"; filters not carried by this view, NOT applied: {', '.join(sorted(set(dropped_any)))}"
                                         if dropped_any else "")}},
         ),

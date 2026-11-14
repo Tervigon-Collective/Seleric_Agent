@@ -30,6 +30,9 @@ function event(
     evidence_ids: [],
     payload,
     metadata: {},
+    started_at: null,
+    completed_at: null,
+    duration_ms: null,
     created_at: createdAt,
   };
 }

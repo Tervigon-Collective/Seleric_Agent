@@ -47,7 +47,10 @@ export async function sha256(file: Blob): Promise<string> {
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-export function conversationScope(now = new Date()): { timezone: string; as_of: string } {
+/** The date axis a chat's figures are counted on (Core `date_axis`); event date is the only one the UI offers. */
+export type DateAxis = "order_date" | "event_date";
+
+export function conversationScope(now = new Date(), dateAxis: DateAxis = "event_date"): { timezone: string; as_of: string; date_axis: DateAxis } {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
@@ -56,7 +59,7 @@ export function conversationScope(now = new Date()): { timezone: string; as_of: 
     day: "2-digit",
   }).formatToParts(now);
   const lookup = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
-  return { timezone, as_of: `${lookup.year}-${lookup.month}-${lookup.day}` };
+  return { timezone, as_of: `${lookup.year}-${lookup.month}-${lookup.day}`, date_axis: dateAxis };
 }
 
 export class ConversationApi {

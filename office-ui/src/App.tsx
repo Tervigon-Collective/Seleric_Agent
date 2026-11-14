@@ -1,85 +1,110 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Composer } from "./components/Composer";
 import { DetailPanel } from "./components/DetailPanel";
 import { PanelErrorBoundary } from "./components/ErrorBoundary";
-import { OfficeWorkspace } from "./components/OfficeWorkspace";
+import { AppFrame, APP_EVENTS } from "./components/AppFrame";
+import { ResponsivePanel } from "./components/ResponsivePanel";
 import { ThreadSidebar } from "./components/ThreadSidebar";
 import { Transcript } from "./components/Transcript";
 import { VoiceOverlay } from "./components/VoiceOverlay";
-import { CommandSearch } from "./components/CommandSearch";
-import { AdminDiagnostics } from "./components/AdminDiagnostics";
-import { PromptRegistryModal } from "./components/PromptRegistryModal";
-import {
-  CheckIcon, LinkIcon, MenuIcon, MoonIcon, PanelRightIcon, PromptsIcon, SearchIcon, SlidersIcon, SunIcon,
-} from "./components/icons";
+import { useWakeWord } from "./wakeWord";
+import { Skeleton } from "@/components/ui/skeleton";
+import { CheckIcon, LinkIcon, PanelRightIcon } from "./components/icons";
 import { SelericAssistantRuntimeProvider } from "./providers/SelericAssistantRuntime";
 import { useConversationStore } from "./stores/conversation";
 import { useShellStore } from "./stores/shell";
+import { useThemeStore } from "./stores/theme";
 import { isTraceableMissionId, useOffice } from "./store";
 import { readRoute, writeRoute } from "./routing";
 
+// Rarely-used surfaces load on demand: the canvas/ops workspaces on navigation, the dialogs on first open.
+const OfficeWorkspace = lazy(() => import("./components/OfficeWorkspace").then((m) => ({ default: m.OfficeWorkspace })));
+const OpsWorkspace = lazy(() => import("./components/ops/OpsWorkspace").then((m) => ({ default: m.OpsWorkspace })));
+const CommandSearch = lazy(() => import("./components/CommandSearch").then((m) => ({ default: m.CommandSearch })));
+const AdminDiagnostics = lazy(() => import("./components/AdminDiagnostics").then((m) => ({ default: m.AdminDiagnostics })));
+const PromptRegistryModal = lazy(() => import("./components/PromptRegistryModal").then((m) => ({ default: m.PromptRegistryModal })));
+
+const workspaceFallback = <Skeleton className="h-screen w-full rounded-none" role="status" aria-busy="true" aria-label="Loading workspace" />;
+
 /** Copy-link sharing: the URL already encodes the thread, so the link reopens it. */
-function ShareButton({ threadId }: { threadId: string | null }) {
+function useCopyLink() {
   const [copied, setCopied] = useState(false);
   const timer = useRef<number | null>(null);
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  const copy = () => {
+    const url = location.href;
+    const done = () => {
+      setCopied(true);
+      if (timer.current) window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => setCopied(false), 1600);
+    };
+    if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(url).then(done).catch(() => undefined);
+    else {
+      window.prompt("Copy this link:", url);
+      done();
+    }
+  };
+  return { copied, copy };
+}
+
+function ShareButton({ threadId, className }: { threadId: string | null; className?: string }) {
+  const { copied, copy } = useCopyLink();
   if (!threadId) return null;
   return (
-    <button
-      className="search-trigger"
+    <Button
+      variant="outline"
+      size="sm"
+      className={className}
       aria-label={copied ? "Link copied" : "Copy link to this conversation"}
       title="Copy link to this conversation"
-      onClick={() => {
-        const url = location.href;
-        const done = () => {
-          setCopied(true);
-          if (timer.current) window.clearTimeout(timer.current);
-          timer.current = window.setTimeout(() => setCopied(false), 1600);
-        };
-        if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(url).then(done).catch(() => undefined);
-        else {
-          window.prompt("Copy this link:", url);
-          done();
-        }
-      }}
+      onClick={copy}
     >
-      {copied ? <CheckIcon size={14} /> : <LinkIcon size={14} />}
-      <span className="label">{copied ? "Copied" : "Share"}</span>
-    </button>
+      {copied ? <CheckIcon /> : <LinkIcon />}
+      <span>{copied ? "Copied" : "Share"}</span>
+    </Button>
   );
 }
 
 export default function App() {
+  useWakeWord();
   const [searchOpen, setSearchOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [routingReady, setRoutingReady] = useState(false);
-  const [dark, setDark] = useState(() => {
-    const saved = localStorage.getItem("seleric.theme");
-    // HIG: respect the system appearance when the user has no saved choice.
-    if (saved) return saved === "dark";
-    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
-  });
+  const dark = useThemeStore((s) => s.dark);
+  const syncSystemTheme = useThemeStore((s) => s.syncSystem);
+  const firstTheme = useRef(true);
   useEffect(() => {
+    // A brief crossfade on a real theme change, not on first paint.
+    const root = document.documentElement;
+    if (!firstTheme.current) {
+      root.classList.add("theme-fade");
+      const timer = window.setTimeout(() => root.classList.remove("theme-fade"), 320);
+      return () => window.clearTimeout(timer);
+    }
+  }, [dark]);
+  useEffect(() => {
+    // data-theme is always light or dark, so the CSS and the shadcn dark variant keep one switch.
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
-    localStorage.setItem("seleric.theme", dark ? "dark" : "light");
-    document.querySelector('meta[name="theme-color"]')?.setAttribute(
-      "content",
-      dark ? "#000000" : "#ffffff",
-    );
+    document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute("content", dark ? "#1a1b1e" : "#f4f4f2");
+    firstTheme.current = false;
   }, [dark]);
+  useEffect(() => {
+    const query = window.matchMedia?.("(prefers-color-scheme: dark)");
+    query?.addEventListener("change", syncSystemTheme);
+    return () => query?.removeEventListener("change", syncSystemTheme);
+  }, [syncSystemTheme]);
   const workspace = useShellStore((s) => s.workspace);
-  // Union-typed alias: `workspace` narrows to "conversation" past the office
-  // early-return below, which would make the Office tab comparison a type error.
-  const workspaceTab: typeof workspace = workspace;
+  const opsPage = useShellStore((s) => s.opsPage);
   const setWorkspace = useShellStore((s) => s.setWorkspace);
-  const sidebarOpen = useShellStore((s) => s.sidebarOpen);
   const detailsOpen = useShellStore((s) => s.detailsOpen);
-  const toggleSidebar = useShellStore((s) => s.toggleSidebar);
   const toggleDetails = useShellStore((s) => s.toggleDetails);
   const loadThreads = useConversationStore((s) => s.loadThreads);
   const error = useConversationStore((s) => s.error);
+  const chatEmpty = useConversationStore((s) => !s.selectedThreadId || !(s.messages[s.selectedThreadId]?.length));
   const selectThread = useConversationStore((s) => s.selectThread);
   const clearSelection = useConversationStore((s) => s.clearSelection);
   const selectedThreadId = useConversationStore((s) => s.selectedThreadId);
@@ -99,6 +124,7 @@ export default function App() {
       const route = readRoute();
       if (route.threadId) await selectThread(route.threadId);
       if (alive) setRoutingReady(true);
+      void useConversationStore.getState().pruneEmptyThreads();
     });
     return () => { alive = false; };
   }, [loadThreads, selectThread]);
@@ -106,34 +132,42 @@ export default function App() {
     if (!routingReady) return;
     writeRoute({
       workspace,
+      opsPage,
       threadId: selectedThreadId,
+      // Keep URL mission only while a real run is attached. "pending" leaves the
+      // previous param alone during submit handshake; idle/empty clears it so
+      // Debug does not reopen a prior mission on untitled chats.
       ...(isTraceableMissionId(missionId)
         ? { missionId }
-        : selectedThreadId
+        : missionId === "pending"
           ? {}
           : { missionId: null }),
     });
-  }, [routingReady, workspace, selectedThreadId, missionId]);
+  }, [routingReady, workspace, opsPage, selectedThreadId, missionId]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault(); setSearchOpen(true);
       }
       // Modals handle their own Escape; this only folds the side panels.
-      if (event.key === "Escape" && !searchOpen && !promptsOpen && !diagnosticsOpen) {
+      // A dialog that just consumed this Escape (Radix marks it handled) must not also fold the sidebar behind it.
+      if (event.key === "Escape" && !event.defaultPrevented && !searchOpen && !promptsOpen && !diagnosticsOpen) {
         const shell = useShellStore.getState();
         if (shell.detailsOpen) shell.toggleDetails();
         else if (shell.sidebarOpen) shell.toggleSidebar();
       }
     };
-    const openPrompts = () => setPromptsOpen(true);
+    const openPrompts = () => { setWorkspace("conversation"); setPromptsOpen(true); };
+    const openSearch = () => setSearchOpen(true);
+    const openDiagnostics = () => setDiagnosticsOpen(true);
     const result = (event: Event) => {
       const detail = (event as CustomEvent<{ thread_id?: string }>).detail;
       if (detail?.thread_id) { setWorkspace("conversation"); void selectThread(detail.thread_id); }
     };
     const popstate = () => {
       const route = readRoute();
-      setWorkspace(route.workspace);
+      if (route.workspace === "ops") useShellStore.getState().openOps(route.opsPage);
+      else setWorkspace(route.workspace);
       if (route.threadId && route.threadId !== useConversationStore.getState().selectedThreadId) {
         void selectThread(route.threadId);
       } else if (!route.threadId) {
@@ -142,96 +176,90 @@ export default function App() {
     };
     window.addEventListener("keydown", keyboard);
     window.addEventListener("seleric:search-result", result);
-    window.addEventListener("seleric:open-prompts", openPrompts);
+    window.addEventListener(APP_EVENTS.prompts, openPrompts);
+    window.addEventListener(APP_EVENTS.search, openSearch);
+    window.addEventListener(APP_EVENTS.diagnostics, openDiagnostics);
     window.addEventListener("popstate", popstate);
     return () => {
       window.removeEventListener("keydown", keyboard);
       window.removeEventListener("seleric:search-result", result);
-      window.removeEventListener("seleric:open-prompts", openPrompts);
+      window.removeEventListener(APP_EVENTS.prompts, openPrompts);
+      window.removeEventListener(APP_EVENTS.search, openSearch);
+      window.removeEventListener(APP_EVENTS.diagnostics, openDiagnostics);
       window.removeEventListener("popstate", popstate);
     };
   }, [clearSelection, selectThread, setWorkspace, searchOpen, promptsOpen, diagnosticsOpen]);
 
-  if (workspace === "office") {
+  const dialogs = (
+    <>
+      {searchOpen && <Suspense fallback={null}><CommandSearch open onClose={() => setSearchOpen(false)} /></Suspense>}
+      {diagnosticsOpen && <Suspense fallback={null}><AdminDiagnostics open onClose={() => setDiagnosticsOpen(false)} /></Suspense>}
+      <VoiceOverlay />
+    </>
+  );
+
+  if (workspace === "ops") {
     return (
-      <OfficeWorkspace
-        dark={dark}
-        onToggleTheme={() => setDark((value) => !value)}
-        onOpenConversations={() => setWorkspace("conversation")}
-      />
+      <>
+        <Suspense fallback={workspaceFallback}><OpsWorkspace dark={dark} /></Suspense>
+        {dialogs}
+      </>
     );
   }
 
-  const closePanels = () => {
-    if (sidebarOpen) toggleSidebar();
-    else if (detailsOpen) toggleDetails();
-  };
+  if (workspace === "office") {
+    return (
+      <>
+        <Suspense fallback={workspaceFallback}><OfficeWorkspace dark={dark} /></Suspense>
+        {dialogs}
+      </>
+    );
+  }
 
   return (
-    <div className="app-shell">
-      <header className="shell-header">
-        <button
-          className="icon-btn"
-          aria-label="Toggle conversations"
-          aria-expanded={sidebarOpen}
-          onClick={toggleSidebar}
-          title="Toggle conversations"
-        ><MenuIcon /></button>
-        <button className="brand-button" onClick={() => setWorkspace("conversation")} aria-label="Seleric home"><span className="brand-mark">S</span><strong>Seleric</strong></button>
-        <div className="workspace-switch" role="tablist" aria-label="Workspace">
-          <button role="tab" aria-selected={workspaceTab === "conversation"} className={workspaceTab === "conversation" ? "active" : ""} onClick={() => setWorkspace("conversation")}>Conversations</button>
-          <button role="tab" aria-selected={workspaceTab === "office"} className={workspaceTab === "office" ? "active" : ""} onClick={() => setWorkspace("office")}>Office</button>
-        </div>
-        {currentTitle && <span className="thread-context-title" title={currentTitle}>{currentTitle}</span>}
-        <span className="header-spacer" />
-        <button
-          className="search-trigger"
-          onClick={() => setPromptsOpen(true)}
-          aria-label="Open prompt registry"
-          title="Prompt registry"
-        >
-          <PromptsIcon size={14} /><span className="label">Prompts</span>
-        </button>
-        <button className="search-trigger" onClick={() => setSearchOpen(true)}
-          aria-keyshortcuts="Control+K Meta+K" aria-label="Search conversations">
-          <SearchIcon size={14} /><span className="label">Search</span><kbd>⌘K</kbd>
-        </button>
-        <ShareButton threadId={selectedThreadId} />
-        <button
-          className="icon-btn"
-          aria-label="Toggle conversation details"
-          aria-expanded={detailsOpen}
-          onClick={toggleDetails}
-          title="Inspector (causal, debug, memory)"
-        ><PanelRightIcon /></button>
-        <button className="icon-btn" onClick={() => setDiagnosticsOpen(true)}
-          aria-label="Open admin diagnostics" title="Diagnostics"><SlidersIcon /></button>
-        <button className="icon-btn" onClick={() => setDark((value) => !value)} aria-label={`Use ${dark ? "light" : "dark"} theme`} title="Theme">
-          {dark ? <SunIcon /> : <MoonIcon />}
-        </button>
-      </header>
-      <main className="conversation-layout">
-        {(sidebarOpen || detailsOpen) && <button className="mobile-panel-backdrop" aria-label="Close open panel" onClick={closePanels} tabIndex={-1} />}
-        <PanelErrorBoundary name="sidebar">
-          {sidebarOpen && <ThreadSidebar />}
-        </PanelErrorBoundary>
-        <div className="conversation-main">
-          {error && <div className="error-banner" role="alert">{error}</div>}
-          <PanelErrorBoundary name="transcript">
-            <SelericAssistantRuntimeProvider>
-              <Transcript />
-              <Composer />
-              <PromptRegistryModal open={promptsOpen} onClose={() => setPromptsOpen(false)} />
-            </SelericAssistantRuntimeProvider>
+    <>
+      <AppFrame
+        workspace="conversation"
+        sidebarLabel="Conversations"
+        toggleLabel="Toggle conversations"
+        sidebarBody={<PanelErrorBoundary name="sidebar"><ThreadSidebar /></PanelErrorBoundary>}
+        header={
+          <>
+            {currentTitle && <span className="min-w-0 flex-1 truncate px-1 text-sm text-muted-foreground" title={currentTitle}>{currentTitle}</span>}
+            <span className="flex-1" />
+            <span className="flex items-center gap-1.5 opacity-60 transition-opacity duration-200 focus-within:opacity-100 hover:opacity-100 max-md:opacity-100">
+              <ShareButton threadId={selectedThreadId} className="max-md:hidden" />
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Toggle conversation details"
+              aria-expanded={detailsOpen}
+              onClick={toggleDetails}
+              title="Inspector (causal, debug, memory)"
+            ><PanelRightIcon /></Button>
+            </span>
+          </>
+        }
+      >
+        <main className="flex min-h-0 flex-1 items-stretch bg-background">
+          <div data-empty={chatEmpty} className="group/chat relative flex min-h-0 min-w-0 flex-1 flex-col bg-background data-[empty=true]:justify-center">
+            {error && <Alert variant="destructive" role="alert" className="rounded-none border-x-0 border-t-0"><AlertDescription>{error}</AlertDescription></Alert>}
+            <PanelErrorBoundary name="transcript">
+              <SelericAssistantRuntimeProvider>
+                <Transcript />
+                <Composer />
+                {promptsOpen && <Suspense fallback={null}><PromptRegistryModal open onClose={() => setPromptsOpen(false)} /></Suspense>}
+              </SelericAssistantRuntimeProvider>
+            </PanelErrorBoundary>
+          </div>
+          <PanelErrorBoundary name="inspector">
+            <ResponsivePanel open={detailsOpen} onOpenChange={(open) => open !== detailsOpen && toggleDetails()} side="right" label="Conversation details">
+              <DetailPanel />
+            </ResponsivePanel>
           </PanelErrorBoundary>
-        </div>
-        <PanelErrorBoundary name="inspector">
-          {detailsOpen && <DetailPanel />}
-        </PanelErrorBoundary>
-      </main>
-      <CommandSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
-      <VoiceOverlay />
-      <AdminDiagnostics open={diagnosticsOpen} onClose={() => setDiagnosticsOpen(false)} />
-    </div>
+        </main>
+      </AppFrame>
+      {dialogs}
+    </>
   );
 }

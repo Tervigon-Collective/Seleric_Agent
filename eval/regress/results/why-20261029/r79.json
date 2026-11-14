@@ -1,0 +1,51 @@
+{
+ "n": 79,
+ "aspect": "why_causal",
+ "q": "Do our ads actually cause more orders, or do the two just move together?",
+ "thread": "thread_acedace30c0c48bd890cd02be71f7436",
+ "mission": "MS3-40122fb612",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 42,
+ "elapsed_s": 31.789,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [
+   "9.8%",
+   "16.7%",
+   "2,05,512",
+   "16.7%"
+  ],
+  "numbers": 8,
+  "measured": 4,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": true,
+   "what": "any of ['correlat', 'causal', 'cause']"
+  }
+ ],
+ "answer": "Orders rose by 9.8% in the last 30 days compared to the previous period, from 930 to 1,021, while ad spend increased by 16.7%, from \u20b912,33,913 to \u20b914,39,425. The data shows that orders and ad spend moved together, but it does not confirm that ad spend caused the increase in orders.\n\n- **Ad spend**: Increased by \u20b92,05,512 (+16.7%), within its usual range. This movement aligns with the rise in orders but is not confirmed as a cause.\n- **Clicks and impressions**: Both increased significantly, but these changes were also within their usual ranges, suggesting correlation rather than causation.\n\nThe diagnosis did not identify ad spend, clicks, or impressions as a supported cause of the order increase. The two metrics moved together, but the data does not establish causality.\n\nPeriod: 2026-09-29 to 2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break this down by ad platform and campaign."
+}

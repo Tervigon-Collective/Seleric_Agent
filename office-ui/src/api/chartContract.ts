@@ -7,6 +7,8 @@
  * runtime instead of showing up as a blank chart frame.
  */
 
+import { api } from "./http";
+
 export const CHART_TYPES = [
   "line",
   "area",
@@ -224,7 +226,7 @@ const VOCABULARY_URL = "/v1/office/chart-types";
  */
 export async function loadChartVocabulary(): Promise<ChartVocabulary | null> {
   try {
-    const response = await fetch(VOCABULARY_URL, { headers: { Accept: "application/json" } });
+    const response = await fetch(VOCABULARY_URL, { headers: api.headers({ Accept: "application/json" }) });
     if (!response.ok) return null;
     const payload = (await response.json()) as ChartVocabulary;
     return Array.isArray(payload?.chart_types) ? payload : null;

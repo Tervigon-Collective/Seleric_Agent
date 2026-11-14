@@ -98,6 +98,12 @@ CHECKS = {
                  ("audits the entities in code", lambda t: any(c["name"] == "audit_entities" for c in t["tools"])),
                  ("does not open with the diagnosis helper", lambda t: not t["tools"] or next(
                      (c["name"] for c in t["tools"] if c["name"] not in ("escalate",) and not c["name"].startswith("catalogue_")), "") != DIAGNOSIS)],
+    # live 2026-10-29 thread_b5b744 / MS3-b9d572c736: "Which ads? Our products have seen a dip" was answered by product, with no ad grain
+    "dip_ads": [("fetches at campaign / ad grain, not product only",
+                 lambda t: any(_dims(c) & {"campaign_name", "campaign_id", "campaign", "ad_name", "ad_id"} for c in _calls(t))),
+                ("measures the claimed dip against the previous period", _compares),
+                ("no audit_entities call after which it was refused for mixed keys",
+                 lambda t: not any("cannot be audited together" in str(c.get("result", "")) for c in t["tools"] if c["name"] == "audit_entities"))],
     "q6": [("product breakdown", lambda t: any(_dims(c) & _PRODUCT or c["args"].get("hierarchy") == "product" for c in _calls(t))),
            ("channel breakdown", lambda t: any(_dims(c) & _CHANNEL for c in _calls(t))),
            ("reuses prior scope (drilldown or same window)", lambda t: any(c["name"] == "metrics_drilldown" for c in _calls(t)) or _week_windows(t))],

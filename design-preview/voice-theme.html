@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seleric Voice Theme Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<style>
+/* Voice-theme direction: cool blue-tinted neutrals, one electric blue-violet accent taken from the orb hue (222), Inter only.
+   Layout idea: same sidebar + calm column; the orb is the signature, so the accent is used sparingly. */
+:root{
+  --bg:#f5f6fa; --panel:#ffffff; --sidebar:#eceef5; --hover:#e2e5f0; --active:#d9ddec;
+  --line:#e0e3ee; --line-strong:#c9cee0;
+  --text:#161a26; --dim:#585f75; --faint:#8a90a5;
+  --accent:#3b5bdb; --accent-hover:#2f49b8; --accent-soft:#e3e9ff; --on-accent:#fff;
+  --good:#1f8a5b; --good-soft:#dff3e9; --warn:#a56a00; --warn-soft:#fbefd3; --bad:#c42d3c; --bad-soft:#fbe4e7;
+  --serif:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --r-sm:6px; --r-md:8px; --r-lg:12px; --r-xl:18px;
+  --shadow:0 1px 2px rgba(20,30,70,.06),0 2px 8px rgba(20,30,70,.05);
+  --shadow-lg:0 12px 36px rgba(20,30,70,.18);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1219; --panel:#171b25; --sidebar:#0b0e14; --hover:#1f2431; --active:#272d3d;
+  --line:#242a38; --line-strong:#353c4f; --text:#e8ebf5; --dim:#a4abc0; --faint:#737a92;
+  --accent:#7c9cff; --accent-hover:#9bb4ff; --accent-soft:#1b2750; --on-accent:#0b0e14;
+  --good:#5fd3a0; --good-soft:#12301f; --warn:#f0b34a; --warn-soft:#352a12; --bad:#ff7b87; --bad-soft:#3a1a1f;
+  --shadow:0 1px 2px rgba(0,0,0,.4); --shadow-lg:0 12px 40px rgba(0,0,0,.6); color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#0f1219; --panel:#171b25; --sidebar:#0b0e14; --hover:#1f2431; --active:#272d3d;
+  --line:#242a38; --line-strong:#353c4f; --text:#e8ebf5; --dim:#a4abc0; --faint:#737a92;
+  --accent:#7c9cff; --accent-hover:#9bb4ff; --accent-soft:#1b2750; --on-accent:#0b0e14;
+  --good:#5fd3a0; --good-soft:#12301f; --warn:#f0b34a; --warn-soft:#352a12; --bad:#ff7b87; --bad-soft:#3a1a1f;
+  --shadow:0 1px 2px rgba(0,0,0,.4); --shadow-lg:0 12px 40px rgba(0,0,0,.6); color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:400 15px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-sm)}
+h1,h2,h3,p{margin:0}
+.serif{font-family:var(--serif);font-weight:400;letter-spacing:-.01em}
+.app{display:flex;height:100%}
+
+/* sidebar */
+.sidebar{width:272px;flex:none;background:var(--sidebar);display:flex;flex-direction:column;padding:12px 8px 8px;border-right:1px solid var(--line);transition:margin .2s}
+.brand{display:flex;align-items:center;gap:8px;padding:6px 10px 14px}
+.brand .mark{width:24px;height:24px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font:600 13px var(--sans)}
+.brand b{font:500 20px var(--serif);letter-spacing:-.01em}
+.brand .grow{flex:1}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:var(--r-md);color:var(--text);text-align:left;width:100%;font-size:14px}
+.nav-item:hover{background:var(--hover)}
+.nav-item[aria-current="page"]{background:var(--active)}
+.nav-item svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;color:var(--dim)}
+.nav-item .count{margin-left:auto;font-size:12px;color:var(--bad);font-variant-numeric:tabular-nums}
+.recent{flex:1;min-height:0;overflow:auto;margin-top:18px}
+.group-label{padding:6px 10px;font-size:12px;color:var(--faint);font-weight:500}
+.thread{display:block;width:100%;text-align:left;padding:6px 10px;border-radius:var(--r-md);font-size:14px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thread:hover{background:var(--hover);color:var(--text)}
+.thread[aria-current="page"]{background:var(--active);color:var(--text)}
+.account{position:relative;border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
+.account-btn{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border-radius:var(--r-md);text-align:left}
+.account-btn:hover{background:var(--hover)}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-size:12px;font-weight:600}
+.account-btn small{display:block;color:var(--faint);font-size:12px;line-height:1.2}
+.menu{position:absolute;left:0;right:0;bottom:calc(100% + 6px);background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-lg);padding:6px;display:none;z-index:30}
+.menu.open{display:block}
+.menu button{display:flex;gap:10px;align-items:center;width:100%;padding:8px 10px;border-radius:var(--r-md);font-size:14px;text-align:left}
+.menu button:hover{background:var(--hover)}
+.menu hr{border:0;border-top:1px solid var(--line);margin:6px 0}
+.menu .kbd{margin-left:auto;color:var(--faint);font-size:12px}
+.seg{display:flex;gap:2px;background:var(--sidebar);padding:3px;border-radius:var(--r-md);margin:2px 4px 4px}
+.seg button{flex:1;justify-content:center;padding:5px;border-radius:var(--r-sm);font-size:13px;color:var(--dim);width:auto}
+.seg button[aria-pressed="true"]{background:var(--panel);color:var(--text);box-shadow:var(--shadow)}
+
+/* main */
+main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+.topline{height:52px;display:flex;align-items:center;gap:8px;padding:0 16px;flex:none}
+.icon-btn{width:34px;height:34px;border-radius:var(--r-md);display:grid;place-items:center;color:var(--dim)}
+.icon-btn:hover{background:var(--hover);color:var(--text)}
+.icon-btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.menu-btn,#closeDrawer{display:none}
+@media (max-width:860px){#closeDrawer{display:grid}}
+.title{font-size:14px;color:var(--dim);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.scroll{flex:1;overflow:auto}
+.view{display:none}
+.view.on{display:block}
+#v-chat-new.on,#v-chat.on{display:flex;flex-direction:column;height:100%}
+
+/* chat */
+.col{width:100%;max-width:720px;margin:0 auto;padding:0 24px}
+.empty{flex:1;display:flex;flex-direction:column;justify-content:center;gap:28px;padding-bottom:12vh}
+.empty h1{font:400 38px/1.15 var(--serif);letter-spacing:-.02em;text-align:center;text-wrap:balance}
+.empty .sub{text-align:center;color:var(--dim);margin-top:10px;max-width:520px;margin-inline:auto}
+.composer{background:var(--panel);border:1px solid var(--line-strong);border-radius:var(--r-xl);box-shadow:var(--shadow);padding:14px 14px 10px 18px;transition:box-shadow .15s,border-color .15s}
+.composer:focus-within{border-color:var(--faint);box-shadow:var(--shadow),0 0 0 3px var(--accent-soft)}
+.composer textarea{width:100%;border:0;outline:0;resize:none;background:none;color:var(--text);font:inherit;font-size:16px;min-height:26px;max-height:180px;line-height:1.5}
+.composer textarea::placeholder{color:var(--faint)}
+.composer .row{display:flex;align-items:center;gap:4px;margin-top:6px}
+.composer .row .grow{flex:1}
+.send{width:34px;height:34px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:grid;place-items:center}
+.send:hover{background:var(--accent-hover)}
+.send svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.hint{text-align:center;color:var(--faint);font-size:12px;padding:8px 0 14px}
+.starters{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.starters button{border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:13.5px;color:var(--dim);background:var(--panel)}
+.starters button:hover{border-color:var(--line-strong);color:var(--text)}
+.msgs{flex:1;overflow:auto;padding:12px 0 32px}
+.msgs .col{display:flex;flex-direction:column;gap:28px}
+.user{align-self:flex-end;max-width:85%;background:var(--sidebar);border-radius:var(--r-lg);padding:10px 16px}
+.agent{display:flex;flex-direction:column;gap:14px}
+.agent p{font-size:16px;line-height:1.7}
+.agent h3{font:500 22px/1.3 var(--serif);margin-top:4px}
+.steps{border:1px solid var(--line);border-radius:var(--r-lg);background:var(--panel)}
+.steps summary{cursor:pointer;list-style:none;padding:10px 14px;font-size:14px;color:var(--dim);display:flex;gap:8px;align-items:center}
+.steps summary::-webkit-details-marker{display:none}
+.steps summary::before{content:"";width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s}
+.steps[open] summary::before{transform:rotate(45deg)}
+.steps ol{margin:0;padding:0 14px 12px 36px;color:var(--dim);font-size:14px;display:flex;flex-direction:column;gap:4px}
+.evidence{border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;background:var(--panel)}
+.evidence table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+.evidence th{text-align:left;font-weight:500;color:var(--dim);padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px}
+.evidence td{padding:10px 14px;border-bottom:1px solid var(--line)}
+.evidence tr:last-child td{border-bottom:0}
+.evidence .num{text-align:right}
+.evidence caption{caption-side:bottom;text-align:left;padding:8px 14px;font-size:12.5px;color:var(--faint);border-top:1px solid var(--line)}
+.approval{border:1px solid var(--line-strong);border-radius:var(--r-lg);padding:14px 16px;background:var(--panel);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.approval div{flex:1;min-width:200px}
+.approval b{font-weight:500}
+.approval small{display:block;color:var(--dim)}
+.btn{border-radius:var(--r-md);padding:7px 14px;font-size:14px;font-weight:500;border:1px solid var(--line-strong);background:var(--panel)}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.btn.primary:hover{opacity:.88}
+.actions{display:flex;gap:2px;color:var(--faint)}
+
+/* ops */
+.page{max-width:960px;margin:0 auto;padding:8px 32px 72px}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:32px}
+.page-head h1{font:400 34px/1.15 var(--serif);letter-spacing:-.02em}
+.page-head p{color:var(--dim);margin-top:4px;font-size:14px}
+.summary{display:flex;gap:16px;align-items:flex-start;padding:22px 24px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg)}
+.dot{width:10px;height:10px;border-radius:50%;margin-top:9px;flex:none;background:var(--bad)}
+.summary h2{font:400 24px/1.3 var(--serif)}
+.summary p{color:var(--dim);font-size:14px;margin-top:2px}
+.headline{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:20px}
+.stat{padding:2px 0 0;display:flex;flex-direction:column;gap:2px}
+.stat span{font-size:13px;color:var(--dim)}
+.stat b{font:400 28px/1.2 var(--serif);font-variant-numeric:tabular-nums}
+.stat small{font-size:12px;color:var(--faint)}
+.stat.alert b{color:var(--bad)}
+section.block{margin-top:44px}
+.block-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.block-head h2{font:400 24px/1.3 var(--serif)}
+.block-head .meta{font-size:13px;color:var(--faint)}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:6px;overflow:auto}
+.tabs button{padding:8px 12px;font-size:14px;color:var(--dim);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tabs button:hover{color:var(--text)}
+.tabs button[aria-selected="true"]{color:var(--text);border-color:var(--accent)}
+.tabs .n{color:var(--faint);font-variant-numeric:tabular-nums;margin-left:4px}
+.row-item{border-bottom:1px solid var(--line)}
+.row-item>button{width:100%;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) 110px 16px;gap:16px;align-items:center;padding:14px 4px;text-align:left}
+.row-item>button:hover{background:var(--hover)}
+.row-item .name{font-weight:450}
+.row-item .name small{display:block;color:var(--faint);font-size:12.5px;font-weight:400}
+.row-item .val{font-variant-numeric:tabular-nums}
+.row-item .val small{display:block;color:var(--faint);font-size:12.5px}
+.chev{width:7px;height:7px;border-right:1.5px solid var(--faint);border-bottom:1.5px solid var(--faint);transform:rotate(45deg);transition:transform .15s}
+.row-item.open .chev{transform:rotate(-135deg)}
+.evi{display:none;padding:2px 4px 18px;color:var(--dim);font-size:14px;max-width:62ch}
+.row-item.open .evi{display:block}
+.evi p+p{margin-top:8px}
+.status{font-size:12.5px;font-weight:500;padding:2px 9px;border-radius:999px;display:inline-block;white-space:nowrap}
+.status.alert{background:var(--bad-soft);color:var(--bad)}
+.status.watch{background:var(--warn-soft);color:var(--warn)}
+.status.good{background:var(--good-soft);color:var(--good)}
+.status.ok{background:var(--hover);color:var(--dim)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px 20px;display:flex;flex-direction:column;gap:6px}
+.card .top{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.card .top span{font-size:14px;color:var(--dim)}
+.card .v{font:400 30px/1.2 var(--serif);font-variant-numeric:tabular-nums}
+.card small{color:var(--faint);font-size:12.5px}
+.card svg.spark{width:100%;height:44px;margin-top:6px;display:block}
+.note{font-size:13px;color:var(--faint);margin-top:16px;max-width:70ch}
+.toggle-row{display:flex;align-items:center;gap:16px;padding:16px 0;border-bottom:1px solid var(--line)}
+.toggle-row div{flex:1}
+.toggle-row small{display:block;color:var(--dim)}
+.switch{width:38px;height:22px;border-radius:999px;background:var(--line-strong);position:relative;flex:none;transition:background .15s}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s}
+.switch[aria-checked="true"]{background:var(--accent)}
+.switch[aria-checked="true"]::after{transform:translateX(16px)}
+
+/* office placeholder */
+.placeholder{display:grid;place-items:center;height:100%;color:var(--dim);text-align:center;padding:24px}
+.placeholder b{font:400 24px var(--serif);color:var(--text);display:block;margin-bottom:6px}
+
+/* modal for admin tools */
+.scrim{position:fixed;inset:0;background:rgba(30,25,15,.35);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+.scrim.open{display:flex}
+.dialog{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-lg);width:100%;max-width:560px;padding:24px;max-height:85vh;overflow:auto}
+.dialog h2{font:400 24px var(--serif);margin-bottom:4px}
+.dialog p.d{color:var(--dim);font-size:14px;margin-bottom:16px}
+.kv{display:grid;grid-template-columns:140px 1fr;gap:8px 16px;font-size:14px}
+.kv dt{color:var(--dim)}.kv dd{margin:0;font-family:var(--mono);font-size:13px}
+.dialog .foot{display:flex;justify-content:flex-end;margin-top:20px}
+
+
+
+/* voice: docked card replaces the composer; expand goes full screen. Tokens are --v-* so each theme decides the look. */
+.voice-dock{position:absolute;left:50%;transform:translateX(-50%);bottom:34px;width:min(720px,calc(100% - 32px));display:none;flex-direction:column;background:var(--v-card);border:1px solid var(--v-line);border-radius:var(--r-xl);box-shadow:var(--shadow);overflow:hidden;z-index:20}
+.app.voice-on .voice-dock{display:flex}
+.app.voice-on .composer,.app.voice-on .hint{visibility:hidden}
+.vd-cap{padding:14px 18px 0;font-size:13px;color:var(--v-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vd-say{padding:6px 18px 0;font-size:15px;min-height:22px}
+.vd-bar{display:flex;align-items:center;gap:8px;padding:12px}
+.vd-bar .label{flex:1;font-size:14px;color:var(--v-dim)}
+.orb-well{border-radius:50%;overflow:hidden;background:var(--v-well);box-shadow:inset 0 0 0 1px var(--v-line);flex:none}
+.orb-well canvas{width:100%;height:100%;display:block}
+.vbtn{width:34px;height:34px;border-radius:var(--r-md);display:grid;place-items:center;color:var(--v-dim)}
+.vbtn:hover{background:var(--v-hover);color:var(--v-text)}
+.vbtn[aria-pressed="true"]{background:var(--v-hover);color:var(--v-text)}
+.vbtn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.vend{display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:var(--r-md);background:var(--v-end);color:#fff;font-size:14px;font-weight:500}
+.vend:hover{filter:brightness(1.08)}
+.vend svg{width:12px;height:12px;fill:currentColor}
+.voice-screen{position:fixed;inset:0;z-index:100;display:none;flex-direction:column;align-items:center;justify-content:space-between;padding:20px 20px 28px;background:var(--v-stage);color:var(--v-text)}
+.app.voice-full .voice-screen{display:flex}
+.voice-screen .top{align-self:stretch;display:flex;justify-content:space-between}
+.voice-screen .stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;width:min(640px,100%);text-align:center}
+.voice-screen .stage .orb-well{width:min(280px,60vw);height:min(280px,60vw);background:transparent;box-shadow:none}
+.voice-screen .stage p{margin:0}
+.voice-screen .big{display:flex;gap:28px}
+.circle{width:64px;height:64px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;border:1px solid var(--v-line);background:var(--v-card);color:var(--v-text)}
+.circle:hover{background:var(--v-hover)}
+.circle.end{background:var(--v-end);border-color:var(--v-end);color:#fff}
+.circle svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.voice-screen small{color:var(--v-dim);font-size:12px}
+:root{--v-card:var(--panel);--v-line:var(--line-strong);--v-text:var(--text);--v-dim:var(--dim);--v-hover:var(--hover);--v-end:#e5484d;
+  --v-well:radial-gradient(circle at 50% 42%,hsl(222 50% 98%),hsl(222 48% 90%));--v-stage:radial-gradient(90% 70% at 50% 38%,hsl(222 78% 92%),hsl(222 45% 97%) 36%,transparent 68%),var(--bg);--is-dark:0}
+:root[data-theme="dark"]{--v-well:radial-gradient(circle at 50% 42%,hsl(222 42% 16%),#070b12 74%);--v-stage:radial-gradient(120% 90% at 50% 35%,hsl(222 45% 16%),#0a0e14 70%);--is-dark:1}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--v-well:radial-gradient(circle at 50% 42%,hsl(222 42% 16%),#070b12 74%);--v-stage:radial-gradient(120% 90% at 50% 35%,hsl(222 45% 16%),#0a0e14 70%);--is-dark:1}}
+
+.app.voice-on .msgs{padding-bottom:190px}.voice-screen .big{margin-bottom:12px}
+/* narrow screens */
+@media (max-width:860px){
+  .sidebar{position:fixed;inset:0 auto 0 0;z-index:40;margin-left:-290px;box-shadow:var(--shadow-lg)}
+  .app.drawer .sidebar{margin-left:0}
+  .app.drawer::after{content:"";position:fixed;inset:0;background:rgba(30,25,15,.3);z-index:35}
+  .menu-btn{display:grid}
+  .empty h1{font-size:30px}
+  .page{padding:8px 20px 56px}
+  .row-item>button{grid-template-columns:minmax(0,1fr) auto 16px}
+  .row-item .val{display:none}
+}
+@media (max-width:520px){.col{padding:0 16px}.page-head h1{font-size:28px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* voice-theme overrides: sans-only hierarchy, a little tighter and more product-like */
+.page-head h1,.empty h1{font-weight:600;letter-spacing:-.025em}
+.empty h1{font-size:32px}
+.block-head h2,.summary h2,.agent h3{font-weight:600;letter-spacing:-.015em}
+.block-head h2{font-size:19px}.summary h2{font-size:20px}.agent h3{font-size:19px}.dialog h2,.placeholder b{font-weight:600}
+.brand b{font-weight:600;font-size:17px}
+.stat b,.card .v{font-weight:500;letter-spacing:-.02em}
+.stat b{font-size:26px}.card .v{font-size:28px}
+.send{background:var(--accent)}
+.nav-item[aria-current="page"]{background:var(--accent-soft);color:var(--accent)}
+.nav-item[aria-current="page"] svg{color:var(--accent)}
+.thread[aria-current="page"]{background:var(--active)}
+.tabs button[aria-selected="true"]{border-color:var(--accent);color:var(--accent)}
+.brand .mark{background:var(--accent);color:var(--on-accent)}
+.composer:focus-within{box-shadow:var(--shadow),0 0 0 3px var(--accent-soft)}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar" aria-label="Main navigation">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">S</span><b>Seleric</b><span class="grow"></span>
+      <button class="icon-btn" id="closeDrawer" aria-label="Close navigation"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <nav class="nav">
+      <button class="nav-item" data-go="chat-new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New chat</button>
+      <button class="nav-item" data-go="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg>Search<span class="count" style="color:var(--faint)">⌘K</span></button>
+      <button class="nav-item" data-go="monitoring"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>Monitoring<span class="count">2</span></button>
+      <button class="nav-item" data-go="office"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 10h16M10 10v10"/></svg>Office</button>
+    </nav>
+    <div class="recent" aria-label="Conversations">
+      <div class="group-label">Today</div>
+      <button class="thread" data-go="chat" aria-current="false">Why did repeat purchases drop last week</button>
+      <button class="thread" data-go="chat">Top products by margin</button>
+      <div class="group-label" style="margin-top:10px">Yesterday</div>
+      <button class="thread" data-go="chat">Ad spend vs. revenue by channel</button>
+      <button class="thread" data-go="chat">Refund rate by warehouse</button>
+      <div class="group-label" style="margin-top:10px">Previous 7 days</div>
+      <button class="thread" data-go="chat">Weekly sales summary</button>
+      <button class="thread" data-go="chat">Delivery delays in the north region</button>
+      <button class="thread" data-go="chat">Evaluation runs (4)</button>
+    </div>
+    <div class="account">
+      <div class="menu" id="menu" role="menu">
+        <div class="seg" role="group" aria-label="Theme">
+          <button data-theme-set="light" aria-pressed="false">Light</button>
+          <button data-theme-set="system" aria-pressed="true">System</button>
+          <button data-theme-set="dark" aria-pressed="false">Dark</button>
+        </div>
+        <hr>
+        <button data-dialog="prompts" role="menuitem">Prompts</button>
+        <button data-dialog="diagnostics" role="menuitem">Diagnostics</button>
+        <button data-dialog="debug" role="menuitem">Debug</button>
+        <hr>
+        <button data-toggle-voice role="menuitem">Start voice mode</button>
+      </div>
+      <button class="account-btn" id="accountBtn" aria-haspopup="menu" aria-expanded="false">
+        <span class="avatar">GP</span><span>Gaurav<small>Settings and tools</small></span>
+      </button>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topline">
+      <button class="icon-btn menu-btn" id="openDrawer" aria-label="Open navigation"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <span class="title" id="pageTitle">New chat</span>
+    </div>
+    <div class="scroll" id="scroll">
+
+      <!-- NEW CHAT -->
+      <div class="view on" id="v-chat-new">
+        <div class="col empty">
+          <div>
+            <h1>What do you want to look into?</h1>
+            <p class="sub">Ask about marketing, sales, products, or operations. Seleric investigates your metrics and shows its evidence.</p>
+          </div>
+          <div>
+            <form class="composer" data-compose>
+              <textarea rows="1" aria-label="Message" placeholder="Ask about sales, marketing, products…"></textarea>
+              <div class="row">
+                <button type="button" class="icon-btn" aria-label="Choose attachments" title="Attach a file"><svg viewBox="0 0 24 24"><path d="M20 12l-8 8a5 5 0 01-7-7l9-9a3.5 3.5 0 015 5l-9 9a2 2 0 01-3-3l8-8"/></svg></button>
+                <button type="button" class="icon-btn" aria-label="Open prompt registry" title="Prompts"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM9 9h6M9 13h6"/></svg></button>
+                <span class="grow"></span>
+                <button type="button" class="icon-btn" data-toggle-voice aria-label="Start voice mode" title="Voice"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></button>
+                <button class="send" aria-label="Send message" title="Send (Enter)"><svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+              </div>
+            </form>
+            <div class="starters" style="margin-top:16px">
+              <button data-go="chat">Why did repeat purchases drop last week?</button>
+              <button data-go="chat">Which products lost margin this month?</button>
+              <button data-go="chat">Compare ad spend and revenue by channel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHAT -->
+      <div class="view" id="v-chat">
+        <div class="msgs"><div class="col">
+          <div class="user">Why did repeat purchases drop last week?</div>
+          <div class="agent">
+            <details class="steps"><summary>Investigated 4 metrics across sales and marketing</summary>
+              <ol><li>Compared repeat purchase rate with the same weekday over the last 4 weeks</li><li>Checked order volume by customer cohort</li><li>Checked email campaign sends and delivery</li><li>Ruled out a tracking change</li></ol></details>
+            <h3>Repeat purchases fell because fewer returning customers were emailed</h3>
+            <p>The repeat purchase rate was 18.4% last week, against 24.1% expected. The drop is concentrated in customers who bought 30 to 60 days ago, and the win-back campaign that normally reaches them sent 61% fewer emails than usual.</p>
+            <div class="evidence">
+              <table>
+                <thead><tr><th>Cohort</th><th class="num">Last week</th><th class="num">Expected</th><th class="num">Change</th></tr></thead>
+                <tbody>
+                  <tr><td>Bought 0–30 days ago</td><td class="num">31.2%</td><td class="num">30.8%</td><td class="num">+0.4 pts</td></tr>
+                  <tr><td>Bought 30–60 days ago</td><td class="num">12.6%</td><td class="num">22.9%</td><td class="num" style="color:var(--bad)">−10.3 pts</td></tr>
+                  <tr><td>Bought 60+ days ago</td><td class="num">6.1%</td><td class="num">6.4%</td><td class="num">−0.3 pts</td></tr>
+                </tbody>
+                <caption>Source: orders, email_sends · 14 to 20 Oct</caption>
+              </table>
+            </div>
+            <div class="approval">
+              <div><b>Re-send the win-back campaign to 4,812 customers?</b><small>Needs your approval before anything is sent.</small></div>
+              <button class="btn">Review email</button><button class="btn primary">Approve</button>
+            </div>
+            <div class="actions">
+              <button class="icon-btn" aria-label="Copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/></svg></button>
+              <button class="icon-btn" aria-label="Copy link to this conversation"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/></svg></button>
+            </div>
+          </div>
+        </div></div>
+        <div class="col">
+          <form class="composer" data-compose>
+            <textarea rows="1" aria-label="Message" placeholder="Reply to Seleric…"></textarea>
+            <div class="row">
+              <button type="button" class="icon-btn" aria-label="Choose attachments"><svg viewBox="0 0 24 24"><path d="M20 12l-8 8a5 5 0 01-7-7l9-9a3.5 3.5 0 015 5l-9 9a2 2 0 01-3-3l8-8"/></svg></button>
+              <span class="grow"></span>
+              <button type="button" class="icon-btn" data-toggle-voice aria-label="Start voice mode"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></button>
+              <button class="send" aria-label="Send message"><svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+            </div>
+          </form>
+          <p class="hint">Evidence stays with every answer.</p>
+        </div>
+      </div>
+
+      <!-- MONITORING -->
+      <div class="view" id="v-monitoring">
+        <div class="page">
+          <div class="page-head">
+            <div><h1>Monitoring</h1><p>Data to 30 Oct · oldest check 12 min ago</p></div>
+            <div style="display:flex;gap:8px"><button class="btn" data-go="monitoring-settings">Choose metrics</button><button class="btn">Refresh</button></div>
+          </div>
+          <div class="summary">
+            <span class="dot" aria-hidden="true"></span>
+            <div style="flex:1">
+              <h2>2 metrics need attention</h2>
+              <p>3 watching · 4 better than usual · 31 normal · 40 metrics in 4 domains</p>
+              <div class="headline" aria-label="Headline metrics">
+                <div class="stat alert"><span>Repeat purchase rate</span><b>18.4%</b><small>Sales</small></div>
+                <div class="stat alert"><span>Email sends</span><b>1,904</b><small>Marketing</small></div>
+                <div class="stat"><span>Revenue</span><b>₹ 41.2 L</b><small>Sales</small></div>
+                <div class="stat"><span>Orders shipped on time</span><b>96.1%</b><small>Operations</small></div>
+              </div>
+            </div>
+          </div>
+
+          <section class="block" aria-label="Anomalies">
+            <div class="block-head"><h2>Anomalies</h2><span class="meta">Worst first. Open a row to see the evidence.</span></div>
+            <div class="tabs" role="tablist" id="anTabs">
+              <button role="tab" aria-selected="true" data-tab="alert">Needs attention<span class="n">2</span></button>
+              <button role="tab" aria-selected="false" data-tab="watch">Watching<span class="n">3</span></button>
+              <button role="tab" aria-selected="false" data-tab="good">Better than usual<span class="n">4</span></button>
+            </div>
+            <div id="anList"></div>
+            <p class="note">How verdicts are made: each metric is compared with the median of its same weekday over the last 4 weeks. Normal range is 3 spreads either side.</p>
+          </section>
+
+          <div id="domains"></div>
+        </div>
+      </div>
+
+      <!-- MONITORING SETTINGS -->
+      <div class="view" id="v-monitoring-settings">
+        <div class="page">
+          <div class="page-head"><div><h1>Choose what to monitor</h1><p>Switch domains on or off. Numbers appear after the next scheduled run.</p></div><button class="btn" data-go="monitoring">Back to Monitoring</button></div>
+          <div id="toggles"></div>
+        </div>
+      </div>
+
+      <!-- OFFICE -->
+      <div class="view" id="v-office"><div class="placeholder" style="min-height:70vh"><div><b>Office</b>The mission board and agent view keep their current layout.<br>They pick up the new colours, fonts and spacing automatically.</div></div></div>
+      <div class="view" id="v-search"><div class="placeholder" style="min-height:70vh"><div><b>Search conversations</b>Opens the existing command search, restyled as a centred panel.</div></div></div>
+    </div>
+
+    <div class="voice-dock" role="region" aria-label="Voice conversation">
+      <div class="vd-cap" id="vCapUser">Why did repeat purchases drop last week?</div>
+      <div class="vd-say" id="vCapAgent">The win-back campaign sent 61% fewer emails than usual.</div>
+      <div class="vd-bar">
+        <span class="orb-well" style="width:48px;height:48px"><canvas data-orb></canvas></span>
+        <span class="label" id="vLabel" role="status">Listening</span>
+        <button class="vbtn" data-mute aria-pressed="false" aria-label="Mute microphone" title="Mute"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></button>
+        <button class="vbtn" data-expand aria-label="Expand to full screen" title="Full screen"><svg viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg></button>
+        <button class="vend" data-end aria-label="End voice conversation"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>End</button>
+      </div>
+    </div>
+    <div class="voice-screen" role="dialog" aria-modal="true" aria-label="Voice conversation">
+      <div class="top">
+        <button class="vbtn" data-collapse aria-label="Collapse to bar" title="Collapse"><svg viewBox="0 0 24 24"><path d="M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5"/></svg></button>
+        <button class="vbtn" data-end aria-label="End voice conversation"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="stage">
+        <span class="orb-well"><canvas data-orb></canvas></span>
+        <p style="font-size:18px" id="vLabel2" role="status">Listening</p>
+        <div><p style="font-size:14px;color:var(--v-dim)">Why did repeat purchases drop last week?</p><p style="font-size:16px;margin-top:8px">The win-back campaign sent 61% fewer emails than usual.</p></div>
+      </div>
+      <div class="big">
+        <button class="circle" data-mute aria-pressed="false" aria-label="Mute microphone"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg><span>Mute</span></button>
+        <button class="circle end" data-end aria-label="End voice conversation"><svg viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span>End</span></button>
+      </div>
+      <small>Just talk, interrupt any time · Esc to end</small>
+    </div>
+  </main>
+</div>
+
+<div class="scrim" id="scrim"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle"><h2 id="dlgTitle"></h2><p class="d" id="dlgDesc"></p><div id="dlgBody"></div><div class="foot"><button class="btn" id="dlgClose">Close</button></div></div></div>
+
+<script>
+(function(){
+  var $=function(s,r){return (r||document).querySelector(s)},$$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+  var titles={"chat-new":"New chat","chat":"Why did repeat purchases drop last week","monitoring":"Monitoring","monitoring-settings":"Monitoring","office":"Office","search":"Search"};
+  function show(id){
+    if(!titles[id]) id="chat-new";
+    $$(".view").forEach(function(v){v.classList.toggle("on",v.id==="v-"+id)});
+    $("#pageTitle").textContent=titles[id];
+    $$(".nav-item").forEach(function(n){var g=n.getAttribute("data-go");n.setAttribute("aria-current",(g===id||(g==="monitoring"&&id==="monitoring-settings"))?"page":"false")});
+    $$(".thread").forEach(function(n){n.setAttribute("aria-current",(id==="chat"&&n===$$(".thread")[0])?"page":"false")});
+    $("#app").classList.remove("drawer");
+    if(location.hash!=="#"+id) history.replaceState(null,"","#"+id);
+    $("#scroll").scrollTop=0;
+  }
+  document.addEventListener("click",function(e){
+    var g=e.target.closest("[data-go]"); if(g){show(g.getAttribute("data-go"));$("#menu").classList.remove("open");return}
+    if(!e.target.closest(".account")) $("#menu").classList.remove("open");
+  });
+  window.addEventListener("hashchange",function(){show(location.hash.slice(1))});
+
+  /* drawer + menu */
+  $("#openDrawer").onclick=function(){$("#app").classList.add("drawer")};
+  $("#closeDrawer").onclick=function(){$("#app").classList.remove("drawer")};
+  $("#accountBtn").onclick=function(e){e.stopPropagation();var m=$("#menu");var o=!m.classList.contains("open");m.classList.toggle("open",o);this.setAttribute("aria-expanded",o)};
+
+  /* theme: light / system / dark */
+  function setTheme(t){
+    var r=document.documentElement; if(t==="system") r.removeAttribute("data-theme"); else r.setAttribute("data-theme",t);
+    $$("[data-theme-set]").forEach(function(b){b.setAttribute("aria-pressed",b.getAttribute("data-theme-set")===t)});
+  }
+  $$("[data-theme-set]").forEach(function(b){b.onclick=function(e){e.stopPropagation();setTheme(b.getAttribute("data-theme-set"))}});
+
+  /* voice dock */
+  
+  /* voice: dock <-> full screen, mute, end; particle orb drawn on canvas (stand-in for the real signal-orb) */
+  var app=$("#app"),muted=false,phase="listening",HUE={listening:222,speaking:250,thinking:200,muted:220};
+  function vset(){var l=muted?"Microphone muted":phase==="speaking"?"Speaking":phase==="thinking"?"Thinking…":"Listening";$("#vLabel").textContent=l;$("#vLabel2").textContent=l;$$("[data-mute]").forEach(function(b){b.setAttribute("aria-pressed",muted)})}
+  $$("[data-toggle-voice]").forEach(function(b){b.onclick=function(e){e.stopPropagation();app.classList.add("voice-on");$("#menu").classList.remove("open")}});
+  $$("[data-mute]").forEach(function(b){b.onclick=function(){muted=!muted;vset()}});
+  $$("[data-expand]").forEach(function(b){b.onclick=function(){app.classList.add("voice-full")}});
+  $$("[data-collapse]").forEach(function(b){b.onclick=function(){app.classList.remove("voice-full")}});
+  $$("[data-end]").forEach(function(b){b.onclick=function(){app.classList.remove("voice-on","voice-full")}});
+  document.addEventListener("keydown",function(e){if(e.key==="Escape")app.classList.remove("voice-on","voice-full")});
+  var phases=["listening","speaking","thinking"],pi=0;setInterval(function(){if(app.classList.contains("voice-on")&&!muted){pi=(pi+1)%3;phase=phases[pi];vset()}},3500);
+  var orbs=$$("canvas[data-orb]"),pts=[],N=700,t0=0;
+  for(var i=0;i<N;i++){var y=1-2*(i+.5)/N,a=i*2.39996,r=Math.sqrt(1-y*y);pts.push([Math.cos(a)*r,y,Math.sin(a)*r])}
+  function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+  function draw(t){
+    var dark=css("--is-dark")==="1",h=muted?220:HUE[phase],amp=phase==="speaking"?.12:phase==="thinking"?.06:.03;
+    orbs.forEach(function(c){
+      if(!c.offsetWidth)return;var s=c.offsetWidth,dpr=window.devicePixelRatio||1;if(c.width!==s*dpr){c.width=c.height=s*dpr}
+      var x=c.getContext("2d");x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,s,s);
+      var rot=t/2600,cr=Math.cos(rot),sr=Math.sin(rot),R=s*.36;
+      for(var i=0;i<N;i++){var p=pts[i],px=p[0]*cr+p[2]*sr,pz=-p[0]*sr+p[2]*cr,w=1+amp*Math.sin(t/260+p[1]*6+i*.01),d=(pz+1)/2;
+        x.fillStyle=dark?"hsla("+h+",85%,"+(55+d*25)+"%,"+(.25+d*.7)+")":"hsla("+h+",70%,"+(48-d*14)+"%,"+(.2+d*.6)+")";
+        x.fillRect(s/2+px*R*w,s/2+p[1]*R*w,s>100?1.6:1.1,s>100?1.6:1.1)}
+    });requestAnimationFrame(draw)}
+  requestAnimationFrame(draw);vset();
+
+
+  /* dialogs for tools moved out of the header */
+  var dlg={
+    prompts:["Prompts","Saved prompts you can reuse in any conversation.","<dl class='kv'><dt>Weekly sales summary</dt><dd>Used 14 times</dd><dt>Margin by product</dt><dd>Used 9 times</dd><dt>Refund investigation</dt><dd>Used 3 times</dd></dl>"],
+    diagnostics:["Diagnostics","Connection and service health for administrators.","<dl class='kv'><dt>Connection</dt><dd>Live</dd><dt>API</dt><dd>Reachable</dd><dt>Worker</dt><dd>Running</dd><dt>Last monitoring run</dt><dd>12 min ago</dd></dl>"],
+    debug:["Debug","Developer view of the current run.","<dl class='kv'><dt>Mission</dt><dd>m-2041</dd><dt>Active agents</dt><dd>3</dd><dt>Events</dt><dd>128</dd></dl>"]
+  };
+  $$("[data-dialog]").forEach(function(b){b.onclick=function(e){e.stopPropagation();var d=dlg[b.getAttribute("data-dialog")];$("#dlgTitle").textContent=d[0];$("#dlgDesc").textContent=d[1];$("#dlgBody").innerHTML=d[2];$("#scrim").classList.add("open");$("#menu").classList.remove("open")}});
+  $("#dlgClose").onclick=function(){$("#scrim").classList.remove("open")};
+  $("#scrim").onclick=function(e){if(e.target.id==="scrim")$("#scrim").classList.remove("open")};
+  document.addEventListener("keydown",function(e){if(e.key==="Escape"){$("#scrim").classList.remove("open");$("#menu").classList.remove("open");$("#app").classList.remove("drawer")}});
+
+  /* composers: Enter sends (demo), auto-grow */
+  $$("[data-compose]").forEach(function(f){var t=$("textarea",f);
+    t.addEventListener("input",function(){t.style.height="auto";t.style.height=Math.min(t.scrollHeight,180)+"px"});
+    t.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();show("chat")}});
+    f.addEventListener("submit",function(e){e.preventDefault();show("chat")});
+  });
+
+  /* monitoring data (shapes follow the real monitoring store: label, value, expected, status, judgement) */
+  var A=[
+    {s:"alert",n:"Repeat purchase rate",d:"Sales",v:"18.4%",e:"expected 24.1% for this weekday",m:"5.7 pts worse than expected",pts:[24,25,23,24,25,24,18],ev:["Normal range is 21.8% to 26.4%, based on the last four Mondays to Sundays.","Cohorts bought 30 to 60 days ago account for almost all of the drop."]},
+    {s:"alert",n:"Email sends",d:"Marketing",v:"1,904",e:"expected 4,880 for this weekday",m:"61% fewer than expected",pts:[5,5,4.8,5,4.9,5,1.9],ev:["The win-back campaign did not run on Thursday.","Other campaigns sent as usual."]},
+    {s:"watch",n:"Average order value",d:"Sales",v:"₹ 1,420",e:"expected ₹ 1,380",m:"Direction not set, so watched only",pts:[13.6,13.8,13.9,13.7,14,14.1,14.2],ev:["No good or bad direction is set for this metric, so it is watched, not alerted."]},
+    {s:"watch",n:"Sessions from search",d:"Marketing",v:"12.1k",e:"expected 11.2k",m:"Direction not set, so watched only",pts:[11,11.3,11.1,11.4,11.2,11.8,12.1],ev:["Slightly above range for three days in a row."]},
+    {s:"watch",n:"Returns",d:"Operations",v:"212",e:"expected 190",m:"Direction not set, so watched only",pts:[19,18.5,19.2,19,19.5,20.4,21.2],ev:["Rising since Tuesday."]},
+    {s:"good",n:"Orders shipped on time",d:"Operations",v:"96.1%",e:"expected 93.0%",m:"3.1 pts better than expected",pts:[93,92.8,93.4,93,93.5,94.8,96.1],ev:["Warehouse 2 cleared its backlog."]},
+    {s:"good",n:"Checkout completion",d:"Sales",v:"71.2%",e:"expected 68.4%",m:"2.8 pts better than expected",pts:[68,68.5,68.2,69,68.8,70,71.2],ev:["Improvement follows the shorter checkout form."]},
+    {s:"good",n:"Cost per click",d:"Marketing",v:"₹ 8.4",e:"expected ₹ 9.6",m:"₹ 1.2 lower than expected",pts:[9.8,9.6,9.7,9.5,9.2,8.9,8.4],ev:["Lower bids on two campaigns."]},
+    {s:"good",n:"Stock-outs",d:"Products",v:"3",e:"expected 7",m:"4 fewer than expected",pts:[8,7,7,6,5,4,3],ev:["Restock arrived on Monday."]}
+  ];
+  var LBL={alert:"Needs attention",watch:"Watching",good:"Better",ok:"Normal"};
+  function spark(pts,color,w,h){
+    var min=Math.min.apply(null,pts),max=Math.max.apply(null,pts),rg=(max-min)||1,W=w||240,H=h||44,p=3;
+    var xy=pts.map(function(v,i){return [p+i*(W-2*p)/(pts.length-1),H-p-(v-min)/rg*(H-2*p)]});
+    var d=xy.map(function(a,i){return (i?"L":"M")+a[0].toFixed(1)+" "+a[1].toFixed(1)}).join(" ");
+    var last=xy[xy.length-1];
+    return '<svg class="spark" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true"><path d="'+d+' L'+last[0]+' '+H+' L'+p+' '+H+'Z" fill="'+color+'" opacity=".10"/><path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="1.6" vector-effect="non-scaling-stroke"/><circle cx="'+last[0]+'" cy="'+last[1]+'" r="3" fill="'+color+'"/></svg>';
+  }
+  var COL={alert:"var(--bad)",watch:"var(--warn)",good:"var(--good)",ok:"var(--dim)"};
+  function renderList(tab){
+    $("#anList").innerHTML=A.filter(function(a){return a.s===tab}).map(function(a,i){
+      return '<div class="row-item" data-row><button aria-expanded="false"><span class="name">'+a.n+'<small>'+a.d+'</small></span><span class="val">'+a.v+'<small>'+a.e+'</small></span><span><span class="status '+a.s+'">'+LBL[a.s]+'</span></span><span class="chev"></span></button><div class="evi"><p>'+a.m+'.</p>'+a.ev.map(function(t){return "<p>"+t+"</p>"}).join("")+'<div style="max-width:420px">'+spark(a.pts,COL[a.s],420,56)+'</div></div></div>'}).join("");
+    $$("[data-row]>button").forEach(function(b){b.onclick=function(){var r=b.parentNode;var o=r.classList.toggle("open");b.setAttribute("aria-expanded",o)}});
+  }
+  $$("#anTabs button").forEach(function(b){b.onclick=function(){$$("#anTabs button").forEach(function(x){x.setAttribute("aria-selected",x===b)});renderList(b.getAttribute("data-tab"))}});
+  renderList("alert");
+
+  var D=[
+    {t:"Sales",d:"Revenue, orders and customer behaviour",m:[["Revenue","₹ 41.2 L","ok",[38,39,40,39,41,40,41.2],"Within normal range, ₹ 36 L to ₹ 45 L"],["Orders","2,904","ok",[27,28,29,28,29,30,29],"Within normal range"],["Repeat purchase rate","18.4%","alert",[24,25,23,24,25,24,18],"5.7 pts worse than expected"]]},
+    {t:"Marketing",d:"Campaigns, spend and traffic",m:[["Ad spend","₹ 6.8 L","ok",[6.5,6.6,6.7,6.6,6.8,6.7,6.8],"Within normal range"],["Email sends","1,904","alert",[5,5,4.8,5,4.9,5,1.9],"61% fewer than expected"],["Cost per click","₹ 8.4","good",[9.8,9.6,9.7,9.5,9.2,8.9,8.4],"₹ 1.2 lower than expected"]]},
+    {t:"Operations",d:"Fulfilment, delivery and returns",m:[["Orders shipped on time","96.1%","good",[93,92.8,93.4,93,93.5,94.8,96.1],"3.1 pts better than expected"],["Returns","212","watch",[19,18.5,19.2,19,19.5,20.4,21.2],"Direction not set, so watched only"]]}
+  ];
+  $("#domains").innerHTML=D.map(function(d){return '<section class="block"><div class="block-head"><h2>'+d.t+'</h2><span class="meta">'+d.d+'</span></div><div class="cards">'+d.m.map(function(m){return '<div class="card"><div class="top"><span>'+m[0]+'</span>'+(m[2]==="ok"?"":'<span class="status '+m[2]+'">'+LBL[m[2]]+'</span>')+'</div><div class="v">'+m[1]+'</div>'+spark(m[3],COL[m[2]],240,44)+'<small>'+m[4]+'</small></div>'}).join("")+'</div></section>'}).join("");
+
+  $("#toggles").innerHTML=["Sales","Marketing","Products","Operations"].map(function(n,i){return '<div class="toggle-row"><div><b style="font-weight:500">'+n+'</b><small>'+["Revenue, orders and customer behaviour","Campaigns, spend and traffic","Catalogue, margin and stock","Fulfilment, delivery and returns"][i]+'</small></div><button class="switch" role="switch" aria-label="Monitor '+n+'" aria-checked="true"></button></div>'}).join("");
+  $$(".switch").forEach(function(s){s.onclick=function(){s.setAttribute("aria-checked",s.getAttribute("aria-checked")!=="true")}});
+
+  show(location.hash.slice(1));
+})();
+</script>
+</body>
+</html>

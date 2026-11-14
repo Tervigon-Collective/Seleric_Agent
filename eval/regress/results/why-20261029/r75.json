@@ -1,0 +1,41 @@
+{
+ "n": 75,
+ "aspect": "why_rootcause",
+ "q": "So is this a website problem or an ads problem?",
+ "thread": "thread_438825654c3141809b0f6d489bc38b78",
+ "mission": "MS3-90372183ad",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 38,
+ "elapsed_s": 35.937,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 9,
+  "measured": 9,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "The drop in orders during 2026-10-19 to 2026-10-25 was primarily driven by fewer sessions and fewer new customers, not by ad spend or website conversion rates. Here's what the data shows:\n\n- **Sessions**: Sessions fell from 2,949 to 2,376 per day (\u221219.4%), which is within the usual range but contributed to the drop in orders. This suggests less traffic overall.\n- **New customers**: New customers dropped from 21.29 to 18.14 per day (\u221214.8%), also within the usual range but a significant contributor to the decline in orders.\n- **Ad spend**: Ad spend increased slightly from \u20b942,682 to \u20b942,979 per day (+0.7%), ruling out reduced ad delivery as a cause.\n- **PDP data**: Product-page views and add-to-cart rates were unavailable for this scope, so we couldn't check for website-level issues.\n\nThe data does not point to a clear website problem or ad delivery issue. Instead, the decline in traffic and new customers suggests a broader drop in demand or reach.\n\nPeriod: 2026-10-19..2026-10-25 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break this down by channel and campaign (sessions \u00b7 new customers \u00b7 ad spend)."
+}

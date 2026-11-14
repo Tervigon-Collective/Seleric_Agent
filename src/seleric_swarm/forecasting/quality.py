@@ -53,6 +53,11 @@ def _observed(values: list[float | None]) -> list[float]:
     return [float(v) for v in values if v is not None and math.isfinite(float(v))]
 
 
+# Gaps are imputed (and outage days masked) before fitting, so a series missing up to a quarter of
+# the last 90 days still carries a usable signal; below this the recent level is a guess.
+_MIN_RECENT_COVERAGE = 0.75
+
+
 def assess_series(
     series: str,
     values: list[float | None],
@@ -65,6 +70,7 @@ def assess_series(
     min_volume_share: float | None = None,
     account_total: float | None = None,
     incidents: IncidentsFile | None = None,
+    mask_zero_runs: bool = True,
 ) -> tuple[list[float | None], list[QualityVerdict]]:
     """Run quality gates; return (possibly masked values, verdicts)."""
     out = list(values)
@@ -120,7 +126,7 @@ def assess_series(
         recent_present = sum(1 for v in recent if v is not None)
         recent_ratio = recent_present / recent_n if recent_n else 1.0
         full_ratio = span_present / len(span) if span else 1.0
-        if recent_n and recent_ratio < 0.90:
+        if recent_n and recent_ratio < _MIN_RECENT_COVERAGE:
             action = "block" if role == "target" else "drop"
             verdicts.append(
                 QualityVerdict(
@@ -129,7 +135,7 @@ def assess_series(
                     action=action,
                     detail=(
                         f"recent coverage {recent_present}/{recent_n} "
-                        f"({recent_ratio:.1%}) under 90% "
+                        f"({recent_ratio:.1%}) under the minimum "
                         f"(full span {span_present}/{len(span)} from "
                         f"{index[first_i].isoformat()})"
                     ),
@@ -181,23 +187,39 @@ def assess_series(
 
     # Q_NEGATIVE
     if nonnegative:
+        level = statistics.median([v for v in observed if v > 0] or [0.0])
         for i, v in enumerate(out):
             if v is not None and v < 0:
+                if v >= -0.01 * level:
+                    # sub-1% negative: a refund/rounding artifact, not a real loss of volume
+                    out[i] = 0.0
+                    verdicts.append(
+                        QualityVerdict(
+                            code="Q_NEGATIVE",
+                            series=series,
+                            action="warn",
+                            detail=f"tiny negative {v} on {index[i].isoformat()} clipped to 0",
+                            dates=[index[i].isoformat()],
+                        )
+                    )
+                    continue
+                # Material negatives are data (margins, net-of-refund measures), not corruption:
+                # forecast the series as signed instead of refusing it.
                 verdicts.append(
                     QualityVerdict(
-                        code="Q_NEGATIVE",
+                        code="Q_SIGNED",
                         series=series,
-                        action="block",
-                        detail=f"negative value {v} on {index[i].isoformat()}",
+                        action="warn",
+                        detail=f"negative value {v} on {index[i].isoformat()}; treated as a signed measure",
                         dates=[index[i].isoformat()],
                     )
                 )
-                return out, verdicts
+                break
 
     # Q_OUTAGE_ZERO_RUN — mask consecutive zeros where the typical positive
     # level (p05 of strictly-positive observations) is above 0.
     positive = [v for v in observed if v > 0]
-    if len(positive) >= 20:
+    if mask_zero_runs and len(positive) >= 20:
         try:
             p05 = statistics.quantiles(positive, n=20)[0]  # ~5th pct
         except statistics.StatisticsError:

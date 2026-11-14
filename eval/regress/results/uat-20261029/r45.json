@@ -1,0 +1,38 @@
+{
+ "n": 45,
+ "aspect": "uat_strategy",
+ "q": "What are our competitors spending on ads for the same products?",
+ "thread": "thread_0c8faa88027d4cb19bfc7974c7f0e067",
+ "mission": "MS3-861a386404",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 9,
+ "elapsed_s": 6.583,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 0,
+ "llm_calls": 1,
+ "grounding": {
+  "derived": [],
+  "numbers": 0,
+  "measured": 0,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "Short answer: we can't see competitors' ad spend in our data \u2014 the ad delivery views (paid_media / product_ads) only report our platforms' delivery (Meta & Google) and allocated spend to our products. There is no source here that holds competitor spend by product.\n\nWhy that's the case and what it means\n- Platform privacy: Meta and Google do not share other advertisers' spend to our account; our paid_media shows only our impressions, clicks and spend.\n- Catalogue limits: the product ad spend (allocated) and paid_media metrics are our delivered spend (order-date allocated or delivery date), not market or auction-level spend \u2014 there is no competitor metric in the catalogue.\n- Practical impact: you cannot judge relative share or bidding pressure from these tables alone; scaling a product because it has high ROAS here may still face higher auction costs or competitor saturation.\n\nUseful alternatives I can run or help you get\n- Show where our unallocated product-ad spend is going (by campaign and ad_platform) \u2014 helps understand if large spend is hidden in broad campaigns. (Recommended next step.)\n- Pull our platform auction signals: rising CPC/CPM or falling CTR by campaign or product (I can fetch ad spend, cpc, cpm, ctr by campaign/ad_platform over time) to infer rising competition on those product targets.\n- Use external tools / platform UIs: request Google Auction Insights or Meta competitive metrics (share, overlap) from the ad accounts \u2014 those live tools are the direct source for competitor spend/share.\n\nWorth checking: run an ad-platform breakdown of spend, CPC and CPM for the last 7 days and compare with the prior 7 days to spot rising auction costs.\n\nPeriod: 2026-10-22 to 2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break down the unallocated spend by campaign and ad_platform."
+}

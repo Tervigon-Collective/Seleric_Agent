@@ -21,6 +21,7 @@ from seleric_swarm.semantic import McpSemanticPort
 from seleric_swarm.services.mcp_query import (
     build_metrics_query_args,
     call_metrics_query,
+    with_date_axis,
 )
 
 # Single agent identity for MCPGateway allowlisting: the runtime has one agent loop.
@@ -42,6 +43,7 @@ async def cached_metrics_query(
 ) -> dict[str, Any]:
     import asyncio
 
+    arguments = with_date_axis(arguments, ctx.deps.date_axis, ctx.deps.catalogue)
     key = cache_key("seleric.metrics_query", arguments)
 
     def call() -> Awaitable[dict[str, Any]]:
@@ -163,15 +165,14 @@ async def raw_query_metric(
     sort: list[dict[str, Any]] | None = None,
     compare_period: str | None = None,
     module: Any = ...,
+    date_axis: str | None = None,
 ) -> dict[str, Any]:
     """The one MCP call every fetch path in this repo goes through.
 
     Sprint 2 consolidation (docs/refactor/SPRINT_PLAN.md): ``metric_id`` is
     used as the ``measures`` value directly — no ``MetricRegistry``/
     ``resolve_measure`` keyword-overlap fallback anywhere in this function.
-    Callers that only have a legacy ``metric.xxx`` id resolve it to a
-    catalogue id via ``MetricDefinition.catalogue_metric`` (a static config
-    field, not a heuristic search) before calling this. ``agent_id`` stays a
+    ``agent_id`` stays a
     caller-supplied parameter (not the fixed ``_AGENT_ID`` below) so legacy
     callers keep their existing ``MCPGateway`` module-scoping identity.
     """
@@ -186,6 +187,7 @@ async def raw_query_metric(
         sort=sort,
         compare_period=compare_period,
         module=module,
+        date_axis=date_axis,
     )
     return await call_metrics_query(mcp_client, agent_id=agent_id, arguments=args)
 

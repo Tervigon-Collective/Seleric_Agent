@@ -37,6 +37,8 @@ async def assemble_feature_frame(
     agent_id: str = _AGENT_ID,
     dimensions: list[str] | None = None,
     filters: list[dict[str, Any]] | None = None,
+    zero_fill_ids: set[str] | None = None,
+    additive_ids: set[str] | None = None,
 ) -> FeatureFrame:
     """Fetch daily series, reindex with nulls (never dropna), attach calendar future."""
     context_start = cutoff - timedelta(days=max(1, context_days) - 1)
@@ -64,11 +66,15 @@ async def assemble_feature_frame(
 
     expected_last = cutoff
     nn = nonnegative_targets or set()
+    zf = zero_fill_ids or set()
+    additive = additive_ids or set()
 
     for mid in target_ids:
         series, query = fetched.get(mid, ({}, {}))
         source_queries[mid] = query
-        values = [series.get(d.isoformat()) for d in context_index]
+        values = _fill_absent_days([series.get(d.isoformat()) for d in context_index], mid in zf)
+        if mid in additive:
+            values = _fill_alive_absent(values, context_index, _alive_days(fetched, mid))
         values, g = apply_temporal_cutoff(values, context_index, cutoff=cutoff, series=mid)
         gate_decisions.extend(g)
         values, q = assess_series(
@@ -79,6 +85,7 @@ async def assemble_feature_frame(
             min_history_days=min_history_days,
             expected_last_day=expected_last,
             nonnegative=mid in nn,
+            mask_zero_runs=mid not in zf,
         )
         quality_verdicts.extend(q)
         targets[mid] = values
@@ -90,7 +97,7 @@ async def assemble_feature_frame(
             continue
         series, query = fetched.get(mid, ({}, {}))
         source_queries[mid] = query
-        values = [series.get(d.isoformat()) for d in context_index]
+        values = _fill_absent_days([series.get(d.isoformat()) for d in context_index], mid in zf)
         # Feature maturity: mask immature tail relative to its own maturity if any;
         # P0 uses the target cutoff for all past covariates.
         values, g = apply_temporal_cutoff(values, context_index, cutoff=cutoff, series=mid)
@@ -102,6 +109,7 @@ async def assemble_feature_frame(
             role="feature",
             min_history_days=min(min_history_days, 60),
             expected_last_day=expected_last,
+            mask_zero_runs=mid not in zf,
         )
         quality_verdicts.extend(q)
         if any(v.action == "drop" for v in q if v.series == mid):
@@ -166,6 +174,7 @@ async def assemble_feature_frame(
         source_queries=source_queries,
         gate_decisions=gate_decisions,
         quality_verdicts=quality_verdicts,
+        signed_targets=sorted({v.series for v in quality_verdicts if v.code == "Q_SIGNED"}),
     )
     frame.content_hash = content_hash(frame)
     if is_blocking(quality_verdicts):
@@ -204,6 +213,34 @@ def _daterange(start: date, end: date) -> list[date]:
         out.append(d)
         d += timedelta(days=1)
     return out
+
+
+def _fill_absent_days(values: list[float | None], enabled: bool) -> list[float | None]:
+    """An additive series sliced to one entity has no row on days it sold nothing: that is 0, not unknown."""
+    if not enabled:
+        return values
+    first = next((i for i, v in enumerate(values) if v is not None), None)
+    if first is None:
+        return values
+    return [*values[:first], *(0.0 if v is None else v for v in values[first:])]
+
+
+def _alive_days(fetched: dict[str, tuple[dict[str, float], dict[str, Any]]], own: str) -> set[str]:
+    return {d for m, (vals, _) in fetched.items() if m != own for d in vals}
+
+
+def _fill_alive_absent(
+    values: list[float | None], index: list[date], alive: set[str]
+) -> list[float | None]:
+    """An event-sparse additive series has no row on quiet days. On a day the warehouse
+    demonstrably had data for other series, its absence is 0, not a gap or staleness."""
+    first = next((i for i, v in enumerate(values) if v is not None), None)
+    if first is None:
+        return values
+    return [
+        0.0 if v is None and i > first and index[i].isoformat() in alive else v
+        for i, v in enumerate(values)
+    ]
 
 
 def _first_any_observation(targets: dict[str, list[float | None]]) -> int | None:

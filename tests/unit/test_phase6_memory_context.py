@@ -196,7 +196,8 @@ def test_project_and_episodic_isolation_hard_token_limit_and_revocation_hook():
         repositories, total_characters=200, total_tokens=20, memory_characters=100
     ).build(thread, query="project", permissions={"read_memory": True})
     assert bundle.memory_ids == ["project-a"]
-    assert bundle.permissions == {"read_memory": True}
+    assert bundle.permissions["read_memory"] is True
+    assert bundle.permissions["read_messages"] is False
     assert bundle.token_estimate <= bundle.token_budget == 20
     assert approximate_token_count("dependency-free tokenizer!") >= 6
 
@@ -353,6 +354,181 @@ def test_answer_parts_strip_markdown_table_when_chart_attached():
     assert "Net profit totaled" in text
     assert "Losses concentrated" in text
     assert parts[-1].type.value == "CHART"
+
+
+def test_composition_records_scores_omissions_and_summary_exclusions():
+    repositories = build_in_memory_repositories()
+    thread = repositories.threads.create(Thread(workspace_id="w", owner_user_id="u"))
+    old = repositories.messages.create(_message(thread, "Covered already.", message_id="m1"))
+    repositories.messages.create(_message(thread, "Fresh follow-up.", message_id="m2"))
+    ThreadSummaryService(repositories).create(thread, [old])
+    for i in range(6):
+        repositories.memories.create(
+            MemoryItem(
+                id=f"mem{i}",
+                workspace_id="w",
+                owner_user_id="u",
+                scope=MemoryScope.USER,
+                type=MemoryType.FACT,
+                status=MemoryStatus.ACTIVE,
+                content=f"fact number {i} about sales reporting",
+                normalized_content=f"fact number {i} about sales reporting",
+                consented_at=datetime.now(UTC),
+            )
+        )
+    bundle = ContextBuilder(
+        repositories, total_characters=180, message_characters=80, memory_characters=60, summary_characters=80
+    ).build(thread, query="sales reporting")
+    comp = bundle.composition
+    assert comp["builder"] == "phase6-v1"
+    assert "m1" in comp["excluded_by_summary"]
+    assert "m2" in comp["message_ids"]
+    assert comp["memories"]
+    assert all("score" in row for row in comp["memories"])
+    assert any(row["reason"] == "budget" for row in comp["omissions"])
+    assert comp["token_estimate"] <= comp["token_budget"]
+
+
+def test_submission_persists_context_composition(monkeypatch):
+    repositories = build_in_memory_repositories()
+    thread = repositories.threads.create(Thread(workspace_id="w", owner_user_id="u"))
+    repositories.memories.create(
+        MemoryItem(
+            workspace_id="w",
+            owner_user_id="u",
+            scope=MemoryScope.USER,
+            type=MemoryType.PREFERENCE,
+            status=MemoryStatus.ACTIVE,
+            content="Use concise answers",
+            normalized_content="use concise answers",
+            consented_at=datetime.now(UTC),
+        )
+    )
+    store = InMemoryMissionStore()
+    runtime = SimpleNamespace(
+        conversations=repositories,
+        store=store,
+        settings=SimpleNamespace(run_max_attempts=3),
+        activity_events=None,
+    )
+
+    async def no_execution(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(conversations_api, "_execute_submission", no_execution)
+    app = FastAPI()
+    app.state.runtime_provider = lambda: runtime
+    app.include_router(conversations_api.router)
+    app.add_middleware(
+        ApiSecurityMiddleware,
+        api_key="secret",
+        rate_limit_enabled=False,
+        default_workspace_id="w",
+        default_user_id="u",
+        trust_identity_headers=True,
+    )
+    response = TestClient(app).post(
+        f"/v1/threads/{thread.id}/messages",
+        json={"parts": [{"type": "TEXT", "content": "Original query"}]},
+        headers={"X-API-Key": "secret", "X-Workspace-ID": "w", "X-User-ID": "u"},
+    )
+    assert response.status_code == 202
+    run = repositories.runs.get(response.json()["run_id"])
+    assert run and run.metadata["context_composition"]["memories"]
+    assert run.metadata["context_bundle"]["composition"]["builder"] == "phase6-v1"
+
+
+def test_permissions_empty_dict_denies_memory_and_is_not_defaulted():
+    repositories = build_in_memory_repositories()
+    thread = repositories.threads.create(
+        Thread(workspace_id="w", owner_user_id="u", project_id="p")
+    )
+    repositories.memories.create(
+        MemoryItem(
+            id="secret",
+            workspace_id="w",
+            owner_user_id="u",
+            project_id="p",
+            scope=MemoryScope.PROJECT,
+            type=MemoryType.FACT,
+            status=MemoryStatus.ACTIVE,
+            content="must stay out",
+            normalized_content="must stay out",
+            consented_at=datetime.now(UTC),
+        )
+    )
+    bundle = ContextBuilder(repositories).build(
+        thread, query="must stay out", permissions={}
+    )
+    assert bundle.memory_ids == []
+    assert bundle.permissions.get("read_memory") is False
+
+
+def test_summary_covered_messages_are_not_duplicated_in_recent():
+    repositories = build_in_memory_repositories()
+    thread = repositories.threads.create(Thread(workspace_id="w", owner_user_id="u"))
+    old = repositories.messages.create(_message(thread, "Covered already.", message_id="m1"))
+    new = repositories.messages.create(_message(thread, "Fresh follow-up.", message_id="m2"))
+    ThreadSummaryService(repositories).create(thread, [old])
+    bundle = ContextBuilder(
+        repositories, total_characters=500, message_characters=200, summary_characters=200
+    ).build(thread, query="follow-up")
+    recent_ids = [m["id"] for m in bundle.recent_messages]
+    assert recent_ids == [new.id]
+    assert bundle.latest_summary is not None
+    assert old.id in bundle.latest_summary.covered_message_ids
+
+
+def test_duplicate_merge_is_scope_aware_and_does_not_refresh_created_at():
+    repositories = build_in_memory_repositories()
+    thread = repositories.threads.create(Thread(workspace_id="w", owner_user_id="u"))
+    other = repositories.threads.create(Thread(workspace_id="w", owner_user_id="u"))
+    service = MemoryService(repositories)
+    extractor = MemoryCandidateExtractor()
+    first = service.ingest_candidates(
+        extractor.extract(_message(thread, "I prefer dark mode.", message_id="m1"), thread)
+    )[0]
+    created_at = first.created_at
+    # Same USER preference in another thread merges by USER identity.
+    assert service.ingest_candidates(
+        extractor.extract(_message(other, "I prefer dark mode.", message_id="m2"), other)
+    ) == []
+    merged = repositories.memories.get(first.id, "w", "u")
+    assert merged and merged.created_at == created_at
+    assert merged.provenance.get("last_observed_at")
+    assert int(merged.provenance.get("duplicate_observations", 0)) == 1
+    # Same text as THREAD constraint must not merge into the USER preference.
+    thread_only = MemoryItem(
+        workspace_id="w",
+        owner_user_id="u",
+        thread_id=thread.id,
+        scope=MemoryScope.THREAD,
+        type=MemoryType.PREFERENCE,
+        content="I prefer dark mode.",
+        normalized_content=first.normalized_content,
+        structured_data={"subject_key": "dark mode"},
+        requires_confirmation=True,
+    )
+    created = service.ingest_candidates([thread_only])
+    assert len(created) == 1
+    assert created[0].id != first.id
+
+
+def test_archived_memory_is_not_a_contradiction_target():
+    repositories = build_in_memory_repositories()
+    thread = repositories.threads.create(Thread(workspace_id="w", owner_user_id="u"))
+    service = MemoryService(repositories)
+    extractor = MemoryCandidateExtractor()
+    first = service.ingest_candidates(
+        extractor.extract(_message(thread, "I prefer dark mode.", message_id="m1"), thread)
+    )[0]
+    service.confirm(first)
+    service.revoke(first.id, "w", "u", reason="cleanup")
+    again = service.ingest_candidates(
+        extractor.extract(_message(thread, "I prefer not dark mode.", message_id="m2"), thread)
+    )
+    assert len(again) == 1
+    assert again[0].supersedes_id is None
 
 
 def test_only_a_completed_run_is_a_genuine_answer():

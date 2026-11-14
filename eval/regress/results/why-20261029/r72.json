@@ -1,0 +1,46 @@
+{
+ "n": 72,
+ "aspect": "why_rootcause",
+ "q": "Why did our Google cost per click go up so much last week?",
+ "thread": "thread_865d52dbc6da45a19c12142eba866333",
+ "mission": "MS3-cb03849771",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 59,
+ "elapsed_s": 53.686,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 20,
+  "measured": 20,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_search_metrics",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": false,
+   "what": "all of ['search', 'demand gen']"
+  }
+ ],
+ "answer": "CPC on Google jumped from about \u20b93 (previous week) to about \u20b911 in 2026-10-19..2026-10-25 \u2014 roughly a +197% increase \u2014 and that came from two arithmetic effects, not a single proven cause.\n\n- What changed (biggest movers): clicks fell 18,438 \u2192 9,030 (\u221251.0%) while ad spend rose \u20b962,933 \u2192 \u20b992,699 (+47.3%). Those two together explain the CPC rise (clicks explain ~62% of the move; higher spend ~38%).\n- Funnel and rate shifts: impressions dropped 5,26,717 \u2192 4,03,859 (\u221223.3%) and CTR fell 3.5% \u2192 2.2% (\u221236.1%). The exact decomposition shows Ad spend per impression rose ~92% and impressions-per-click rose ~57%; combined they produce the ~+200% CPC change.\n- Mix effect: SEARCH campaigns expanded spend sharply (SEARCH spend +377%) and raised its share of volume; SEARCH CPC moved from ~\u20b919 \u2192 ~\u20b950 inside the window, so mix shifted toward higher-CPC campaign types.\n- Cause confidence: the analysis found no single supported causal driver in the data (the result lists likely contributors and correlations but no tested cause). The data shows where and how it moved; it does not prove why.\n\nWorth checking: the large SEARCH spend increase and why CTR dropped (creative/targeting or landing-page experience). \n\nPeriod: 2026-10-19..2026-10-25 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29\nNext: Break this down by campaign and ad set for Google (2026-10-19..2026-10-25 vs 2026-10-12..2026-10-18)."
+}

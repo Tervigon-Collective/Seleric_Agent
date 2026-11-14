@@ -8,15 +8,19 @@
 * ``audit_entities`` computes the derived facts of a performance analysis (return on spend, spend with no orders, best/worst
   with enough orders) from fetched results, in code.
 * ``business_snapshot`` returns the latest hourly business-health snapshot as data, when it is fresh.
+* ``draft_mom_email`` / ``draft_ad_hoc_email`` / ``send_email`` (agent/email_tools.py): draft a session email for the
+  user's approval, then send only the version they approved.
 * ``escalate`` raises the reasoning effort for the rest of the turn.
 """
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import json
 import logging
 import time
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -24,8 +28,9 @@ from pydantic_ai import RunContext
 
 from seleric_swarm.agent import present
 from seleric_swarm.agent.dependencies import SelericDeps
+from seleric_swarm.agent.email_tools import build_email_tools
 from seleric_swarm.agent.grounding import answer_numbers
-from seleric_swarm.agent.mcp_toolset import TurnState
+from seleric_swarm.agent.mcp_toolset import TurnState, full_evidence_rows
 from seleric_swarm.agent.model import LOOP_ESCALATED_EFFORT, LOOP_WRITEUP_EFFORT, set_loop_effort
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.toolsets import (
@@ -125,7 +130,7 @@ def _offer_table(state: TurnState, result: Any) -> Any:
                                                 f"show_table(query_id={table_id!r}). Do not paste them into the text as well."})
 
 
-def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False) -> Any:
+def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False, quotable: bool = True) -> Any:
     """Wrap a local tool: time it, record it in the turn's trace like an MCP call, keep its figures quotable."""
 
     @functools.wraps(fn)
@@ -137,7 +142,7 @@ def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False) -> Any:
         summary = getattr(result, "summary", None)
         if summary is None:
             summary = result if isinstance(result, str) else json.dumps(result, default=str)
-        state.steps.append({"kind": "tool_call", "tool": fn.__name__, "args": {k: str(v)[:200] for k, v in kwargs.items()}})
+        state.steps.append({"kind": "tool_call", "tool": fn.__name__, "args": {k: str(v)[:4000] for k, v in kwargs.items()}})  # 4000: a run_python script must stay readable in the trace
         step = {"kind": "tool_return", "tool": fn.__name__, "ok": not failed, "ms": ms, "result": str(summary)[:2000]}
         source = getattr(getattr(result, "provenance", None), "source_metadata", None)
         if isinstance(source, dict) and isinstance(source.get("phase_ms"), dict):
@@ -145,7 +150,8 @@ def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False) -> Any:
         state.steps.append(step)
         if failed:  # MCP failures are recorded by the toolset; a helper that returns ok:false must show up the same way
             state.errors.append(f"{fn.__name__}: {str(summary)[:300]}")
-        _remember_figures(state, result)
+        if quotable:  # an email draft's text must never become evidence for later answers
+            _remember_figures(state, result)
         result = _offer_table(state, result)
         if raises_effort and not failed:  # the engine did the causal reasoning; a refusal leaves real reasoning to do
             set_loop_effort(LOOP_WRITEUP_EFFORT)
@@ -155,7 +161,8 @@ def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False) -> Any:
     return wrapper
 
 
-def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[Any]:
+def build_local_tools(state: TurnState, *, snapshot_loader: Any = None, is_cancelled: Callable[[], bool] | None = None,
+                      figures: Callable[[], list[Any]] | None = None) -> list[Any]:
     """Tools bound to this turn's state."""
 
     async def run_python(
@@ -191,7 +198,8 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
             return ToolResult(
                 success=False, retryable=True, error_code="INSUFFICIENT_EVIDENCE",
                 summary=f"No fetched result has query_id {query_ids}. Fetched this turn: {known or 'nothing yet'}.")
-        return await sandbox.run_python(ctx, code, ids, purpose)
+        rows = await asyncio.to_thread(full_evidence_rows, state, query_ids, ctx.deps) if query_ids else None  # 100k rows take seconds
+        return await sandbox.run_python(ctx, code, ids, purpose, rows=rows)
 
     async def show_chart(
         ctx: RunContext[SelericDeps],
@@ -265,14 +273,26 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
             return ToolResult(success=False, retryable=True, error_code="INSUFFICIENT_EVIDENCE",
                               summary="Nothing to audit: fetch ad spend (with orders and revenue) broken down by the entity "
                                       "(campaign_name, product_title, ...) with metrics_query, then pass its query_id.")
+        # live 2026-10-29 MS3-b9d572c736: product_title and product_handle results share no key, the join fell back to the
+        # spend view alone and the audit reported "no ranking possible" for data it never read. Refuse; do not reduce.
+        dropped = {s.query_id for s in sources} - {s.query_id for s in frame.sources}
+        if dropped:
+            keyed = {tuple(s.dims) for s in sources}
+            return ToolResult(success=False, retryable=True, error_code="INSUFFICIENT_EVIDENCE",
+                              summary=f"These results cannot be audited together: {', '.join(sorted(dropped))} share no entity key with the spend result "
+                                      f"(keyed by {' vs '.join(sorted(', '.join(k) for k in keyed))}). Call audit_entities again with only the "
+                                      "results keyed by the same entity as the spend result.")
         meta = present.Meta.of(ctx.deps, frame.measures)
+        spend_rows = next((len(s.rows) for s in sources if roles.spend in s.measures), 0)
         found = entity_audit.audit(entity_audit.entities_of(frame.rows, entity_col, roles), labels=meta.labels, roles=roles,
-                                   symbol=present._CURRENCY_SYMBOLS.get((frame.currency or "INR").upper(), "₹"))
+                                   symbol=present._CURRENCY_SYMBOLS.get((frame.currency or "INR").upper(), "₹"),
+                                   cut_at=spend_rows if spend_rows and spend_rows >= (call_args.get("limit") or 0) > 0 else None)
         return ToolResult(success=True, summary=found.text())
 
     async def business_snapshot(ctx: RunContext[SelericDeps]) -> dict[str, Any]:
         """The latest hourly business-health snapshot (one day against the day before, plus 7-day averages and
-        anomaly flags). Use for broad "how are we doing" questions; query metrics for any other period."""
+        anomaly flags), ending at the last complete day. Use for broad "how are we doing" questions with no period named; for
+        today, right now or any other period query the metrics."""
         if snapshot_loader is None:
             return {"available": False, "reason": "no snapshot store is configured"}
         try:
@@ -297,4 +317,6 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
         exploration.explore_data,
     ]
     own = [run_python, show_chart, show_table, audit_entities, business_snapshot, escalate]
-    return [*(_tracked(state, fn, raises_effort=fn is diagnosis.diagnose_metric_change) for fn in [*helpers, *own])]
+    mail = build_email_tools(state, is_cancelled=is_cancelled or (lambda: False), figures=figures or (lambda: list(state.payloads)))
+    return [*(_tracked(state, fn, raises_effort=fn is diagnosis.diagnose_metric_change) for fn in [*helpers, *own]),
+            *(_tracked(state, fn, quotable=False) for fn in mail)]

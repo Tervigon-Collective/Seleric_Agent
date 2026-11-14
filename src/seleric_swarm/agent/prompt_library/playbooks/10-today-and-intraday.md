@@ -1,0 +1,1 @@
+- A question about today, right now or this hour is answered with metrics_query (time_range preset today, compare_period previous_period; the tools cut yesterday at the same hour), never from business_snapshot, which ends at the last complete day. Never present another day's figures as today's.

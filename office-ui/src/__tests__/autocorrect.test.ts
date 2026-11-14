@@ -1,7 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
-import { attachAutoCorrect, type AutoCorrectItem } from "../utils/autocorrect";
+import { beforeAll, describe, it, expect, vi } from "vitest";
+import { attachAutoCorrect, loadSpellChecker, type AutoCorrectItem } from "../utils/autocorrect";
 
 describe("autocorrect", () => {
+  beforeAll(loadSpellChecker);
+
   it("attaches to textarea and autocorrects misspellings on space", () => {
     const textarea = document.createElement("textarea");
     document.body.appendChild(textarea);

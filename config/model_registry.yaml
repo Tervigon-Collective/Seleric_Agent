@@ -27,13 +27,13 @@
 models:
   # Exponential smoothing over daily evidence — models/service.py.
   # Deterministic, interval-producing, no LLM in the numeric path.
-  # Targets are real ids from config/metric_registry.yaml, not placeholders.
+  # Targets are real catalogue metric ids, not placeholders.
   - id: forecast.net_sales.daily
     version: "1"
     type: forecast
     status: approved
     owner: profile_c
-    target: metric.net_sales
+    target: net_sales
     forecast_horizon_days: 14
     last_validated_at: "2026-09-18"
     backtest_available: true
@@ -51,7 +51,7 @@ models:
     type: forecast
     status: approved
     owner: profile_c
-    target: metric.orders
+    target: orders
     forecast_horizon_days: 14
     last_validated_at: "2026-09-18"
     backtest_available: true
@@ -69,7 +69,7 @@ models:
     type: forecast
     status: approved
     owner: profile_c
-    target: metric.sessions
+    target: sessions
     forecast_horizon_days: 14
     last_validated_at: "2026-09-18"
     backtest_available: true
@@ -87,7 +87,7 @@ models:
     type: forecast
     status: approved
     owner: profile_c
-    target: metric.spend
+    target: ad_spend
     forecast_horizon_days: 14
     last_validated_at: "2026-09-18"
     backtest_available: true

@@ -24,6 +24,12 @@ describe("conversation API", () => {
     expect(scope.as_of).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
+  it("sends the chosen date axis, order_date by default", () => {
+    expect(conversationScope(new Date("2026-09-18T18:30:00Z"), "order_date").date_axis).toBe("order_date");
+    expect(conversationScope(new Date("2026-09-18T18:30:00Z"), "event_date").date_axis).toBe("event_date");
+    expect(conversationScope().date_axis).toBe("event_date");
+  });
+
   it("parses SSE ids, event names, and multiline data", () => {
     expect(parseSseFrame("id: 7\nevent: run.started\ndata: {\"a\":\ndata: 1}")).toEqual({
       id: "7", event: "run.started", data: "{\"a\":\n1}",

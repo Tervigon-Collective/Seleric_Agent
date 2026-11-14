@@ -405,3 +405,29 @@ async def test_a_genuinely_zero_current_period_is_not_refused() -> None:
     )
     res = await sandbox.run_python(FakeRunContext(_deps(store)), code, ids)
     assert res.success is True
+
+
+@pytest.mark.asyncio
+async def test_a_field_that_is_zero_in_every_row_over_non_zero_measures_is_warned() -> None:
+    """Evidence is one row per value: reading a measure as a column of the row gives a silent 0."""
+    store = InMemoryArtifactStore()
+    ids = [_put_evidence(store, metric=m, value=v, dimensions={"k": k})
+           for k in ("a", "b") for m, v in (("count_m", 1.0), ("amount_m", 250.0))]
+    code = ("result = [{'k': k, 'n': sum(e['value'] for e in evidence if e['k'] == k and e['metric_id'] == 'count_m'),\n"
+            "            'amount': sum(e.get('amount_m', 0) for e in evidence if e['k'] == k)} for k in ('a', 'b')]")
+    res = await sandbox.run_python(FakeRunContext(_deps(store)), code, ids)
+    assert res.success is True
+    assert any("amount" in w and "metric_id" in w for w in res.warnings)
+
+
+@pytest.mark.asyncio
+async def test_a_correct_script_or_a_single_measure_gets_no_zero_warning() -> None:
+    store = InMemoryArtifactStore()
+    ids = [_put_evidence(store, metric=m, value=v, dimensions={"k": k})
+           for k in ("a", "b") for m, v in (("count_m", 1.0), ("amount_m", 250.0))]
+    ok = ("result = [{'k': k, 'amount': sum(e['value'] for e in evidence if e['k'] == k and e['metric_id'] == 'amount_m')}"
+          " for k in ('a', 'b')]")
+    assert not (await sandbox.run_python(FakeRunContext(_deps(store)), ok, ids)).warnings
+    only = [_put_evidence(store, metric="count_m", value=1.0, dimensions={"k": k}) for k in ("a", "b")]
+    zeros = "result = [{'k': 'a', 'refunds': 0}, {'k': 'b', 'refunds': 0}]"
+    assert not (await sandbox.run_python(FakeRunContext(_deps(store)), zeros, only)).warnings

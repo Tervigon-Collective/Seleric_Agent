@@ -250,6 +250,48 @@ describe("conversation store submit", () => {
     });
   });
 
+  it("does not attach a stale URL mission to an empty untitled thread", async () => {
+    history.replaceState({}, "", "/ui/?thread=empty-1&mission=MS3_stale_prior");
+    useConversationStore.setState({
+      demoMode: false,
+      selectedThreadId: null,
+      threads: [{
+        id: "empty-1", workspace_id: "w", owner_user_id: "u", project_id: null,
+        title: null, status: "ACTIVE", metadata: {},
+        created_at: "2026-10-28T10:00:00Z", updated_at: "2026-10-28T10:00:00Z",
+      }],
+      messages: {},
+    });
+    useOffice.getState().hydrate({
+      missionId: "MS3_stale_prior",
+      query: "old",
+      status: "completed",
+      stage: "done",
+      route: "swarm",
+      leadershipEpoch: 0,
+      lastSeq: 1,
+      agents: [],
+      board: { steps: [] },
+      handoffs: [],
+      artifacts: {},
+      unresolvedQuestions: [],
+      limitations: [],
+      timeline: [],
+    });
+    useOffice.getState().setLoopDebug({
+      stats: { total_ms: 71200, llm_calls: 3 },
+      grounding: null,
+      steps: null,
+    });
+    vi.spyOn(conversationsApi, "listMessages").mockResolvedValue([]);
+    vi.spyOn(conversationsApi, "listThreadEvents").mockResolvedValue([]);
+
+    await useConversationStore.getState().selectThread("empty-1");
+
+    expect(useOffice.getState().missionId).not.toBe("MS3_stale_prior");
+    expect(useOffice.getState().loopDebug).toBeNull();
+  });
+
   it("cancels a run that is requested before submit returns its run id", async () => {
     useConversationStore.setState({
       demoMode: false,
@@ -450,5 +492,40 @@ describe("conversation store submit", () => {
     });
     expect(useOffice.getState().route).toBe("v3");
     expect(useOffice.getState().timeline[0]?.agentId).toBe("seleric_agent");
+  });
+});
+
+describe("empty conversations leave nothing behind", () => {
+  const thread = (id: string, title: string | null, updated: string) => ({
+    id, workspace_id: "w", owner_user_id: "u", project_id: null, title, status: "ACTIVE" as const, metadata: {}, created_at: updated, updated_at: updated,
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("a new chat does not create a thread until something is sent", async () => {
+    useConversationStore.setState({ demoMode: false, selectedThreadId: "old", threads: [], messages: {} });
+    const create = vi.spyOn(conversationsApi, "createThread");
+    await useConversationStore.getState().createThread();
+    expect(create).not.toHaveBeenCalled();
+    expect(useConversationStore.getState().selectedThreadId).toBeNull();
+  });
+
+  it("archives only old untitled threads that have no messages", async () => {
+    const old = new Date(Date.now() - 3_600_000).toISOString();
+    useConversationStore.setState({
+      demoMode: false,
+      selectedThreadId: "open",
+      threads: [
+        thread("empty-old", null, old),
+        thread("has-run", null, old),
+        thread("titled", "Weekly sales", old),
+        thread("fresh", null, new Date().toISOString()),
+        thread("open", null, old),
+      ],
+    });
+    vi.spyOn(conversationsApi, "listMessages").mockImplementation(async (id) => (id === "has-run" ? [{ id: "m1" } as never] : []));
+    const archive = vi.spyOn(conversationsApi, "archiveThread").mockResolvedValue({} as never);
+    await useConversationStore.getState().pruneEmptyThreads();
+    expect(archive.mock.calls.map((c) => c[0])).toEqual(["empty-old"]);
+    expect(useConversationStore.getState().threads.map((t) => t.id)).toEqual(["has-run", "titled", "fresh", "open"]);
   });
 });

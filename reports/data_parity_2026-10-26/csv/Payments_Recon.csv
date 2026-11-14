@@ -1,0 +1,43 @@
+Window,Measure,Raw Shopify transactions (dedup),"Gold fct_payments (CH, FINAL)",serve.fct_payment,Cube,Status
+yesterday,All transactions (distinct ids),39,39,39,,PASS
+,Successful transactions,21,21,21,,PASS
+,Successful sale/capture amount (non-test),34252.45,34252.450000000004,34252.45,,INFO
+,Successful refund amount (non-test),0.0,0,0.0,,PASS
+,Net cash movement (sale/capture - refund) incl. exchange credit,34252.45,34252.450000000004,,,PASS
+,Cash only (payment_class='cash') signed amount,,,34252.45,34252.450000000004,PASS
+,Cash-class transaction rows vs Cube `transactions`,,,39,39.0,PASS
+last7,All transactions (distinct ids),355,355,355,,PASS
+,Successful transactions,254,254,254,,PASS
+,Successful sale/capture amount (non-test),489916.0,494414.2,411301.10000000003,,FAIL
+,Successful refund amount (non-test),26786.5,26786.5,11293.300000000001,,PASS
+,Net cash movement (sale/capture - refund) incl. exchange credit,463129.5,463129.49999999994,,,PASS
+,Cash only (payment_class='cash') signed amount,,,395509.5999999999,395509.60000000003,PASS
+,Cash-class transaction rows vs Cube `transactions`,,,309,309.0,PASS
+last30,All transactions (distinct ids),2237,2237,2237,,PASS
+,Successful transactions,1757,1757,1757,,PASS
+,Successful sale/capture amount (non-test),2757989.89,2762488.0900000003,2415278.99,,FAIL
+,Successful refund amount (non-test),1041529.5999999999,1041529.5999999999,999059.2999999999,,PASS
+,Net cash movement (sale/capture - refund) incl. exchange credit,1716460.2900000003,1716460.29,,,PASS
+,Cash only (payment_class='cash') signed amount,,,1411721.4899999998,1411721.4899999998,PASS
+,Cash-class transaction rows vs Cube `transactions`,,,2036,2036.0,PASS
+today,All transactions (distinct ids),16,16,16,,PASS
+,Successful transactions,11,11,11,,PASS
+,Successful sale/capture amount (non-test),14410.810000000001,14410.810000000003,9912.81,,INFO
+,Successful refund amount (non-test),2249.1,2249.1,2249.1,,PASS
+,Net cash movement (sale/capture - refund) incl. exchange credit,12161.710000000001,12161.710000000001,,,PASS
+,Cash only (payment_class='cash') signed amount,,,7663.710000000001,7663.710000000001,PASS
+,Cash-class transaction rows vs Cube `transactions`,,,13,13.0,PASS
+last30,Bridge: net cash incl. exchange credit - exchange credit = Cube payment_amount,1716460.2900000003,304738.8000000005,,1411721.4899999998,INFO
+,,,,,,
+"serve.fct_payment classes, last30 (class, successful, refund, rows, signed amount):",,,,,,
+Class,is_successful,is_refund,Rows,Signed amount,,
+cash,1,0,1164,2410780.790000011,,
+cash,0,0,474,0.0,,
+cash,1,1,392,-999059.2999999998,,
+exchange_credit,1,0,155,347209.1,,
+void,1,0,25,0.0,,
+exchange_credit,1,1,21,-42470.299999999996,,
+cash,0,1,6,0.0,,
+,,,,,,
+,,,,,,
+"Bridge (last30 row above): raw/gold net cash includes exchange credit; serve moves exchange_credit into its own class, so Cube payment_amount = cash only. Courier/RTO raw data does not exist in Iceberg raw.",,,,,,

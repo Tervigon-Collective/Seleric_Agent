@@ -1,3 +1,6 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useOffice, type ConnState } from "../store";
 import type { MissionRef } from "../types";
 
@@ -14,16 +17,10 @@ export function TopBar({
   missions,
   missionId,
   onPickMission,
-  dark,
-  onToggleTheme,
-  onOpenConversations,
 }: {
   missions: MissionRef[];
   missionId: string | null;
   onPickMission: (id: string) => void;
-  dark: boolean;
-  onToggleTheme: () => void;
-  onOpenConversations: () => void;
 }) {
   const conn = useOffice((s) => s.conn);
   const query = useOffice((s) => s.query);
@@ -38,41 +35,35 @@ export function TopBar({
   ).length;
 
   return (
-    <header className="topbar">
-      <span className="brand">SELERIC OFFICE</span>
-      <button className="btn office-chat-btn" onClick={onOpenConversations}>
-        ← Chat
-      </button>
+    <>
 
-      <select
+      <NativeSelect
+        className="max-w-64"
+        aria-label="Mission"
         value={missionId ?? ""}
         onChange={(e) => onPickMission(e.target.value)}
         disabled={missions.length === 0}
-        style={{ maxWidth: 260 }}
       >
-        {missions.length === 0 && <option value="">No missions</option>}
+        {missions.length === 0 && <NativeSelectOption value="">No missions</NativeSelectOption>}
         {missions.map((m) => (
-          <option key={m.missionId} value={m.missionId}>
+          <NativeSelectOption key={m.missionId} value={m.missionId}>
             {m.missionId} — {truncate(m.query, 40)}
-          </option>
+          </NativeSelectOption>
         ))}
-      </select>
+      </NativeSelect>
 
-      <span className="mission-title" title={query}>{query}</span>
-      <span className="spacer" />
+      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground max-lg:hidden" title={query}>{query}</span>
+      <span className="flex-1 lg:hidden" />
 
-      <span className="pill">{activeCount} active</span>
-      <button className="btn" onClick={() => setFollow(cycleFollow(followMode))}>
-        cam: {followMode}
-      </button>
-      <button className="btn" onClick={toggleTimeline}>timeline</button>
-      <button className="btn" onClick={toggleDebug}>debug</button>
-      <button className="btn" onClick={onToggleTheme}>{dark ? "light" : "dark"}</button>
+      <Badge variant="secondary">{activeCount} active</Badge>
+      <Button variant="outline" size="sm" onClick={() => setFollow(cycleFollow(followMode))}>
+        Camera: {followMode}
+      </Button>
+      <Button variant="outline" size="sm" onClick={toggleTimeline}>Timeline</Button>
+      <Button variant="outline" size="sm" onClick={toggleDebug}>Debug</Button>
 
-      <span className={`pill ${conn}`}>
-        <span className="dot" /> {CONN_LABEL[conn]}
-      </span>
-    </header>
+      <Badge variant={conn === "live" ? "secondary" : "outline"}>{CONN_LABEL[conn]}</Badge>
+    </>
   );
 }
 

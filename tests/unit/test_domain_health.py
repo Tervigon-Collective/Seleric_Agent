@@ -49,10 +49,10 @@ class _FakeBusinessState:
 
 
 COMMERCE_STATES = {
-    "metric.net_sales": _state("metric.net_sales", 71727.93, period_delta_pct=-18.0),
-    "metric.gross_sales": _state("metric.gross_sales", 90000.0, period_delta_pct=2.0),
-    "metric.orders": _state("metric.orders", 120.0, period_delta_pct=-5.0),
-    "metric.returns_cancels": _state("metric.returns_cancels", 5.0),
+    "net_sales": _state("net_sales", 71727.93, period_delta_pct=-18.0),
+    "gross_sales": _state("gross_sales", 90000.0, period_delta_pct=2.0),
+    "orders": _state("orders", 120.0, period_delta_pct=-5.0),
+    "returns_cancels": _state("returns_cancels", 5.0),
 }
 
 
@@ -69,7 +69,7 @@ async def test_resolve_commerce_snapshot_flags_net_sales_drop():
     commerce_ids = {e["metric_id"] for e in DomainHealthProfiles().get("commerce")["metrics"]}
     assert {m.metric_id for m in snapshot.metrics} == commerce_ids
     assert snapshot.headline_signals == [
-        "net_sales_drop: metric.net_sales period_delta_pct -18.0% below threshold -15.0%"
+        "net_sales_drop: net_sales period_delta_pct -18.0% below threshold -15.0%"
     ]
     # -18.0 (percent-scale, not a 0-1 fraction) breaches the -15 threshold.
     # order_volume_drop threshold is -20%; -5% doesn't breach it.
@@ -80,7 +80,7 @@ async def test_resolve_commerce_snapshot_flags_net_sales_drop():
 @pytest.mark.asyncio
 async def test_resolve_degrades_status_on_partial_metric():
     states = dict(COMMERCE_STATES)
-    states["metric.orders"] = _state("metric.orders", 120.0, period_delta_pct=-0.05, status="PARTIAL")
+    states["orders"] = _state("orders", 120.0, period_delta_pct=-0.05, status="PARTIAL")
     resolver = DomainStateResolver(_FakeBusinessState(states))
 
     snapshot = await resolver.resolve("commerce", time_range=TIME_RANGE)
@@ -107,22 +107,22 @@ def test_snapshot_store_returns_none_when_empty(tmp_path):
 
 ALL_METRIC_STATES = {
     **COMMERCE_STATES,
-    "metric.net_profit": _state("metric.net_profit", 12000.0, period_delta_pct=-2.0),
-    "metric.gross_margin_pct": _state("metric.gross_margin_pct", 42.0),
-    "metric.mer": _state("metric.mer", 3.1, period_delta_pct=1.0),
-    "metric.rto_cost": _state("metric.rto_cost", 900.0),
-    "metric.spend": _state("metric.spend", 20000.0, period_delta_pct=5.0),
-    "metric.net_roas": _state("metric.net_roas", 2.4, period_delta_pct=-3.0),
-    "metric.cac": _state("metric.cac", 300.0),
-    "metric.cpm": _state("metric.cpm", 150.0),
-    "metric.attributed_net_revenue": _state("metric.attributed_net_revenue", 50000.0, period_delta_pct=-1.0),
-    "metric.sessions": _state("metric.sessions", 4000.0, period_delta_pct=-10.0),
-    "metric.purchase_cvr": _state("metric.purchase_cvr", 1.8),
-    "metric.checkout_rate": _state("metric.checkout_rate", 60.0),
-    "metric.product_net_revenue": _state("metric.product_net_revenue", 30000.0, period_delta_pct=1.5),
-    "metric.product_gross_margin_pct": _state("metric.product_gross_margin_pct", 38.0),
-    "metric.repeat_rate": _state("metric.repeat_rate", 22.0),
-    "metric.refunded_amount_excl_tax": _state("metric.refunded_amount_excl_tax", 4000.0, period_delta_pct=40.0),
+    "net_profit": _state("net_profit", 12000.0, period_delta_pct=-2.0),
+    "gross_margin_pct": _state("gross_margin_pct", 42.0),
+    "mer": _state("mer", 3.1, period_delta_pct=1.0),
+    "rto_cost": _state("rto_cost", 900.0),
+    "spend": _state("spend", 20000.0, period_delta_pct=5.0),
+    "net_roas": _state("net_roas", 2.4, period_delta_pct=-3.0),
+    "cac": _state("cac", 300.0),
+    "cpm": _state("cpm", 150.0),
+    "attributed_net_revenue": _state("attributed_net_revenue", 50000.0, period_delta_pct=-1.0),
+    "sessions": _state("sessions", 4000.0, period_delta_pct=-10.0),
+    "purchase_cvr": _state("purchase_cvr", 1.8),
+    "checkout_rate": _state("checkout_rate", 60.0),
+    "product_net_revenue": _state("product_net_revenue", 30000.0, period_delta_pct=1.5),
+    "product_gross_margin_pct": _state("product_gross_margin_pct", 38.0),
+    "repeat_rate": _state("repeat_rate", 22.0),
+    "refunded_amount_excl_tax": _state("refunded_amount_excl_tax", 4000.0, period_delta_pct=40.0),
 }
 
 
@@ -148,7 +148,7 @@ async def test_refund_spike_uses_above_threshold_rule():
     snapshot = await resolver.resolve("operations", time_range=TIME_RANGE)
 
     assert snapshot.headline_signals == [
-        "refund_spike: metric.refunded_amount_excl_tax period_delta_pct 40.0% above threshold 30.0%"
+        "refund_spike: refunded_amount_excl_tax period_delta_pct 40.0% above threshold 30.0%"
     ]
 
 
@@ -166,7 +166,7 @@ async def test_windowed_point_metric_computes_snapshot_over_snapshot_delta(tmp_p
     assert first.metrics[0].period_delta_pct is None  # no prior snapshot yet
 
     states_v2 = dict(ALL_METRIC_STATES)
-    states_v2["metric.repeat_rate"] = _state("metric.repeat_rate", 24.2)
+    states_v2["repeat_rate"] = _state("repeat_rate", 24.2)
     resolver_v2 = DomainStateResolver(_FakeBusinessState(states_v2))
     second = await resolver_v2.resolve("customer", time_range=TIME_RANGE, store=store)
 
@@ -174,7 +174,7 @@ async def test_windowed_point_metric_computes_snapshot_over_snapshot_delta(tmp_p
     assert second.metrics[0].period_delta_pct == pytest.approx((24.2 - 22.0) / 22.0 * 100)
     assert second.metrics[0].rolling_mean_7d is None
     # windowed_point metrics never request BusinessStateService "features".
-    assert all("features" not in r.need for r in resolver_v2._business_state.requests if r.metric_id == "metric.repeat_rate")
+    assert all("features" not in r.need for r in resolver_v2._business_state.requests if r.metric_id == "repeat_rate")
 
 
 @pytest.mark.asyncio
@@ -212,11 +212,11 @@ async def test_one_unanswerable_metric_degrades_the_domain_instead_of_hiding_it(
     """Live 2026-10-14: `net_roas` (status=broken in the catalogue) made the whole performance domain UNAVAILABLE."""
     states = {
         **ALL_METRIC_STATES,
-        "metric.net_roas": _state("metric.net_roas", 0.0, status="UNAVAILABLE"),
+        "net_roas": _state("net_roas", 0.0, status="UNAVAILABLE"),
     }
     snapshot = await DomainStateResolver(_FakeBusinessState(states)).resolve("performance", time_range=TIME_RANGE)
     assert snapshot.status == "DEGRADED"
-    assert any(m.metric_id == "metric.spend" and m.value == 20000.0 for m in snapshot.metrics)
+    assert any(m.metric_id == "spend" and m.value == 20000.0 for m in snapshot.metrics)
 
 
 @pytest.mark.asyncio

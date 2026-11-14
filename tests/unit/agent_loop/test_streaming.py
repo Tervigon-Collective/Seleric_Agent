@@ -15,7 +15,7 @@ from seleric_swarm.state.artifacts import InMemoryArtifactStore
 
 from .test_loop import DEFS, FakeGateway, _deps
 
-ANSWER = "Net sales were ₹42,177 yesterday, up from ₹34,377 the day before, a rise of ₹7,800 (+22.7%) on stronger order volume."
+ANSWER = "Net sales were ₹42,177 yesterday, up from ₹34,377 the day before, on stronger order volume."
 
 
 def _has_result(messages: list[ModelMessage]) -> bool:

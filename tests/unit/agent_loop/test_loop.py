@@ -359,3 +359,59 @@ async def test_figures_with_no_tool_call_are_checked_against_the_conversation_on
     assert result.issues  # nothing fetched, nothing in the question: the figure is unverified
     quoted, _, _ = await _turn(_scripted([TextPart("Net sales were ₹99,999.")]), question="net sales were 99,999, right?")
     assert not quoted.issues  # the user's own figure may be repeated
+
+
+@pytest.mark.asyncio
+async def test_run_python_computes_over_every_row_even_past_the_stored_evidence_cap():
+    """Stored evidence is capped (5000 values); a script must still see the whole result, or its total covers part of the window."""
+    n = 3000  # 3000 rows x 2 measures = 6000 values > MAX_EVIDENCE_ROWS
+    big = {**PAYLOAD, "columns": ["net_sales", "orders", "order_date", "order_date.day"],
+           "rows": [{"order_date.day": "2026-01-01T00:00:00.000", "order_date": "2026-01-01T00:00:00.000",
+                     "net_sales": "2", "orders": "1", "sku": str(i)} for i in range(n)],
+           "provenance": {**PAYLOAD["provenance"], "metric_ids": ["net_sales", "orders"]}}
+
+    class BigGateway(FakeGateway):
+        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
+            self.calls.append({"capability": capability, "arguments": arguments})
+            return dict(big)
+
+    code = ("result = {m: sum(e['value'] for e in evidence if e['metric_id'] == m and e['query_id'] == 'q_1')"
+            " for m in ('net_sales', 'orders')}\nresult['rows'] = len([e for e in evidence if e['metric_id'] == 'orders'])\n")
+    seen: list[str] = []
+
+    def answer(messages: list[ModelMessage]) -> list[Any]:
+        seen.extend(str(p.content) for m in messages for p in m.parts if isinstance(p, ToolReturnPart) and p.tool_name == "run_python")
+        return [TextPart("Done.")]
+
+    calls = [ToolCallPart("metrics_query", {"measures": ["net_sales", "orders"]}, tool_call_id="c1")]
+    run = [ToolCallPart("run_python", {"code": code, "query_ids": ["q_1"]}, tool_call_id="c2")]
+    result, _, _ = await _turn(_scripted(calls, run, answer), gw=BigGateway())
+    assert len(result.state.by_query["q_1"]) < 2 * n  # the stored evidence really is cut
+    text = seen[0].replace(",", "")
+    assert "6000" in text and "3000" in text, text  # net_sales 2 x 3000, orders 1 x 3000: the script saw all of it
+
+
+@pytest.mark.asyncio
+async def test_every_query_runs_at_the_full_row_limit_whatever_the_model_asked():
+    defs = tool_defs([{"name": "metrics_query", "description": "Query.", "inputSchema": {
+        "type": "object", "required": ["measures"],
+        "properties": {"measures": {"type": "array", "items": {"type": "string"}}, "limit": {"type": "integer"}}}}])
+    gw = FakeGateway()
+    call = [ToolCallPart("metrics_query", {"measures": ["net_sales"], "limit": 10}, tool_call_id="c1")]
+    await run_turn(deps=_deps(InMemoryArtifactStore()), model=_scripted(call, [TextPart("Net sales were ₹42,177.")]), gateway=gw,
+                   tool_defs=defs, system_prompt="sys", question="top 10?", history=[])
+    from seleric_swarm.agent.mcp_toolset import QUERY_ROW_LIMIT, with_full_limit
+    assert gw.calls[0]["arguments"]["limit"] == QUERY_ROW_LIMIT
+    page = {"schema": {"properties": {"limit": {}}}}
+    assert with_full_limit(page, "build_dataset_query", {"action": "get", "limit": 5000})["limit"] == 5000  # a page size, not a row cap
+    assert "limit" not in with_full_limit({"schema": {"properties": {}}}, "metrics_query", {"measures": ["a"]})
+
+
+def test_a_result_that_hit_the_row_limit_says_it_is_incomplete():
+    from seleric_swarm.agent.mcp_toolset import flag_row_limit
+    hit = {"provenance": {"row_limit": 50000, "row_limit_hit": True}}
+    flag_row_limit(hit)
+    assert "incomplete" in hit["warnings"][0]
+    ok = {"provenance": {"row_limit": 50000, "row_limit_hit": False}}
+    flag_row_limit(ok)
+    assert "warnings" not in ok

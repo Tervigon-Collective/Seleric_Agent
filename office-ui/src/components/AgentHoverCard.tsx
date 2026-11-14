@@ -1,3 +1,5 @@
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { useOffice } from "../store";
 import { SPEC_BY_ID } from "../office/agents";
 import { STATUS_TOKEN } from "../office/stateMachine";
@@ -29,22 +31,22 @@ export function AgentHoverCard({ x, y }: { x: number; y: number }) {
   const top = Math.min(y + 12, window.innerHeight - 220);
 
   return (
-    <div className="hovercard" style={{ left, top }}>
-      <div className="hc-top">
-        <span className="hc-name">
-          {spec?.glyph} {agent.name}
-        </span>
-        <span className="status-tag" style={{ background: TOKEN_VAR[token] }}>
-          {agent.status.replace(/_/g, " ")}
-        </span>
-      </div>
-      {rows.map(([k, v]) => (
-        <div className="hc-row" key={k}>
-          <span>{k}</span>
-          <div>{v}</div>
+    <Card size="sm" data-slot="hovercard" className="pointer-events-none fixed z-20 w-72 shadow-lg" style={{ left, top }}>
+      <CardContent className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-bold">{spec?.glyph} {agent.name}</span>
+          <Badge className="text-[var(--on-accent)]" style={{ background: TOKEN_VAR[token] }}>{agent.status.replace(/_/g, " ")}</Badge>
         </div>
-      ))}
-    </div>
+        <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+          {rows.map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className="text-muted-foreground">{k}</dt>
+              <dd className="m-0">{v}</dd>
+            </div>
+          ))}
+        </dl>
+      </CardContent>
+    </Card>
   );
 }
 

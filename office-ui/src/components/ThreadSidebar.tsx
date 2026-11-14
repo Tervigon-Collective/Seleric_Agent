@@ -2,7 +2,11 @@ import { useMemo } from "react";
 import type { Thread } from "../api/contracts";
 import { useConversationStore } from "../stores/conversation";
 import { useShellStore } from "../stores/shell";
-import { ArchiveIcon, PencilIcon, PlusIcon, XIcon } from "./icons";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "cn";
+import { ArchiveIcon, PencilIcon } from "./icons";
 
 function groupLabel(date: Date, now: Date): string {
   const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -20,16 +24,6 @@ export function isEvalThread(title: string | null | undefined): boolean {
   return /^\s*golden[\s\-_]*q\d+/i.test(title) || /eval(uation)?\s*(run|set|suite)/i.test(title);
 }
 
-function shortDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const now = new Date();
-  const sameYear = date.getFullYear() === now.getFullYear();
-  return date.toLocaleDateString(undefined, sameYear
-    ? { month: "short", day: "numeric" }
-    : { month: "short", day: "numeric", year: "numeric" });
-}
-
 function ThreadRow({ thread, selected, onChoose, onRename, onArchive }: {
   thread: Thread;
   selected: boolean;
@@ -37,20 +31,23 @@ function ThreadRow({ thread, selected, onChoose, onRename, onArchive }: {
   onRename: (thread: Thread) => void;
   onArchive: (id: string) => void;
 }) {
+  const title = thread.title || "Untitled conversation";
   return (
-    <div className={`thread-row ${selected ? "selected" : ""}`}>
-      <button
-        className="thread-select"
+    <div data-slot="thread-row" className={cn("group relative flex items-center gap-1 rounded-lg transition-colors duration-150 hover:bg-accent/60", selected && "bg-accent")}>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-8 min-w-0 flex-1 justify-between gap-2 rounded-lg px-2.5 text-[13.5px] font-normal transition-colors duration-150"
         onClick={() => onChoose(thread.id)}
         aria-current={selected ? "page" : undefined}
-        title={thread.title || "Untitled conversation"}
+        title={title}
       >
-        <span>{thread.title || "Untitled conversation"}</span>
-        <small>{shortDate(thread.updated_at)}</small>
-      </button>
-      <div className="thread-actions">
-        <button className="icon-btn rename" aria-label={`Rename ${thread.title || "conversation"}`} title="Rename" onClick={() => onRename(thread)}><PencilIcon size={13} /></button>
-        <button className="icon-btn archive" aria-label={`Archive ${thread.title || "conversation"}`} title="Archive" onClick={() => onArchive(thread.id)}><ArchiveIcon size={13} /></button>
+        <span className="truncate">{title}</span>
+        
+      </Button>
+      <div className="absolute right-0.5 flex shrink-0 rounded-lg bg-accent opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100 max-lg:opacity-100">
+        <Button variant="ghost" size="icon-sm" aria-label={`Rename ${thread.title || "conversation"}`} title="Rename" onClick={() => onRename(thread)}><PencilIcon /></Button>
+        <Button variant="ghost" size="icon-sm" aria-label={`Archive ${thread.title || "conversation"}`} title="Archive" onClick={() => onArchive(thread.id)}><ArchiveIcon /></Button>
       </div>
     </div>
   );
@@ -60,9 +57,7 @@ export function ThreadSidebar() {
   const threads = useConversationStore((s) => s.threads);
   const selected = useConversationStore((s) => s.selectedThreadId);
   const search = useConversationStore((s) => s.search);
-  const setSearch = useConversationStore((s) => s.setSearch);
-  const createThread = useConversationStore((s) => s.createThread);
-  const selectThread = useConversationStore((s) => s.selectThread);
+    const selectThread = useConversationStore((s) => s.selectThread);
   const renameThread = useConversationStore((s) => s.renameThread);
   const archiveThread = useConversationStore((s) => s.archiveThread);
   const toggleSidebar = useShellStore((s) => s.toggleSidebar);
@@ -92,6 +87,7 @@ export function ThreadSidebar() {
   }, [userThreads]);
 
   const choose = (id: string) => {
+    useShellStore.getState().setWorkspace("conversation");
     void selectThread(id);
     if (window.matchMedia?.("(max-width: 1023px)").matches) toggleSidebar();
   };
@@ -106,54 +102,46 @@ export function ThreadSidebar() {
   };
 
   return (
-    <aside className="thread-sidebar" aria-label="Conversations">
-      <div className="sidebar-head">
-        <strong>Conversations</strong>
-        <span style={{ display: "flex", gap: 4 }}>
-          <button className="icon-btn mobile-panel-close" aria-label="Close conversations" onClick={toggleSidebar}><XIcon size={15} /></button>
-          <button className="primary-btn" onClick={() => void createThread()}><PlusIcon size={14} /> New</button>
-        </span>
-      </div>
-      <label className="search-field">
-        <span className="sr-only">Search conversations</span>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search conversations" type="search" />
-      </label>
-      <nav aria-label="Conversation list">
-        {groups.map((group) => (
-          <div key={group.label}>
-            <div className="thread-group-label" aria-hidden="true">{group.label}</div>
-            {group.items.map((thread) => (
-              <ThreadRow
-                key={thread.id}
-                thread={thread}
-                selected={selected === thread.id}
-                onChoose={choose}
-                onRename={handleRename}
-                onArchive={handleArchive}
-              />
-            ))}
-          </div>
-        ))}
-        {!userThreads.length && !evalThreads.length && <p className="empty-note">{search ? "No matching conversations." : "No conversations yet. Start a new analysis."}</p>}
-        {evalThreads.length > 0 && (
-          <details className="thread-eval-group">
-            <summary className="thread-group-label">
-              Evaluation runs ({evalThreads.length})
-            </summary>
-            {evalThreads.map((thread) => (
-              <ThreadRow
-                key={thread.id}
-                thread={thread}
-                selected={selected === thread.id}
-                onChoose={choose}
-                onRename={handleRename}
-                onArchive={handleArchive}
-              />
-            ))}
-          </details>
-        )}
-      </nav>
-      <div className="sidebar-foot">Ask about sales, marketing, products, or operations. Evidence stays with every answer.</div>
-    </aside>
+    <div data-slot="thread-sidebar" className="flex min-h-0 flex-1 flex-col gap-2">
+      <ScrollArea className="min-h-0 flex-1 [&_[data-radix-scroll-area-viewport]>div]:!block">
+        <nav aria-label="Conversation list" className="flex flex-col gap-1">
+          {groups.map((group) => (
+            <div key={group.label} className="flex flex-col gap-0.5">
+              <div className="px-2.5 pt-3 pb-1 text-xs font-medium text-muted-foreground" aria-hidden="true">{group.label}</div>
+              {group.items.map((thread) => (
+                <ThreadRow
+                  key={thread.id}
+                  thread={thread}
+                  selected={selected === thread.id}
+                  onChoose={choose}
+                  onRename={handleRename}
+                  onArchive={handleArchive}
+                />
+              ))}
+            </div>
+          ))}
+          {!userThreads.length && !evalThreads.length && <p className="px-2 text-sm text-muted-foreground">{search ? "No matching conversations." : "No conversations yet. Start a new analysis."}</p>}
+          {evalThreads.length > 0 && (
+            <Collapsible>
+              <CollapsibleTrigger className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-start text-muted-foreground")}>
+                Evaluation runs ({evalThreads.length})
+              </CollapsibleTrigger>
+              <CollapsibleContent className="flex flex-col gap-0.5">
+                {evalThreads.map((thread) => (
+                  <ThreadRow
+                    key={thread.id}
+                    thread={thread}
+                    selected={selected === thread.id}
+                    onChoose={choose}
+                    onRename={handleRename}
+                    onArchive={handleArchive}
+                  />
+                ))}
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+        </nav>
+      </ScrollArea>
+    </div>
   );
 }

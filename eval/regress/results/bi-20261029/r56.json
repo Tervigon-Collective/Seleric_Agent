@@ -1,0 +1,50 @@
+{
+ "n": 56,
+ "aspect": "bi_customers",
+ "q": "What share of our customers have ordered more than once, and are new customers or repeat customers worth more?",
+ "thread": "thread_e737f8bb709f4c8d9c91b377e2c20bb1",
+ "mission": "MS3-7c7321d05b",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 92,
+ "elapsed_s": 89.695,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 9,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [
+   "29%"
+  ],
+  "numbers": 8,
+  "measured": 7,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "About 25.6% of customers this month have ordered more than once, slightly up from 25.1% last month. New customers and repeat customers are worth about the same, with a lifetime value of \u20b91,793 each this month, up from \u20b91,621 last month.\n\n- New customers contributed \u20b912,44,291 in net sales this month, while repeat customers added \u20b95,10,199.\n- Repeat customers make up 25.6% of the customer base but account for 29% of net sales, showing their importance for revenue.\n\nPeriod: 2026-10-01\u20132026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break down new customer sales by acquisition channel."
+}
