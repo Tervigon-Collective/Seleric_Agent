@@ -22,12 +22,13 @@ pipeline {
         sh 'uv run ruff check .'
         sh 'uv run mypy src'
         sh 'uv run python scripts/lint_semantic_literals.py'
+        sh 'uv run python scripts/validate_repo.py'
       }
     }
 
     stage('Unit tests') {
       steps {
-        sh 'uv run pytest -q tests/unit tests/api tests/contract'
+        sh 'uv run pytest -q'
       }
     }
   }

@@ -63,10 +63,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     MALWARE_SCANNER_BACKEND=clamav \
     LANGFUSE_TRACING=true \
     LANGSMITH_TRACING=false \
-    MCP_CONFIG_PATH=config/mcp_servers.yaml \
-    PROMPT_VERSIONS_PATH=config/prompt_versions.yaml \
-    PROMPTS_DIR=prompts \
-    COORDINATOR_POLICIES_PATH=config/coordinator_policies.yaml
+    MCP_CONFIG_PATH=config/mcp_servers.yaml
 
 USER seleric
 EXPOSE 8000
