@@ -8,6 +8,7 @@ unrecorded totals failed grounding until the mission did.
 
 from __future__ import annotations
 
+import sys
 from datetime import UTC, datetime
 
 import pytest
@@ -66,6 +67,7 @@ def _finding(store: InMemoryArtifactStore, evidence_ids: list[str], artifact_typ
 
 
 @pytest.mark.parametrize("artifact_type", ["finding", "chart_spec"])
+@pytest.mark.skipif(sys.platform == "win32", reason="run_python sandbox child needs the POSIX resource module")
 async def test_run_python_reads_a_derived_artifact_as_the_evidence_it_cites(artifact_type: str) -> None:
     store = InMemoryArtifactStore()
     rows = [_row(store, "ig_feed", 938112.60), _row(store, "fb_feed", 300370.76), _row(store, "google_pmax", 224491.98)]
@@ -119,6 +121,7 @@ def test_failure_detail_keeps_types_and_status_never_bodies() -> None:
     assert "secret" not in str(detail)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="run_python sandbox child needs the POSIX resource module")
 async def test_run_python_reads_the_missions_evidence_when_no_ids_are_passed_and_refuses_typed_values() -> None:
     """Live 2026-10-09 MS3-9781c608fc: evidence_ids omitted → validation retry → the fetched numbers were typed
     into the script, and the 'waterfall' it returned no longer followed the data."""

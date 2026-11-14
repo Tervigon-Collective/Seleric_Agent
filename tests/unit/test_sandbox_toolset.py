@@ -12,6 +12,7 @@ Fake-context pattern mirrors tests/unit/test_analytics_toolset.py.
 from __future__ import annotations
 
 import os
+import sys
 from datetime import UTC, datetime
 
 import pytest
@@ -26,6 +27,8 @@ from seleric_swarm.conversations.contracts import (
 )
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.toolsets import sandbox
+
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="run_python sandbox child needs the POSIX resource module")
 
 
 class FakeRunContext:

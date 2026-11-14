@@ -113,6 +113,9 @@ module = [
   "scipy",
   "scipy.*",
   "livekit.*",
+  "aiohttp",
+  "aiohttp.*",
+  "xlsxwriter",
   "networkx",
   "networkx.*",
   "jsonschema",
@@ -122,6 +125,8 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
+# chronos/ is a separate service image (needs torch); its tests run there, not here.
+testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [

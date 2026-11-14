@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from datetime import UTC, datetime
 from typing import Any
 
@@ -267,6 +268,7 @@ def test_raw_floats_are_rounded_for_display_but_real_precision_is_kept():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform == "win32", reason="run_python sandbox child needs the POSIX resource module")
 async def test_run_python_reads_the_fetched_rows_as_a_list_with_query_ids():
     """Live 2026-10-13: 16 of 16 run_python calls failed (evidence treated as a dict keyed by query id, no `result`)."""
     code = (
@@ -288,6 +290,7 @@ async def test_run_python_reads_the_fetched_rows_as_a_list_with_query_ids():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform == "win32", reason="run_python sandbox child needs the POSIX resource module")
 async def test_run_python_name_error_restates_what_data_exists():
     """Live 2026-10-14: the model invented `q_<id>` / `__query_results__` variables four times in a row."""
     seen: list[str] = []
@@ -362,6 +365,7 @@ async def test_figures_with_no_tool_call_are_checked_against_the_conversation_on
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform == "win32", reason="run_python sandbox child needs the POSIX resource module")
 async def test_run_python_computes_over_every_row_even_past_the_stored_evidence_cap():
     """Stored evidence is capped (5000 values); a script must still see the whole result, or its total covers part of the window."""
     n = 3000  # 3000 rows x 2 measures = 6000 values > MAX_EVIDENCE_ROWS

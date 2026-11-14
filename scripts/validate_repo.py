@@ -5,11 +5,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 required = [
     "README.md",
-    "docs/01_SYSTEM_ARCHITECTURE.md",
-    "docs/22_IMPLEMENTATION_ROADMAP.md",
-    "diagrams/final_architecture.mmd",
-    "diagrams/new.mmd",
-    "schemas/a2a_envelope.schema.json",
+    "docs/00_PROJECT_CHARTER.md",
+    "docs/CURRENT_ARCHITECTURE.md",
+    "diagrams/evidence_flow.mmd",
     "schemas/evidence_artifact.schema.json",
 ]
 

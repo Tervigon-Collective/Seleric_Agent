@@ -1,6 +1,7 @@
 """A chart for the main result when none was asked for, and the ``show_table`` tool."""
 from __future__ import annotations
 
+import sys
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -69,6 +70,7 @@ ANSWER = [TextPart("Net sales were ₹42,177 on 12 Oct, up from ₹34,377 the da
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform == "win32", reason="run_python sandbox child needs the POSIX resource module")
 async def test_a_multi_row_main_result_gets_a_chart_without_being_asked():
     result, store = await _run(_model(CALL, ANSWER), SERIES)
     charts = _charts(store)
@@ -198,6 +200,7 @@ async def test_a_multi_view_result_writes_evidence_per_part_under_every_id_the_m
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform == "win32", reason="run_python sandbox child needs the POSIX resource module")
 async def test_run_python_reads_the_rows_of_a_multi_view_part():
     code = "result = sum(float(e['value']) for e in evidence if e['metric_id'] == 'ad_spend')"
     py = [ToolCallPart("run_python", {"code": code, "query_ids": ["q_paid", "q_shop"]}, tool_call_id="c2")]
