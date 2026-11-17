@@ -217,6 +217,8 @@ def evaluate(
         return Evaluation(metric.metric_id, day, value, "ok", "none", used, data_status, "no target set")
     status = classify(value, band, metric.direction_bad)
     severity = severity_of(status, metric.direction_bad)
+    if data_status == "provisional" and severity == "critical":
+        severity = "warning"  # owner 2026-11-17: only settled data is critical; the settled day is re-judged later
     reason = (explained or {}).get(day, "")
     if reason and severity in ("critical", "warning"):
         severity = "info"

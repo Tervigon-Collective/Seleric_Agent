@@ -1,0 +1,48 @@
+# Prometheus rules for the Agent's target monitoring (services/monitoring/runner.py pushes to the pushgateway).
+# Deploy: copy to ~/seleric-monitoring/alerts/ and reload Prometheus. severity=critical routes to the email receiver.
+groups:
+  - name: agent-target-monitoring
+    rules:
+      # A run where any metric failed to load (MCP down, stale_data, ...). The other metrics were still judged, but the
+      # failed ones keep their old findings, so a long failure means a blind spot.
+      - alert: AgentMonitoringRunFailed
+        expr: agent_monitoring_run_success == 0
+        for: 2h
+        labels:
+          severity: critical
+          service: agent-monitoring
+        annotations:
+          summary: "Agent target monitoring runs for brand {{ $labels.brand }} have been incomplete for 2 hours"
+          description: "metrics that failed to load: see `docker logs seleric_agent-monitoring-cron-1` (failed_metrics in the run summary)."
+
+      # No complete run in 3 hours (or never): the container is down, every run fails, or the push itself fails.
+      - alert: AgentMonitoringNotRunning
+        expr: time() - agent_monitoring_last_success_timestamp_seconds > 3 * 3600 or absent(agent_monitoring_last_success_timestamp_seconds)
+        for: 75m
+        labels:
+          severity: critical
+          service: agent-monitoring
+        annotations:
+          summary: "Agent target monitoring has not completed a run for brand {{ $labels.brand }} in over 3 hours"
+          description: "Is seleric_agent-monitoring-cron-1 up? `docker logs seleric_agent-monitoring-cron-1`."
+
+      # A metric is beyond its alarm line on settled data (provisional breaches are capped at warning by the runner).
+      - alert: AgentMonitoringCriticalFinding
+        expr: agent_monitoring_finding_open{severity="critical"} == 1
+        labels:
+          severity: critical
+          service: agent-monitoring
+        annotations:
+          summary: "Brand {{ $labels.brand }}: {{ $labels.metric }} breached its alarm line ({{ $labels.detector }})"
+          description: "The day can be yesterday or, for late-settling metrics, the day that just settled (7-14 days back). Summary, day and band: GET /v1/monitoring/targets on the Agent API (monitor.findings in the Agent's Postgres)."
+
+      # A catalogue metric kept its id but its description (formula) changed after the target was seeded (D-194 class).
+      # The metric is no longer judged until someone re-seeds its target and clears monitor.metrics.definitions.
+      - alert: AgentMonitoringDefinitionChanged
+        expr: agent_monitoring_finding_open{detector="definition_changed"} == 1
+        labels:
+          severity: warning
+          service: agent-monitoring
+        annotations:
+          summary: "Brand {{ $labels.brand }}: catalogue definition of {{ $labels.metric }} changed; it is not judged until re-seeded"
+          description: "Re-seed its target in monitor.target_versions, then SET definitions = NULL on monitor.metrics for it. If the change is only wording, clearing definitions alone is enough."

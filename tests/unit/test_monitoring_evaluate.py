@@ -136,3 +136,17 @@ def test_a_breach_inside_a_known_period_is_information_with_its_reason():
     assert (ev.status, ev.severity, ev.explained_by) == ("below_floor", "info", "ads paused")
     other = evaluate(m, BAND, series, days[0], untrusted=set(), gate=GATE, as_of=days[-1], explained={days[1]: "ads paused"})
     assert (other.severity, other.explained_by) == ("critical", "")
+
+
+def test_a_provisional_breach_is_at_most_a_warning():
+    m = MetricDef("np", "down", "day", settles_after_days=7)
+    series = {"np": {"2026-11-16": 1.0, "2026-11-09": 1.0}}
+    prov = evaluate(m, BAND, series, "2026-11-16", untrusted=set(), gate=GATE, as_of="2026-11-16")
+    settled = evaluate(m, BAND, series, "2026-11-09", untrusted=set(), gate=GATE, as_of="2026-11-16")
+    assert (prov.status, prov.severity, prov.data_status) == ("below_floor", "warning", "provisional")
+    assert (settled.severity, settled.data_status) == ("critical", "fresh")
+
+
+def test_a_missing_spend_series_still_leaves_the_bulk_return_gate():
+    series = {"returns": {"2026-09-28": 1_000_000.0}, "gross": {"2026-09-28": 67_000.0}}  # no "spend" (its fetch failed)
+    assert untrusted_days(data_events(series, GATE)) == {"2026-09-28"}

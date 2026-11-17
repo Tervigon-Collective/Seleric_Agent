@@ -64,3 +64,30 @@ Series pulled from the semantic layer for brand 20, targets read from Postgres, 
 * Live rows in `monitor`: 12 metrics, 12 target versions, 1 known period, 24 evaluations and 4 findings from the two manual runs (brand 20, as of 2026-11-02).
 * The runner module and `config/monitoring.yaml` were also copied by hand into the running `business-state-cron` container (its Python package folder and `/app/config`) for those runs. That copy is lost if the container is recreated; it does not change how the container behaves.
 * The throwaway scripts used for the probe and the replay are in the session scratchpad, not in the repo.
+
+## 2026-11-17: audit fixes (branch `monitoring-fixes`, worktree `~/work/agent_monitoring_fix`; NOT deployed)
+
+Root causes, each verified on live data (plan: `~/.claude/plans/modular-drifting-harp.md`):
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | 3 false criticals since 11-04/05: D-194 (Agent_Core de6c4c4) redefined `ssot_gross_profit` (now − ad spend) under targets seeded on contribution | migration 019: `ssot_contribution_before_ads` takes the band, `gross_margin` / `net_roas_pooled` numerators re-pointed, `ssot_gross_profit` disabled + its finding resolved. ClickHouse check: contribution 11-02 124,889 / 11-09 27,063 / 11-16 72,034 = semantic layer |
+| 1b | nothing tied a target to its definition | `monitor.metrics.definitions` (catalogue description per part, filled on first run); a change → `untrusted` + warning finding `definition_changed` |
+| 2 | first run at 00:35 IST judged a partial day (11-06 orders 49 → 62 in 1 h) | `day_complete_hour: 10` (IST) in config/monitoring.yaml |
+| 3 | settle-late metrics never judged settled; provisional alerted as critical | provisional critical → warning (owner D, 2026-11-17); each metric also judged on `as_of − settles_after_days`; the finding takes the worse of the two days |
+| 4 | one `stale_data` metric aborted all 12 (13 runs lost 11-09/10) | per-metric failures; failed metrics' findings frozen (not resolved), exit 1 |
+| 5 | findings reached nobody | pushgateway push (health POST, open findings PUT) + `docs/monitoring/agent-monitoring-alerts.yml` (owner: health + criticals via Alertmanager) |
+| 6 | cron ran a 11-02 image with the live tree's monitoring code mounted over it | own image `seleric_agent-monitoring-cron`, no mounts |
+| 7 | reopen kept the first `opened_at`; SemLock traceback each run | ON CONFLICT resets it; `DIAGNOSIS_WORKERS=0` (build_runtime warmed the diagnosis pool) |
+
+Owner decisions 2026-11-17: provisional breaches capped at warning; Alertmanager gets run health + critical findings; the public `/ui/config.js` API key is a separate task.
+
+Expected on first deploy (dry run 2026-11-17, as_of 11-16): criticals = contribution 11-09 (27,063 < 30,425) and net sales 11-09 (44,680 < 50,572), both on the now-settled 11-09; warnings = net margin, net profit (11-09), return rate (11-16, provisional).
+
+Deploy order (owner go needed; nothing below has been run):
+1. `pg_dump -n monitor` backup; tag `seleric_agent-business-state-cron:latest` as `rollback-20261117` (the image monitoring-cron runs today).
+2. Apply 019 **first**: the new runner selects `m.definitions`. Copy the file into the api container and run `seleric-migrate` (api also runs it at boot). Never edit 019 after applying it, because seleric-migrate refuses on a checksum mismatch.
+3. Only then merge into the live checkout's `monitoring`. Until step 4, the old container still mounts the live tree, so it picks up the new code at its next :05 run.
+4. `docker compose -p seleric_agent build monitoring-cron && docker compose -p seleric_agent up -d --no-deps monitoring-cron`.
+5. Copy `docs/monitoring/agent-monitoring-alerts.yml` to `~/seleric-monitoring/alerts/` and reload Prometheus, after the first push.
+6. Watch the next :05 run, the pushgateway groups `agent_monitoring` / `agent_monitoring_findings`, and the alerts in Prometheus.

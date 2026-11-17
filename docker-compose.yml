@@ -346,12 +346,13 @@ services:
     restart: unless-stopped
 
 
-  # Hourly target monitoring for brand 20 (docs/monitoring/00_PLAN.md). Reuses the business-state-cron image and mounts
-  # the monitoring code and config, so no image rebuild is needed; runs at 5 past every hour. Remove the two mounts once
-  # an image build includes services/monitoring.
+  # Hourly target monitoring for brand 20 (docs/monitoring/00_PLAN.md), at 5 past every hour. Its own image, built from
+  # the repo: code is baked in, never mounted from a working tree (a mount put uncommitted edits live at the next run).
   monitoring-cron:
-    image: seleric_agent-business-state-cron:latest
-    pull_policy: never
+    build:
+      context: .
+      target: runtime
+    image: seleric_agent-monitoring-cron:latest
     command: >
       /bin/sh -c "while true; do python -m seleric_swarm.services.monitoring.runner --brand 20 || true; sleep $$(( 3600 - $$(date +%s) % 3600 + 300 )); done"
     environment:
@@ -382,13 +383,11 @@ services:
       CLAMAV_HOST: ${CLAMAV_HOST:-clamav}
       CLAMAV_PORT: ${CLAMAV_PORT:-3310}
       BUSINESS_STATE_REFRESH_ENABLED: "0"
+      DIAGNOSIS_WORKERS: "0"  # build_runtime warms the diagnosis process pool; this cron never diagnoses (and exiting early left a SemLock traceback every run)
     networks:
       - default
       - laya_default
       - seleric-mcp_default
-    volumes:
-      - ./src/seleric_swarm/services/monitoring:/app/.venv/lib/python3.12/site-packages/seleric_swarm/services/monitoring:ro
-      - ./config/monitoring.yaml:/app/config/monitoring.yaml:ro
     depends_on:
       api:
         condition: service_healthy

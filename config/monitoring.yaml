@@ -19,3 +19,6 @@ pooling:
   min_days: 5
 # The business day: "yesterday" and the hour a period starts are in this zone.
 timezone: Asia/Kolkata
+# Yesterday is judged only from this local hour; before it the day before is the latest complete day. Measured
+# 2026-11-02..16: a normal day's orders / sales / spend settle 1-7 h after midnight IST (8.6 h once).
+day_complete_hour: 10
