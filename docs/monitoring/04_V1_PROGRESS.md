@@ -65,7 +65,7 @@ Series pulled from the semantic layer for brand 20, targets read from Postgres, 
 * The runner module and `config/monitoring.yaml` were also copied by hand into the running `business-state-cron` container (its Python package folder and `/app/config`) for those runs. That copy is lost if the container is recreated; it does not change how the container behaves.
 * The throwaway scripts used for the probe and the replay are in the session scratchpad, not in the repo.
 
-## 2026-11-17: audit fixes (branch `monitoring-fixes`, worktree `~/work/agent_monitoring_fix`; NOT deployed)
+## 2026-11-17: audit fixes (b628020, DEPLOYED 2026-11-17 ~11:40 UTC)
 
 Root causes, each verified on live data (plan: `~/.claude/plans/modular-drifting-harp.md`):
 
@@ -91,3 +91,5 @@ Deploy order (owner go needed; nothing below has been run):
 4. `docker compose -p seleric_agent build monitoring-cron && docker compose -p seleric_agent up -d --no-deps monitoring-cron`.
 5. Copy `docs/monitoring/agent-monitoring-alerts.yml` to `~/seleric-monitoring/alerts/` and reload Prometheus, after the first push.
 6. Watch the next :05 run, the pushgateway groups `agent_monitoring` / `agent_monitoring_findings`, and the alerts in Prometheus.
+
+Deployed 2026-11-17 ~11:40 UTC: backup `~/backups/monitor-schema-20261117.sql`; rollback images `seleric_agent-monitoring-cron:rollback-20261117` (the old 11-02 image; pair it with the old compose mounts) and `seleric_agent-business-state-cron:rollback-20261117`; 019 applied; image built from the clean commit (not the live tree); alert rules in `~/seleric-monitoring/alerts/`. First run as_of 11-16: 2 criticals (contribution, net sales, both 11-09), 3 warnings; AgentMonitoringCriticalFinding fired and the email was sent.
