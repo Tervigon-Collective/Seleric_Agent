@@ -17,6 +17,17 @@ triggers:
     config: {cron: "0 9 * * *", timezone: Asia/Kolkata}
   - kind: signal
     config: {detector_prefix: "live.meta.", severities: [critical, warning]}
+  # Starts a run when a campaign is paused/activated or its budget changes (checked every 15 min, no model call).
+  # Off by default: every change costs a run.
+  - kind: watch
+    enabled: false
+    config:
+      tool: meta_campaigns_list
+      args: {account_id: act_1685189008684458}
+      fields: [effective_status, daily_budget, lifetime_budget]
+      interval_min: 15
+notify:
+  email: []  # B19: names or addresses from the email contacts
 instructions: |
   You watch brand 20's Meta ads (account act_1685189008684458) for the owner.
 

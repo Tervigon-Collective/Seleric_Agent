@@ -1,9 +1,11 @@
-"""Postgres access for Bots (schema ``bots``, migration 022): registry, triggers, runs, activity."""
+"""Postgres access for Bots (schema ``bots``, migrations 022-023): registry, triggers, runs, activity, skills."""
 
 from __future__ import annotations
 
+import hashlib
 import json
-from datetime import datetime
+import secrets
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -20,7 +22,11 @@ TEMPLATES_DIR = Path("config/bots")  # relative to the working dir, like config/
 # Phase 1 is read-only: a bot may only add these Seleric MCP tools to the agent's base (catalogue/metrics) set.
 # Write tools reach bots in Phase 3, through per-bot D-239 keys, never through this list.
 READ_TOOLS: frozenset[str] = frozenset(ADS_READ_TOOLS)
-TRIGGER_KINDS = ("cron", "signal")
+TRIGGER_KINDS = ("cron", "signal", "watch", "webhook")
+# Triggers with no person waiting: they merge into a queued run and count toward max_scheduled_runs_per_day.
+AUTO_KINDS = ("cron", "signal", "watch", "webhook")
+WATCH_MIN_INTERVAL = 5  # minutes; live-monitor-cron already reads the same account every 5
+MAX_NOTIFY = 20
 DEFAULT_LIMITS: dict[str, int] = {"max_scheduled_runs_per_day": 24, "max_tool_calls": 40, "max_pending_proposals": 5}
 
 
@@ -63,7 +69,9 @@ def check_tools(tools: list[str]) -> list[str]:
 
 
 def check_trigger(kind: str, config: dict[str, Any]) -> dict[str, Any]:
-    from seleric_swarm.services.bots.schedule import next_cron  # validates the expression and timezone
+    from seleric_swarm.services.bots.schedule import (
+        next_cron,  # validates the expression and timezone
+    )
 
     if kind not in TRIGGER_KINDS:
         raise BotError(f"trigger kind must be one of {TRIGGER_KINDS}")
@@ -73,6 +81,21 @@ def check_trigger(kind: str, config: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:  # croniter / zoneinfo raise several types
             raise BotError(f"invalid cron schedule: {exc}") from exc
         return {"cron": str(config["cron"]).strip(), "timezone": str(config.get("timezone") or "Asia/Kolkata")}
+    if kind == "webhook":
+        return {}
+    if kind == "watch":
+        tool, fields = str(config.get("tool") or ""), [str(f) for f in config.get("fields") or [] if str(f).strip()]
+        if tool not in READ_TOOLS:
+            raise BotError(f"watch tool must be one of the bot read tools, got {tool!r}")
+        if not fields:
+            raise BotError("watch trigger needs the fields whose change should start a run (e.g. effective_status)")
+        args = config.get("args") or {}
+        if not isinstance(args, dict):
+            raise BotError("watch args must be an object")
+        interval = int(config.get("interval_min") or 15)
+        if interval < WATCH_MIN_INTERVAL:
+            raise BotError(f"watch interval must be at least {WATCH_MIN_INTERVAL} minutes")
+        return {"tool": tool, "args": args, "fields": fields, "interval_min": interval}
     sev = [s for s in (config.get("severities") or ["critical", "warning"]) if s in ("critical", "warning", "info")]
     prefix = str(config.get("detector_prefix") or "").strip()
     if not prefix or not sev:
@@ -80,10 +103,28 @@ def check_trigger(kind: str, config: dict[str, Any]) -> dict[str, Any]:
     return {"detector_prefix": prefix, "severities": sev}
 
 
+def check_notify(notify: dict[str, Any]) -> dict[str, Any]:
+    """B19: who gets this bot's emails. Each entry is a contact name, group or address; it must resolve in the email
+    contacts (allowed domains) when mail is set up. Without mail the list is kept as typed and nothing is sent."""
+    from seleric_swarm.mail.recipients import Clarify, resolve
+    from seleric_swarm.mail.session import get_mail_runtime
+
+    refs = list(dict.fromkeys(str(r).strip() for r in (notify.get("email") or []) if str(r).strip()))
+    if len(refs) > MAX_NOTIFY:
+        raise BotError(f"at most {MAX_NOTIFY} email recipients")
+    mail = get_mail_runtime()
+    for ref in refs if mail else []:
+        found = resolve(ref, mail.contacts)
+        if isinstance(found, Clarify):
+            raise BotError(found.reason)
+    return {"email": refs}
+
+
 # ---------------------------------------------------------------- bots
 
-_BOT_COLS = ("bot_id, brand_id, name, template, role, enabled, instructions, instructions_version, tools, limits, "
+_BOT_COLS = ("bot_id, brand_id, name, template, role, enabled, instructions, instructions_version, tools, limits, notify, "
              "version, created_by, updated_by, created_at, updated_at")
+_TRIGGER_COLS = "trigger_id, bot_id, kind, config, enabled, next_run_at, cursor, last_fired_at, state, created_at"
 
 
 def list_bots(conn: Connection) -> list[dict[str, Any]]:
@@ -103,6 +144,7 @@ def get_bot(conn: Connection, bot_id: str) -> dict[str, Any]:
     bot = dict(row)
     bot["limits"] = {**DEFAULT_LIMITS, **(bot.get("limits") or {})}
     bot["triggers"] = list_triggers(conn, bot_id)
+    bot["skills"] = list_skills(conn, bot_id)
     return bot
 
 
@@ -112,15 +154,17 @@ def create_bot(conn: Connection, *, template: str, actor: str, name: str | None 
         raise BotError(f"unknown template {template!r}")
     bot_id = new_id("bot")
     conn.execute(text("""
-        INSERT INTO bots.bots(bot_id, brand_id, name, template, role, instructions, tools, limits, created_by, updated_by)
-        VALUES (:b, :brand, :name, :tpl, :role, :ins, CAST(:tools AS jsonb), CAST(:limits AS jsonb), :a, :a)"""),
+        INSERT INTO bots.bots(bot_id, brand_id, name, template, role, instructions, tools, limits, notify, created_by, updated_by)
+        VALUES (:b, :brand, :name, :tpl, :role, :ins, CAST(:tools AS jsonb), CAST(:limits AS jsonb), CAST(:notify AS jsonb), :a, :a)"""),
         {"b": bot_id, "brand": brand_id, "name": (name or tpl["name"]).strip(), "tpl": template, "role": tpl.get("role", ""),
          "ins": tpl.get("instructions", ""), "tools": _j(check_tools(tpl.get("tools") or [])), "limits": _j(DEFAULT_LIMITS),
-         "a": actor})
+         "notify": _j(check_notify(tpl.get("notify") or {})), "a": actor})
     conn.execute(text("INSERT INTO bots.instruction_versions(bot_id, version, body, author) VALUES (:b, 1, :body, :a)"),
                  {"b": bot_id, "body": tpl.get("instructions", ""), "a": actor})
     for trig in tpl.get("triggers") or []:
-        add_trigger(conn, bot_id, kind=trig["kind"], config=trig.get("config") or {})
+        add_trigger(conn, bot_id, kind=trig["kind"], config=trig.get("config") or {}, enabled=trig.get("enabled", True))
+    for skill in tpl.get("skills") or []:
+        save_skill(conn, bot_id, name=skill["name"], body=skill["body"], author=actor)
     return get_bot(conn, bot_id)
 
 
@@ -136,6 +180,9 @@ def update_bot(conn: Connection, bot_id: str, *, expected_version: int, actor: s
     if "tools" in changes:
         sets.append("tools = CAST(:tools AS jsonb)")
         params["tools"] = _j(check_tools(list(changes["tools"])))
+    if "notify" in changes:
+        sets.append("notify = CAST(:notify AS jsonb)")
+        params["notify"] = _j(check_notify(changes["notify"] or {}))
     if "limits" in changes:
         limits = {k: int(v) for k, v in (changes["limits"] or {}).items() if k in DEFAULT_LIMITS and int(v) >= 0}
         sets.append("limits = CAST(:limits AS jsonb)")
@@ -154,21 +201,40 @@ def update_bot(conn: Connection, bot_id: str, *, expected_version: int, actor: s
 
 def list_triggers(conn: Connection, bot_id: str) -> list[dict[str, Any]]:
     return [dict(r) for r in conn.execute(text(
-        "SELECT * FROM bots.triggers WHERE bot_id = :b ORDER BY created_at"), {"b": bot_id}).mappings()]
+        f"SELECT {_TRIGGER_COLS} FROM bots.triggers WHERE bot_id = :b ORDER BY created_at"), {"b": bot_id}).mappings()]
+
+
+def secret_hash(secret: str) -> str:
+    return hashlib.sha256(secret.encode()).hexdigest()
+
+
+def webhook_trigger(conn: Connection, trigger_id: str) -> dict[str, Any] | None:
+    """The enabled webhook trigger of an enabled bot, with its secret hash (only the hook endpoint reads that)."""
+    row = conn.execute(text("""SELECT t.trigger_id, t.bot_id, t.secret_hash FROM bots.triggers t
+                               JOIN bots.bots b ON b.bot_id = t.bot_id
+                               WHERE t.trigger_id = :t AND t.kind = 'webhook' AND t.enabled AND b.enabled"""),
+                       {"t": trigger_id}).mappings().first()
+    return dict(row) if row else None
 
 
 def add_trigger(conn: Connection, bot_id: str, *, kind: str, config: dict[str, Any], enabled: bool = True) -> dict[str, Any]:
     from seleric_swarm.services.bots.schedule import next_cron
 
     config = check_trigger(kind, config)
-    next_run = next_cron(config["cron"], config["timezone"]) if kind == "cron" else None
+    # cron: next slot; watch: first check right away (it records the baseline, it does not fire)
+    next_run = next_cron(config["cron"], config["timezone"]) if kind == "cron" else datetime.now(UTC) if kind == "watch" else None
     # a new signal trigger starts at the newest finding event: it reacts to what happens from now on, not to history
-    cursor = None if kind == "cron" else conn.execute(text("SELECT COALESCE(MAX(id), 0) FROM monitor.finding_events")).scalar()
+    cursor = (conn.execute(text("SELECT COALESCE(MAX(id), 0) FROM monitor.finding_events")).scalar()
+              if kind == "signal" else None)
+    secret = secrets.token_urlsafe(32) if kind == "webhook" else None
     trigger_id = new_id("trg")
-    conn.execute(text("""INSERT INTO bots.triggers(trigger_id, bot_id, kind, config, enabled, next_run_at, cursor)
-                         VALUES (:t, :b, :k, CAST(:c AS jsonb), :e, :n, :cur)"""),
-                 {"t": trigger_id, "b": bot_id, "k": kind, "c": _j(config), "e": enabled, "n": next_run, "cur": cursor})
-    return dict(conn.execute(text("SELECT * FROM bots.triggers WHERE trigger_id = :t"), {"t": trigger_id}).mappings().one())
+    conn.execute(text("""INSERT INTO bots.triggers(trigger_id, bot_id, kind, config, enabled, next_run_at, cursor, secret_hash)
+                         VALUES (:t, :b, :k, CAST(:c AS jsonb), :e, :n, :cur, :sh)"""),
+                 {"t": trigger_id, "b": bot_id, "k": kind, "c": _j(config), "e": enabled, "n": next_run, "cur": cursor,
+                  "sh": secret_hash(secret) if secret else None})
+    row = dict(conn.execute(text(f"SELECT {_TRIGGER_COLS} FROM bots.triggers WHERE trigger_id = :t"),
+                            {"t": trigger_id}).mappings().one())
+    return {**row, "secret": secret} if secret else row  # shown once; only its hash is kept
 
 
 def set_trigger_enabled(conn: Connection, bot_id: str, trigger_id: str, enabled: bool) -> None:
@@ -178,7 +244,8 @@ def set_trigger_enabled(conn: Connection, bot_id: str, trigger_id: str, enabled:
                        {"t": trigger_id, "b": bot_id}).mappings().first()
     if row is None:
         raise KeyError(trigger_id)
-    next_run = next_cron(row["config"]["cron"], row["config"]["timezone"]) if row["kind"] == "cron" and enabled else None
+    next_run = (None if not enabled else next_cron(row["config"]["cron"], row["config"]["timezone"]) if row["kind"] == "cron"
+                else datetime.now(UTC) if row["kind"] == "watch" else None)
     conn.execute(text("UPDATE bots.triggers SET enabled = :e, next_run_at = :n WHERE trigger_id = :t"),
                  {"e": enabled, "n": next_run, "t": trigger_id})
 
@@ -203,10 +270,10 @@ def enqueue_run(conn: Connection, bot_id: str, *, kind: str, reason: str, query:
         if seen:
             return {"run_id": seen[0], "status": "duplicate"}
     entry = {"kind": kind, "reason": reason, "trigger_id": trigger_id, "dedupe_key": dedupe_key, **(detail or {})}
-    if kind in ("cron", "signal"):  # chat/manual always get their own run: the person is waiting for that answer
+    if kind in AUTO_KINDS:  # chat/manual always get their own run: the person is waiting for that answer
         waiting = conn.execute(text("""SELECT run_id FROM bots.runs WHERE bot_id = :b AND status = 'queued'
-                                       AND trigger_kind IN ('cron', 'signal') ORDER BY created_at LIMIT 1 FOR UPDATE"""),
-                               {"b": bot_id}).first()
+                                       AND trigger_kind = ANY(:auto) ORDER BY created_at LIMIT 1 FOR UPDATE"""),
+                               {"b": bot_id, "auto": list(AUTO_KINDS)}).first()
         if waiting:
             conn.execute(text("UPDATE bots.runs SET merged = merged || CAST(:m AS jsonb) WHERE run_id = :r"),
                          {"m": _j([entry]), "r": waiting[0]})
@@ -233,10 +300,10 @@ def skip_run(conn: Connection, bot_id: str, *, kind: str, reason: str, why: str,
 
 
 def scheduled_runs_today(conn: Connection, bot_id: str, tz: str = "Asia/Kolkata") -> int:
-    return int(conn.execute(text("""SELECT COUNT(*) FROM bots.runs WHERE bot_id = :b AND trigger_kind IN ('cron', 'signal')
+    return int(conn.execute(text("""SELECT COUNT(*) FROM bots.runs WHERE bot_id = :b AND trigger_kind = ANY(:auto)
                                     AND status <> 'skipped'
                                     AND (created_at AT TIME ZONE :tz)::date = (NOW() AT TIME ZONE :tz)::date"""),
-                            {"b": bot_id, "tz": tz}).scalar() or 0)
+                            {"b": bot_id, "tz": tz, "auto": list(AUTO_KINDS)}).scalar() or 0)
 
 
 def claim_run(conn: Connection) -> dict[str, Any] | None:
@@ -289,3 +356,37 @@ def _activity(conn: Connection, run_id: str, bot_id: str, *, kind: str, outcome:
 
 
 add_activity = _activity
+
+
+# ---------------------------------------------------------------- skills
+
+def list_skills(conn: Connection, bot_id: str) -> list[dict[str, Any]]:
+    return [dict(r) for r in conn.execute(text(
+        "SELECT * FROM bots.skills WHERE bot_id = :b ORDER BY name"), {"b": bot_id}).mappings()]
+
+
+def save_skill(conn: Connection, bot_id: str, *, name: str, body: str, author: str, enabled: bool = True,
+               skill_id: str | None = None) -> dict[str, Any]:
+    """Create a skill, or replace one (by id). Names are unique per bot."""
+    name, body = name.strip(), body.strip()
+    if not name or not body:
+        raise BotError("a skill needs a name and a body")
+    taken = conn.execute(text("SELECT skill_id FROM bots.skills WHERE bot_id = :b AND name = :n"), {"b": bot_id, "n": name}).first()
+    if taken and taken[0] != skill_id:
+        raise BotError(f"this bot already has a skill named {name!r}")
+    if skill_id:
+        done = conn.execute(text("""UPDATE bots.skills SET name = :n, body = :body, enabled = :e, author = :a, updated_at = NOW()
+                                    WHERE skill_id = :s AND bot_id = :b"""),
+                            {"n": name, "body": body, "e": enabled, "a": author, "s": skill_id, "b": bot_id}).rowcount
+        if not done:
+            raise KeyError(skill_id)
+    else:
+        skill_id = new_id("skl")
+        conn.execute(text("""INSERT INTO bots.skills(skill_id, bot_id, name, body, enabled, author)
+                             VALUES (:s, :b, :n, :body, :e, :a)"""),
+                     {"s": skill_id, "b": bot_id, "n": name, "body": body, "e": enabled, "a": author})
+    return dict(conn.execute(text("SELECT * FROM bots.skills WHERE skill_id = :s"), {"s": skill_id}).mappings().one())
+
+
+def delete_skill(conn: Connection, bot_id: str, skill_id: str) -> None:
+    conn.execute(text("DELETE FROM bots.skills WHERE skill_id = :s AND bot_id = :b"), {"s": skill_id, "b": bot_id})

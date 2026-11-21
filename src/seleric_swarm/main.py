@@ -20,12 +20,13 @@ from seleric_swarm.api.async_missions import (
     new_mission_id,
     publish_durable_mission,
 )
+from seleric_swarm.api.bots import hooks_router as bot_hooks_router
 from seleric_swarm.api.bots import router as bots_router
 from seleric_swarm.api.business_state import router as business_state_router
 from seleric_swarm.api.conversations import router as conversations_router
 from seleric_swarm.api.emails import router as emails_router
-from seleric_swarm.api.model_settings import router as model_settings_router
 from seleric_swarm.api.mission_access import request_principal, require_mission_access
+from seleric_swarm.api.model_settings import router as model_settings_router
 from seleric_swarm.api.monitoring import router as monitoring_router
 from seleric_swarm.api.notifications import router as notifications_router
 from seleric_swarm.api.phase7 import router as phase7_router
@@ -177,6 +178,7 @@ app.include_router(business_state_router)
 app.include_router(monitoring_router)
 app.include_router(notifications_router)
 app.include_router(bots_router)
+app.include_router(bot_hooks_router)
 
 # Load repo .env before anything reads settings (CWD-independent): the voice
 # route's voice_enabled check below and the middleware further down.

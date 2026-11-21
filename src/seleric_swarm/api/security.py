@@ -36,6 +36,9 @@ def _is_exempt(path: str) -> bool:
     # Office UI static bundle: public assets only; its /v1 calls stay guarded.
     if normalized == "/ui" or normalized.startswith("/ui/"):
         return True
+    # Bot webhooks (D-244): the caller has no API key; the per-trigger secret header is checked by the route.
+    if normalized.startswith("/hooks/bots/"):
+        return True
     # ChatGPT returns the browser here with no API key. The state value is the secret.
     return normalized in {
         "/", "/health", "/readyz", "/docs", "/openapi.json", "/redoc", "/v1/voice/dev", "/auth/callback",

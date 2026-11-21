@@ -1,8 +1,11 @@
-"""Bot triggers: when a cron trigger is due and which new monitoring findings a signal trigger picks up."""
+"""Bot triggers: when a cron trigger is due, which new monitoring findings a signal trigger picks up, and whether a
+watched read changed (the watch check itself calls the live tool in the worker, outside these transactions)."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import hashlib
+import json
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -19,15 +22,15 @@ def next_cron(expr: str, tz: str, after: datetime | None = None) -> datetime:
     return croniter(expr, start).get_next(datetime).astimezone(UTC)
 
 
-def _fire(conn: Connection, trig: dict[str, Any], bot: dict[str, Any], *, kind: str, reason: str, dedupe_key: str,
-          detail: dict[str, Any] | None = None) -> str:
+def fire(conn: Connection, trig: dict[str, Any], bot: dict[str, Any], *, kind: str, reason: str, dedupe_key: str | None,
+         detail: dict[str, Any] | None = None, query: str = "") -> str:
     limit = int(bot["limits"].get("max_scheduled_runs_per_day", store.DEFAULT_LIMITS["max_scheduled_runs_per_day"]))
     if store.scheduled_runs_today(conn, bot["bot_id"]) >= limit:
         store.skip_run(conn, bot["bot_id"], kind=kind, reason=reason, trigger_id=trig["trigger_id"], dedupe_key=dedupe_key,
                        why=f"Not run: the bot reached its limit of {limit} scheduled runs today.")
         return "skipped"
     return store.enqueue_run(conn, bot["bot_id"], kind=kind, reason=reason, trigger_id=trig["trigger_id"],
-                             dedupe_key=dedupe_key, detail=detail)["status"]
+                             dedupe_key=dedupe_key, detail=detail, query=query)["status"]
 
 
 def due_cron(conn: Connection, now: datetime) -> list[dict[str, Any]]:
@@ -65,7 +68,7 @@ def tick(conn: Connection, now: datetime | None = None) -> dict[str, int]:
         cfg = trig["config"]
         slot = trig["next_run_at"]
         local = slot.astimezone(ZoneInfo(cfg["timezone"])).strftime("%Y-%m-%d %H:%M")
-        _fire(conn, trig, bot(trig["bot_id"]), kind="cron",
+        fire(conn, trig, bot(trig["bot_id"]), kind="cron",
               reason=f"schedule '{cfg['cron']}' ({cfg['timezone']}), due {local}",
               dedupe_key=f"cron:{trig['trigger_id']}:{slot.isoformat()}",
               detail={"scheduled_for": slot.isoformat(), "late_by_s": round((now - slot).total_seconds())})
@@ -81,7 +84,7 @@ def tick(conn: Connection, now: datetime | None = None) -> dict[str, int]:
         b = bot(trig["bot_id"])
         events = new_findings(conn, trig, int(b["brand_id"]))
         for ev in events:
-            _fire(conn, trig, b, kind="signal",
+            fire(conn, trig, b, kind="signal",
                   reason=f"{ev['severity']} finding {ev['finding_id']} ({ev['detector']}): {ev['summary']}",
                   dedupe_key=f"signal:{trig['trigger_id']}:{ev['event_id']}",  # a re-opened finding is a new event
                   detail={"finding_id": ev["finding_id"], "detector": ev["detector"], "severity": ev["severity"],
@@ -91,3 +94,90 @@ def tick(conn: Connection, now: datetime | None = None) -> dict[str, int]:
             conn.execute(text("UPDATE bots.triggers SET cursor = :c, last_fired_at = :now WHERE trigger_id = :t"),
                          {"c": events[-1]["event_id"], "now": now, "t": trig["trigger_id"]})
     return counts
+
+
+# ---------------------------------------------------------------- watch
+
+WATCH_KEEP_ROWS = 500  # rows of the last check kept to say what changed
+WATCH_SHOWN_CHANGES = 5
+
+
+def claim_watches(conn: Connection, now: datetime) -> list[dict[str, Any]]:
+    """Due watch triggers, with their next check moved forward in the same transaction so no other tick takes them."""
+    rows = [dict(r) for r in conn.execute(text("""
+        SELECT t.*, b.brand_id FROM bots.triggers t JOIN bots.bots b ON b.bot_id = t.bot_id
+        WHERE t.kind = 'watch' AND t.enabled AND b.enabled AND t.next_run_at <= :now
+        FOR UPDATE OF t SKIP LOCKED"""), {"now": now}).mappings()]
+    for r in rows:
+        conn.execute(text("UPDATE bots.triggers SET next_run_at = :n WHERE trigger_id = :t"),
+                     {"n": now + timedelta(minutes=int(r["config"]["interval_min"])), "t": r["trigger_id"]})
+    return rows
+
+
+def _row_key(row: dict[str, Any]) -> str:
+    ids = [f"{k}={row[k]}" for k in sorted(row) if (k == "id" or k.endswith("_id")) and row[k] not in (None, "")]
+    return ",".join(ids) or json.dumps(row, sort_keys=True, default=str)
+
+
+def project(payload: Any, fields: list[str]) -> dict[str, dict[str, Any]] | None:
+    """The watched fields of each row, keyed by the row's ids; None when the payload is not a row list."""
+    if not isinstance(payload, dict) or payload.get("success") is not True or not isinstance(payload.get("data"), list):
+        return None
+    out: dict[str, dict[str, Any]] = {}
+    for row in payload["data"]:
+        if isinstance(row, dict):
+            out[_row_key(row)] = {f: row.get(f) for f in fields}
+    return out
+
+
+def fingerprint(rows: dict[str, dict[str, Any]]) -> str:
+    return hashlib.sha256(json.dumps(rows, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+def changes(before: dict[str, dict[str, Any]], after: dict[str, dict[str, Any]], names: dict[str, str]) -> list[str]:
+    """What moved, in words: 'Spring Sale (id=1): effective_status ACTIVE -> PAUSED', added and removed rows."""
+    out = []
+    for key in sorted(set(before) | set(after)):
+        label = f"{names[key]} ({key})" if names.get(key) else key
+        if key not in before:
+            out.append(f"{label}: new")
+        elif key not in after:
+            out.append(f"{label}: gone")
+        else:
+            moved = [f"{f} {before[key].get(f)} -> {after[key].get(f)}" for f in after[key] if before[key].get(f) != after[key].get(f)]
+            if moved:
+                out.append(f"{label}: " + ", ".join(moved))
+    return out
+
+
+def record_watch(conn: Connection, trig: dict[str, Any], payload: Any, error: str | None, now: datetime) -> str:
+    """Store this check and start a run when the watched fields changed since the last good check.
+
+    Returns ``baseline`` (first good check: remembered, no run), ``same``, ``error`` (the check failed: the last good
+    state stays, no run) or the enqueue status. A check is not a run, so it writes no activity row unless it fires."""
+    cfg, state = trig["config"], dict(trig.get("state") or {})
+    rows = None if error else project(payload, cfg["fields"])
+    if rows is None:
+        state |= {"checked_at": now.isoformat(), "error": error or "the tool did not return a row list"}
+        conn.execute(text("UPDATE bots.triggers SET state = CAST(:s AS jsonb) WHERE trigger_id = :t"),
+                     {"s": json.dumps(state, default=str), "t": trig["trigger_id"]})
+        return "error"
+    fp, prev, before = fingerprint(rows), state.get("fingerprint"), state.get("rows") or {}
+    kept = dict(list(rows.items())[:WATCH_KEEP_ROWS])
+    conn.execute(text("UPDATE bots.triggers SET state = CAST(:s AS jsonb) WHERE trigger_id = :t"),
+                 {"s": json.dumps({"fingerprint": fp, "rows": kept, "checked_at": now.isoformat(), "error": None}, default=str),
+                  "t": trig["trigger_id"]})
+    if prev is None:
+        return "baseline"
+    if prev == fp:
+        return "same"
+    names = {_row_key(r): str(r.get("name") or r.get("campaign_name") or r.get("adset_name") or "")
+             for r in payload["data"] if isinstance(r, dict)}
+    moved = changes(before, rows, names)
+    shown = "; ".join(moved[:WATCH_SHOWN_CHANGES]) + (f"; and {len(moved) - WATCH_SHOWN_CHANGES} more"
+                                                      if len(moved) > WATCH_SHOWN_CHANGES else "")
+    conn.execute(text("UPDATE bots.triggers SET last_fired_at = :now WHERE trigger_id = :t"), {"now": now, "t": trig["trigger_id"]})
+    return fire(conn, trig, store.get_bot(conn, trig["bot_id"]), kind="watch",
+                 reason=f"{cfg['tool']} changed: {shown or 'rows changed'}",
+                 dedupe_key=f"watch:{trig['trigger_id']}:{now.isoformat()}",
+                 detail={"tool": cfg["tool"], "fields": cfg["fields"], "changes": moved[:50], "before": prev, "after": fp})

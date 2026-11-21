@@ -5,29 +5,36 @@
 ``POST   /v1/bots``                               create from a template
 ``GET    /v1/bots/{id}``                          one bot with its triggers
 ``PATCH  /v1/bots/{id}``                          name / role / enabled / instructions / tools / limits (needs expected_version)
-``POST   /v1/bots/{id}/triggers``                 add a cron or signal trigger
+``POST   /v1/bots/{id}/triggers``                 add a cron / signal / watch / webhook trigger (a webhook's secret is in this reply only)
 ``PATCH  /v1/bots/{id}/triggers/{tid}``           enable / disable
 ``DELETE /v1/bots/{id}/triggers/{tid}``
 ``POST   /v1/bots/{id}/runs``                     run now (manual) or ask it something (chat)
 ``GET    /v1/bots/{id}/runs``                     recent runs (``?kind=chat`` for the conversation)
 ``GET    /v1/bots/{id}/activity``                 the right-sidebar timeline
+``PUT    /v1/bots/{id}/skills``                   create (no skill_id) or replace a skill; ``DELETE .../skills/{sid}``
+``POST   /hooks/bots/{trigger_id}``               webhook trigger: ``X-Bot-Secret`` header, body = data for the run (64 KB max)
 
 Under ``/v1`` so the API-key middleware applies; every route needs an authenticated principal (as Monitoring).
+The webhook route is outside ``/v1`` (callers have no API key): its per-trigger secret is the only credential.
 Runs execute in the ``bots-cron`` worker, not in this process.
 """
 
 from __future__ import annotations
 
+import asyncio
+from hmac import compare_digest
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from seleric_swarm.api.mission_access import request_principal
 from seleric_swarm.conversations.contracts import Principal
-from seleric_swarm.services.bots import store
+from seleric_swarm.services.bots import schedule, store
 
 router = APIRouter(prefix="/v1/bots")
+hooks_router = APIRouter(prefix="/hooks/bots")
+WEBHOOK_MAX_BYTES = 64 * 1024
 
 
 def _bad(exc: Exception) -> HTTPException:
@@ -49,16 +56,24 @@ class UpdateBot(BaseModel):
     instructions: str | None = Field(default=None, max_length=20000)
     tools: list[str] | None = None
     limits: dict[str, int] | None = None
+    notify: dict[str, list[str]] | None = None
 
 
 class NewTrigger(BaseModel):
-    kind: Literal["cron", "signal"]
+    kind: Literal["cron", "signal", "watch", "webhook"]
     config: dict[str, Any]
     enabled: bool = True
 
 
 class TriggerState(BaseModel):
     enabled: bool
+
+
+class SkillBody(BaseModel):
+    skill_id: str | None = None
+    name: str = Field(min_length=1, max_length=80)
+    body: str = Field(min_length=1, max_length=8000)
+    enabled: bool = True
 
 
 class NewRun(BaseModel):
@@ -157,3 +172,49 @@ def get_runs(bot_id: str, kind: str | None = None, limit: int = 30, _: Principal
 def get_activity(bot_id: str, limit: int = 200, _: Principal = Depends(request_principal)) -> dict[str, Any]:
     with store.engine().begin() as conn:
         return {"activity": store.list_activity(conn, bot_id, limit=min(max(limit, 1), 500))}
+
+
+@router.put("/{bot_id}/skills")
+def put_skill(bot_id: str, body: SkillBody, who: Principal = Depends(request_principal)) -> dict[str, Any]:
+    try:
+        with store.engine().begin() as conn:
+            store.get_bot(conn, bot_id)
+            store.save_skill(conn, bot_id, name=body.name, body=body.body, enabled=body.enabled, author=who.user_id,
+                             skill_id=body.skill_id)
+            return {"skills": store.list_skills(conn, bot_id)}
+    except (store.BotError, KeyError) as exc:
+        raise _bad(exc) from exc
+
+
+@router.delete("/{bot_id}/skills/{skill_id}", status_code=204)
+def delete_skill(bot_id: str, skill_id: str, _: Principal = Depends(request_principal)) -> None:
+    with store.engine().begin() as conn:
+        store.delete_skill(conn, bot_id, skill_id)
+
+
+def _hook(trigger_id: str, secret: str, data: str, idempotency_key: str) -> dict[str, Any] | None:
+    with store.engine().begin() as conn:
+        trig = store.webhook_trigger(conn, trigger_id)
+        if trig is None or not trig["secret_hash"] or not compare_digest(trig["secret_hash"], store.secret_hash(secret)):
+            return None
+        bot = store.get_bot(conn, trig["bot_id"])
+        status = schedule.fire(conn, trig, bot, kind="webhook", reason=f"webhook {trigger_id} ({len(data)} characters)",
+                               dedupe_key=f"webhook:{trigger_id}:{idempotency_key}" if idempotency_key else None,
+                               detail={"data": data[:4000]}, query=data)
+        return {"status": status}
+
+
+@hooks_router.post("/{trigger_id}", status_code=202)
+async def webhook(trigger_id: str, request: Request) -> dict[str, Any]:
+    """Unknown trigger, paused bot and wrong secret all answer 404, so the URL reveals nothing without the secret."""
+    secret = request.headers.get("x-bot-secret", "")
+    raw = await request.body()
+    if len(raw) > WEBHOOK_MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"body over {WEBHOOK_MAX_BYTES} bytes")
+    if not secret:
+        raise HTTPException(status_code=404, detail="not found")
+    done = await asyncio.to_thread(_hook, trigger_id, secret, raw.decode("utf-8", "replace"),
+                                   request.headers.get("idempotency-key", "")[:200])
+    if done is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return done
