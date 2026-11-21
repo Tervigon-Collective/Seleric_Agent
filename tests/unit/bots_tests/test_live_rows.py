@@ -78,3 +78,10 @@ def test_same_call_same_query_id():
 def test_note_tells_the_model_the_run_python_shape():
     note = as_query_result("meta_insights_live", ARGS, FIX["insights_hourly"], TODAY)["note"]
     assert "e['metric_id'] == 'spend'" in note and "e['value']" in note and "period_start" in note
+
+
+def test_rows_reaching_today_say_they_are_partial():
+    note = as_query_result("meta_insights_live", ARGS, FIX["insights_hourly"], TODAY)["note"]
+    assert "not over" in note and "same hours" in note
+    later = as_query_result("meta_insights_live", ARGS, FIX["insights_hourly"], date(2026, 11, 25))["note"]
+    assert "not over" not in later  # a closed day is complete

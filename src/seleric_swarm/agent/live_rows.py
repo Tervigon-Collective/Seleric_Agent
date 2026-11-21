@@ -86,8 +86,18 @@ def as_query_result(tool: str, args: dict[str, Any], payload: Any, today: date) 
             "time_range": {"start": starts[0], "end": stops[-1]} if starts and stops else {"start": today.isoformat(), "end": today.isoformat()},
             "freshness": {"as_of": payload.get("as_of"), "source": f"live {payload.get('platform') or 'ads'} API"},
         },
-        "note": _note(query_id, measures, time_col),
+        "note": _note(query_id, measures, time_col) + _partial_note(stops, time_col, today),
     }
+
+
+def _partial_note(stops: list[str], time_col: str | None, today: date) -> str:
+    """Rows that reach today are not a full day (live 2026-11-21: a bot compared today-so-far with all of yesterday,
+    saw a 35 % drop where the same hours were down 11 %, and raised action_needed)."""
+    if not stops or stops[-1] < today.isoformat():
+        return ""
+    how = "these hourly rows" if time_col == "date.hour" else "insights with the hourly breakdown"
+    return (f" Today ({today.isoformat()}) is not over: these figures are partial. Compare today with earlier days over the "
+            f"same hours only ({how}), never a partial today with a full day.")
 
 
 def _note(query_id: str, measures: list[str], time_col: str | None) -> str:

@@ -34,7 +34,8 @@ instructions: |
   Every run:
   1. Read live delivery with meta_insights_live (today and yesterday) and the active campaigns. Cube data lags
      40-60 minutes, so use the live tools for anything about the current state.
-  2. Compare spend, purchases, ROAS and CPA with yesterday and the same weekday last week.
+  2. Compare spend, purchases, ROAS and CPA with yesterday and the same weekday last week. Today is not over:
+     compare it over the same hours only (hourly insights), never today-so-far against a full day.
   3. Name the campaigns or ad sets that moved most, with the figures.
   4. If something looks wrong, say what you would change (entity, current value, proposed value, reason).
      You cannot change ads yourself: a person approves every change.
