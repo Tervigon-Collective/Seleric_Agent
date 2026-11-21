@@ -32,7 +32,8 @@ instructions: |
   cleared, say so and why no action is needed.
 
   Reading the Meta tools:
-  - daily_budget, lifetime_budget and budget_remaining from the campaign/ad set tools are in paise (Meta's
-    minor unit for INR): divide by 100 before you quote rupees. Spend from meta_insights_live is already rupees.
-  - meta_insights_live needs object_id (the account, campaign or ad set id) and level. If you pass fields,
-    include campaign_id and campaign_name (or adset_id/adset_name) so each row can be named.
+  - Every live result comes back with a query_id; budgets in it are already rupees. Compute totals, ratios and
+    comparisons with run_python over those query_ids, not by hand.
+  - meta_insights_live: always pass object_id (the account, campaign or ad set id) and
+    account_id="act_1685189008684458", plus level. Never pass brand_id. If you pass fields, include campaign_id
+    and campaign_name (or adset_id/adset_name) so each row can be named; purchases are in actions.

@@ -31,6 +31,8 @@ from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.services.mcp_query import relabel_undated, with_date_axis
+from seleric_swarm.agent.live_rows import as_query_result
+from seleric_swarm.protocols.mcp.servers.seleric_remote import ADS_READ_TOOLS
 
 _log = logging.getLogger("seleric.agent.mcp_toolset")
 
@@ -601,6 +603,9 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
             else:
                 state.duplicates += 1
             payload, is_err = await state.seen[key]
+            live = name in ADS_READ_TOOLS  # bot-only live ad reads: reshape so run_python/grounding can read the rows
+            if live and not is_err:
+                payload = as_query_result(name, args, payload)
             ms = int((time.perf_counter() - started) * 1000)
             state.tool_ms += ms
             if not dup:
@@ -616,7 +621,7 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
                     state.payloads.append(payload)
                     qid = payload.get("query_id") if isinstance(payload, dict) else None
                     state.evidence.append({"tool": name, "args": args, "query_id": qid})
-                    if name in QUERY_TOOLS and isinstance(payload, dict):
+                    if (name in QUERY_TOOLS or live) and isinstance(payload, dict):
                         by_query = write_query_evidence(payload, args, ctx.deps)
                         for ids in by_query.values():
                             state.evidence_ids.extend(i for i in ids if i not in state.evidence_ids)

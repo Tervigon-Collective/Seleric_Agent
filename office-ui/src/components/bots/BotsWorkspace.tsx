@@ -15,6 +15,9 @@ import { POLL_MS, useBotsStore } from "../../stores/bots";
 const when = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "–";
 
+/** Limits the backend enforces today; the rest (tool calls, pending proposals) arrive with proposals in P3. */
+const ENFORCED_LIMITS = ["max_scheduled_runs_per_day"];
+
 const OUTCOME_TONE: Record<string, string> = {
   completed: "bg-[var(--success)]", skipped: "bg-muted-foreground/50", attempted: "bg-[var(--warning)]",
   denied: "bg-destructive", failed: "bg-destructive",
@@ -180,12 +183,13 @@ function Tools({ bot }: { bot: Bot }) {
       </ul>
       <fieldset className="flex flex-wrap items-end gap-3 rounded-md border p-3">
         <legend className="px-1 text-sm font-medium">Limits</legend>
-        {Object.entries(limits).map(([k, v]) => (
+        {Object.entries(limits).filter(([k]) => ENFORCED_LIMITS.includes(k)).map(([k, v]) => (
           <label key={k} className="flex flex-col gap-1 text-xs">{k.replaceAll("_", " ")}
             <Input type="number" min={0} value={v} onChange={(e) => setLimits({ ...limits, [k]: Number(e.target.value) })} className="w-28" />
           </label>
         ))}
         <Button size="sm" disabled={busy || JSON.stringify(limits) === JSON.stringify(bot.limits)} onClick={() => void save({ limits })}>Save limits</Button>
+        <p className="m-0 w-full text-xs text-muted-foreground">Runs per day counts schedule and monitoring runs; run now and chat are not limited. Each run also stops at the agent's own tool-call cap.</p>
       </fieldset>
     </div>
   );
