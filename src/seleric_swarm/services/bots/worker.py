@@ -22,7 +22,7 @@ _log = logging.getLogger("seleric.bots")
 
 TICK_S = float(os.getenv("BOTS_TICK_S", "15"))
 CONCURRENCY = int(os.getenv("BOTS_CONCURRENCY", "2"))
-OUTCOMES = ("action_needed", "no_action", "cleared")
+OUTCOMES = ("action_needed", "no_action", "cleared", "unverified")
 TARGET_KEYS = ("object_id", "campaign_id", "adset_id", "ad_id", "account_id", "customer_id", "brand_id")
 CHAT_HISTORY_RUNS = 4
 
@@ -40,7 +40,11 @@ def brief(bot: dict[str, Any], run: dict[str, Any], history: list[dict[str, Any]
         f"Standing instructions from the operator (version {bot['instructions_version']}):\n{bot['instructions'].strip()}",
         "Rules for bots in this phase: you are read-only. Never say you changed anything. If a change is warranted, "
         "propose it: entity, current value, proposed value, reason. A person approves every change.",
-        "End your answer with one last line in exactly this form: OUTCOME: <action_needed | no_action | cleared> — <one-line reason>.",
+        "End your answer with one last line in exactly this form: OUTCOME: <action_needed | no_action | cleared | "
+        "unverified> — <one-line reason>. action_needed: the data you read shows something a person should act on. "
+        "no_action: you checked and all is in order. cleared: the condition that started this run is no longer there. "
+        "unverified: you could not check (a tool failed, data was missing) — say what you could not check; never "
+        "choose action_needed only because a check failed.",
     ]
     if history:
         lines = [f"Q: {h['query']}\nA: {(h['answer'] or '')[:600]}" for h in reversed(history)]
@@ -66,8 +70,7 @@ def outcome_of(answer: str) -> tuple[str | None, str]:
         value = line.split(":", 1)[1].strip()
         word = value.replace("—", " ").replace("-", " ").split()[0].strip("<>`*").lower() if value else ""
         reason = value.split("—", 1)[1].strip() if "—" in value else ""
-        if word == "action":  # "action needed" written without the underscore
-            word = "action_needed"
+        word = {"action": "action_needed", "no": "no_action"}.get(word, word)  # written without the underscore
         return (word if word in OUTCOMES else None), reason
     return None, ""
 

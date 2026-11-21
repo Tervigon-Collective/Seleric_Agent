@@ -18,6 +18,9 @@ const when = (iso: string | null | undefined) =>
 /** Limits the backend enforces today; the rest (tool calls, pending proposals) arrive with proposals in P3. */
 const ENFORCED_LIMITS = ["max_scheduled_runs_per_day"];
 
+/** Run outcomes (B17): only action_needed is an alert; unverified means the bot could not check. */
+const OUTCOME_BADGE: Record<string, "destructive" | "outline" | "secondary"> = { action_needed: "destructive", unverified: "outline" };
+
 const OUTCOME_TONE: Record<string, string> = {
   completed: "bg-[var(--success)]", skipped: "bg-muted-foreground/50", attempted: "bg-[var(--warning)]",
   denied: "bg-destructive", failed: "bg-destructive",
@@ -232,7 +235,7 @@ function Runs({ runs }: { runs: BotRun[] }) {
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">{r.trigger_kind}</Badge>
             <span className="font-medium">{STATUS_LABEL[r.status] ?? r.status}</span>
-            {r.outcome && <Badge variant={r.outcome === "action_needed" ? "destructive" : "secondary"}>{r.outcome.replace("_", " ")}</Badge>}
+            {r.outcome && <Badge variant={OUTCOME_BADGE[r.outcome] ?? "secondary"}>{r.outcome.replace("_", " ")}</Badge>}
             <span className="ml-auto text-xs text-muted-foreground">{when(r.created_at)}{r.instructions_version ? ` · instructions v${r.instructions_version}` : ""}</span>
           </div>
           <p className="m-0 mt-1 text-xs text-muted-foreground">{r.reason}</p>

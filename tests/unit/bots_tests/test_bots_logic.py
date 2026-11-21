@@ -61,6 +61,8 @@ def test_extra_tools_widen_the_allowlist_only_for_that_call():
     ("**OUTCOME: cleared — ROAS back above 2.1**", ("cleared", "ROAS back above 2.1")),
     ("OUTCOME: action needed — pause adset 123", ("action_needed", "pause adset 123")),
     ("OUTCOME: <action_needed> — x", ("action_needed", "x")),
+    ("OUTCOME: unverified — Meta insights failed twice", ("unverified", "Meta insights failed twice")),
+    ("OUTCOME: no action — fine", ("no_action", "fine")),
     ("no closing line", (None, "")),
     ("OUTCOME: maybe", (None, "")),
 ])
@@ -93,7 +95,7 @@ def test_brief_names_trigger_version_and_merged_signals():
            "merged": [{"kind": "signal", "reason": "critical finding F1"}]}
     text = worker.brief(bot, run, [])
     assert "version 3" in text and "Watch Meta." in text and "critical finding F1" in text
-    assert "OUTCOME:" in text and "read-only" in text
+    assert "OUTCOME:" in text and "read-only" in text and "unverified" in text
     assert worker.question(run) == "Do your standing task now."
     assert "re-check" in worker.question({**run, "trigger_kind": "signal"})
     assert worker.question({**run, "trigger_kind": "chat", "query": "why is CPA up?"}) == "why is CPA up?"
