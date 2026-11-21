@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import date
 from typing import Any
 
 # Meta reports these in the account currency's minor unit (paise for INR); spend and insights are major units.
@@ -48,8 +49,10 @@ def _is_id(key: str) -> bool:
     return key == "id" or key.endswith("_id")
 
 
-def as_query_result(tool: str, args: dict[str, Any], payload: Any) -> Any:
-    """The envelope as a query result; anything else (an error, a non-list ``data``) is returned unchanged."""
+def as_query_result(tool: str, args: dict[str, Any], payload: Any, today: date) -> Any:
+    """The envelope as a query result; anything else (an error, a non-list ``data``) is returned unchanged.
+    A result without dates (campaign lists, budgets) is a snapshot as of now, so its window is ``today``: evidence
+    drops undated rows that have no window (live 2026-11-21: budgets "unavailable")."""
     if not isinstance(payload, dict) or payload.get("success") is not True or not isinstance(payload.get("data"), list):
         return payload
     rows = [_flat(r) for r in payload["data"] if isinstance(r, dict)]
@@ -80,9 +83,19 @@ def as_query_result(tool: str, args: dict[str, Any], payload: Any) -> Any:
         "row_count": len(rows),
         "provenance": {
             "query_id": query_id, "metric_ids": measures, "currency": "",
-            "time_range": {"start": starts[0], "end": stops[-1]} if starts and stops else None,
+            "time_range": {"start": starts[0], "end": stops[-1]} if starts and stops else {"start": today.isoformat(), "end": today.isoformat()},
             "freshness": {"as_of": payload.get("as_of"), "source": f"live {payload.get('platform') or 'ads'} API"},
         },
-        "note": "Live platform rows. Budget fields are in rupees (converted from paise). "
-                f"Pass query_id={query_id!r} to run_python to compute over every row.",
+        "note": _note(query_id, measures, time_col),
     }
+
+
+def _note(query_id: str, measures: list[str], time_col: str | None) -> str:
+    """How this result looks inside run_python: one evidence item per (row, measure), not these rows (live 2026-11-21:
+    a script summed e['spend'] over evidence items, got 0 and the bot called a real alert cleared)."""
+    example = measures[0] if measures else "spend"
+    when = (" The hour is e['period_start'] (an ISO timestamp)." if time_col == "date.hour"
+            else " The day is e['period_start']." if time_col else "")
+    return (f"Live platform rows; budget fields are rupees (converted from paise). In run_python pass "
+            f"query_ids=[{query_id!r}]: evidence then holds one item per row and measure — filter "
+            f"e['metric_id'] == {example!r} and read e['value'];{when} Names are keys too (e['campaign_name']).")

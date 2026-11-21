@@ -4,7 +4,7 @@ evidence path reads: run_python must be able to compute over live rows (D-244 ac
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
@@ -16,6 +16,7 @@ from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from zoneinfo import ZoneInfo
 
 FIX = json.loads((Path(__file__).parent / "fixtures" / "meta_live.json").read_text())
+TODAY = date(2026, 11, 21)
 ARGS = {"object_id": "act_1685189008684458", "account_id": "act_1685189008684458"}
 
 
@@ -29,7 +30,7 @@ def _deps() -> SelericDeps:
 
 
 def test_hourly_insights_become_hour_rows_with_numbers():
-    out = as_query_result("meta_insights_live", ARGS, FIX["insights_hourly"])
+    out = as_query_result("meta_insights_live", ARGS, FIX["insights_hourly"], TODAY)
     assert out["query_id"].startswith("live_") and "data" not in out
     assert out["columns"] == ["date.hour", "spend", "impressions", "clicks"]
     first = out["rows"][0]
@@ -41,7 +42,7 @@ def test_hourly_insights_become_hour_rows_with_numbers():
 
 
 def test_campaign_rows_keep_names_and_flatten_actions():
-    out = as_query_result("meta_insights_live", ARGS, FIX["insights_campaign"])
+    out = as_query_result("meta_insights_live", ARGS, FIX["insights_campaign"], TODAY)
     assert {"campaign_id", "campaign_name"} <= set(out["columns"]) and "date.day" in out["columns"]
     assert "campaign_id" not in out["provenance"]["metric_ids"]  # numeric-looking ids stay dimensions
     flat = [c for c in out["columns"] if c.startswith("actions__")]
@@ -51,21 +52,29 @@ def test_campaign_rows_keep_names_and_flatten_actions():
 
 
 def test_budgets_are_converted_from_paise():
-    out = as_query_result("meta_campaigns_list", ARGS, FIX["campaigns_list"])
+    out = as_query_result("meta_campaigns_list", ARGS, FIX["campaigns_list"], TODAY)
     raw = FIX["campaigns_list"]["data"][0]["daily_budget"]
     assert out["rows"][0]["daily_budget"] == float(raw) / 100
+    ev = [e for e in all_evidence(out, ARGS, _deps()) if e.metric_id == "daily_budget"]  # undated snapshot still loads
+    assert len(ev) == len(FIX["campaigns_list"]["data"]) and ev[0].value == float(raw) / 100
+    assert ev[0].dimensions["name"] == FIX["campaigns_list"]["data"][0]["name"]
     assert "id" in out["columns"] and "id" not in out["provenance"]["metric_ids"]
 
 
 def test_errors_and_odd_shapes_pass_through_unchanged():
     err = {"success": False, "error": {"code": "INVALID_ARGUMENT", "message": "Provide account_id"}}
-    assert as_query_result("meta_insights_live", ARGS, err) is err
+    assert as_query_result("meta_insights_live", ARGS, err, TODAY) is err
     single = {"success": True, "data": {"id": "1"}}
-    assert as_query_result("meta_campaigns_get", ARGS, single) is single
-    assert as_query_result("meta_insights_live", ARGS, "plain text") == "plain text"
+    assert as_query_result("meta_campaigns_get", ARGS, single, TODAY) is single
+    assert as_query_result("meta_insights_live", ARGS, "plain text", TODAY) == "plain text"
 
 
 def test_same_call_same_query_id():
-    a = as_query_result("meta_insights_live", ARGS, FIX["insights_hourly"])["query_id"]
-    b = as_query_result("meta_insights_live", dict(reversed(list(ARGS.items()))), FIX["insights_hourly"])["query_id"]
+    a = as_query_result("meta_insights_live", ARGS, FIX["insights_hourly"], TODAY)["query_id"]
+    b = as_query_result("meta_insights_live", dict(reversed(list(ARGS.items()))), FIX["insights_hourly"], TODAY)["query_id"]
     assert a == b
+
+
+def test_note_tells_the_model_the_run_python_shape():
+    note = as_query_result("meta_insights_live", ARGS, FIX["insights_hourly"], TODAY)["note"]
+    assert "e['metric_id'] == 'spend'" in note and "e['value']" in note and "period_start" in note

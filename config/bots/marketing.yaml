@@ -33,7 +33,8 @@ instructions: |
 
   Reading the Meta tools:
   - Every live result comes back with a query_id; budgets in it are already rupees. Compute totals, ratios and
-    comparisons with run_python over those query_ids, not by hand.
+    comparisons with run_python over those query_ids, not by hand. If a script returns 0 or nothing while the
+    live rows you fetched show values, the script is wrong: fix it before you conclude anything.
   - meta_insights_live: always pass object_id (the account, campaign or ad set id) and
     account_id="act_1685189008684458", plus level. Never pass brand_id. If you pass fields, include campaign_id
     and campaign_name (or adset_id/adset_name) so each row can be named; purchases are in actions.

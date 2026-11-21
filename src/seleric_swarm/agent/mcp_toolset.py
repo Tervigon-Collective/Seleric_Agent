@@ -605,7 +605,7 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
             payload, is_err = await state.seen[key]
             live = name in ADS_READ_TOOLS  # bot-only live ad reads: reshape so run_python/grounding can read the rows
             if live and not is_err:
-                payload = as_query_result(name, args, payload)
+                payload = as_query_result(name, args, payload, state.today or ist_today())
             ms = int((time.perf_counter() - started) * 1000)
             state.tool_ms += ms
             if not dup:
