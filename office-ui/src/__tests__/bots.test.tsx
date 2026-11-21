@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { botsApi, type Bot, type BotActivity, type BotRun } from "../api/bots";
-import { ActivityTimeline, BotsWorkspace, groupByRun, triggerText } from "../components/bots/BotsWorkspace";
+import { ActivityTimeline, BotsWorkspace, groupByRun, stepText, triggerText } from "../components/bots/BotsWorkspace";
 import { readRoute, writeRoute } from "../routing";
 import { useBotsStore } from "../stores/bots";
 
@@ -61,6 +61,13 @@ describe("activity timeline", () => {
     expect(text).toContain("google_campaigns_get · denied · customer_id=9");
     expect(text).toContain("scope google_ads:read · denied");
     expect(text).toContain("metrics_query · failed");
+  });
+
+  it("hides raw payloads of completed reads but keeps reasons and script results", () => {
+    expect(stepText(act_(1, "r", { summary: '{"success":true,"data":[]}' }))).toBe("");
+    expect(stepText(act_(1, "r", { outcome: "failed", summary: '{"error":"Provide account_id"}' }))).toContain("Provide account_id");
+    expect(stepText(act_(1, "r", { tool: "run_python", summary: "sum spend | result={\"x\": 1}" }))).toContain("sum spend");
+    expect(stepText(act_(1, "r", { kind: "trigger", summary: "Cron: schedule" }))).toBe("Cron: schedule");
   });
 
   it("describes triggers in words", () => {

@@ -248,6 +248,14 @@ function Runs({ runs }: { runs: BotRun[] }) {
   );
 }
 
+/** What a step adds beyond tool/target/scope: the reason for a denial or failure, a script's purpose and result, the
+ * trigger or answer line. A completed read's raw payload says nothing to a reader, so it is left out. */
+export function stepText(a: BotActivity): string {
+  if (a.kind !== "tool") return a.summary;
+  if (a.outcome === "completed" && a.summary.trimStart().startsWith("{")) return "";
+  return a.summary.slice(0, 200);
+}
+
 export function ActivityTimeline({ activity }: { activity: BotActivity[] }) {
   const groups = useMemo(() => groupByRun(activity), [activity]);
   if (!groups.length) return <p className="m-0 text-sm text-muted-foreground">Nothing yet. Every trigger, tool call and answer shows here.</p>;
@@ -265,7 +273,7 @@ export function ActivityTimeline({ activity }: { activity: BotActivity[] }) {
                   <span className="text-muted-foreground"> · {a.outcome}</span>
                   {a.target && <span className="text-muted-foreground"> · {a.target}</span>}
                   {a.scope && <span className="block text-muted-foreground">scope {a.scope} · {a.decision}</span>}
-                  {a.summary && <span className="block text-muted-foreground">{a.kind === "tool" ? a.summary.slice(0, 160) : a.summary}</span>}
+                  {stepText(a) && <span className="block text-muted-foreground">{stepText(a)}</span>}
                 </span>
               </li>
             ))}
@@ -282,6 +290,7 @@ function BotDetail({ bot }: { bot: Bot }) {
   const save = useBotsStore((s) => s.save);
   const runNow = useBotsStore((s) => s.runNow);
   const busy = useBotsStore((s) => s.busy);
+  const activity = useBotsStore((s) => s.activity);
   const running = runs.some((r) => r.status === "queued" || r.status === "running");
   return (
     <div className="flex flex-col gap-4">
@@ -296,18 +305,20 @@ function BotDetail({ bot }: { bot: Bot }) {
         </div>
       </header>
       <Tabs defaultValue="runs">
-        <TabsList>
+        <TabsList className="max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="runs">Runs</TabsTrigger>
           <TabsTrigger value="chat">Chat</TabsTrigger>
           <TabsTrigger value="instructions">Instructions</TabsTrigger>
           <TabsTrigger value="triggers">Triggers</TabsTrigger>
           <TabsTrigger value="tools">Tools &amp; limits</TabsTrigger>
+          <TabsTrigger value="activity" className="lg:hidden">Activity</TabsTrigger>
         </TabsList>
         <TabsContent value="runs" className="pt-3"><Runs runs={runs} /></TabsContent>
         <TabsContent value="chat" className="pt-3"><Chat chat={chat} /></TabsContent>
         <TabsContent value="instructions" className="pt-3"><Instructions bot={bot} /></TabsContent>
         <TabsContent value="triggers" className="pt-3"><Triggers bot={bot} /></TabsContent>
         <TabsContent value="tools" className="pt-3"><Tools bot={bot} /></TabsContent>
+        <TabsContent value="activity" className="pt-3 lg:hidden"><ActivityTimeline activity={activity} /></TabsContent>
       </Tabs>
     </div>
   );
