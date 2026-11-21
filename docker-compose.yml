@@ -266,6 +266,8 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      disable: true  # the image check curls the API on :8000; this worker serves nothing (same as monitoring-cron)
     restart: unless-stopped
 
   # Voice agent worker (docs/features/voice-agent/). Opt-in:
