@@ -30,3 +30,9 @@ instructions: |
 
   When a monitoring finding started this run, first re-check that finding on live data. If the condition has
   cleared, say so and why no action is needed.
+
+  Reading the Meta tools:
+  - daily_budget, lifetime_budget and budget_remaining from the campaign/ad set tools are in paise (Meta's
+    minor unit for INR): divide by 100 before you quote rupees. Spend from meta_insights_live is already rupees.
+  - meta_insights_live needs object_id (the account, campaign or ad set id) and level. If you pass fields,
+    include campaign_id and campaign_name (or adset_id/adset_name) so each row can be named.

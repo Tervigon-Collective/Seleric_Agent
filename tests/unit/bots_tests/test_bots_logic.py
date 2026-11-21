@@ -104,3 +104,11 @@ def test_kill_switch(monkeypatch):
     assert not worker.bots_enabled()
     monkeypatch.setenv("BOTS_ENABLED", "true")
     assert worker.bots_enabled()
+
+
+def test_bot_read_tools_are_callable_but_not_open_to_chat():
+    from seleric_swarm.protocols.mcp.gateway import SELERIC_CAPABILITIES, _build_allowlist
+    allow, _ = _build_allowlist()
+    assert {f"seleric.{t}" for t in store.READ_TOOLS} <= allow["v3_agent"]
+    assert not {f"seleric.{t}" for t in store.READ_TOOLS} & SELERIC_CAPABILITIES
+    assert "seleric.meta_campaigns_set_status" not in allow["v3_agent"]

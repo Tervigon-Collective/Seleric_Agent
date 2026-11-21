@@ -61,6 +61,15 @@ TOOLS = (
     # them by default (SELERIC_MCP_ADS_TOOLS).
 )
 
+# Live ad-platform reads a bot may opt into (D-244). Callable through the gateway, but the model only
+# sees the ones the running bot lists (agent/mcp_toolset.tool_defs ``extra``); chat never gets them.
+ADS_READ_TOOLS = (
+    "meta_insights_live", "meta_accounts_list", "meta_accounts_get",
+    "meta_campaigns_list", "meta_campaigns_get", "meta_adsets_list", "meta_adsets_get",
+    "meta_ads_list", "meta_ads_get",
+    "google_campaigns_list", "google_campaigns_get", "google_query_gaql",
+)
+
 
 class SelericMCPTransport:
     """Minimal MCP JSON-RPC client over the streamable-http transport.
@@ -314,4 +323,4 @@ def _timeout_from_env(default: float = 30.0) -> float:
 
 def build_seleric_servers(*, url: str, token: str, capability_prefix: str = "seleric") -> list[RemoteToolServer]:
     transport = SelericMCPTransport(url=url, token=token, timeout_s=_timeout_from_env())
-    return [RemoteToolServer(transport, tool, capability_prefix) for tool in TOOLS]
+    return [RemoteToolServer(transport, tool, capability_prefix) for tool in (*TOOLS, *ADS_READ_TOOLS)]

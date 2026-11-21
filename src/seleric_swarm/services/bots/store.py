@@ -13,17 +13,13 @@ import yaml
 from sqlalchemy import Connection, Engine, create_engine, text
 
 from seleric_swarm.config.settings import get_settings
+from seleric_swarm.protocols.mcp.servers.seleric_remote import ADS_READ_TOOLS
 
 TEMPLATES_DIR = Path("config/bots")  # relative to the working dir, like config/live_monitor.yaml (/app in the image)
 
 # Phase 1 is read-only: a bot may only add these Seleric MCP tools to the agent's base (catalogue/metrics) set.
 # Write tools reach bots in Phase 3, through per-bot D-239 keys, never through this list.
-READ_TOOLS: frozenset[str] = frozenset({
-    "meta_insights_live", "meta_accounts_list", "meta_accounts_get",
-    "meta_campaigns_list", "meta_campaigns_get", "meta_adsets_list", "meta_adsets_get",
-    "meta_ads_list", "meta_ads_get",
-    "google_campaigns_list", "google_campaigns_get", "google_query_gaql",
-})
+READ_TOOLS: frozenset[str] = frozenset(ADS_READ_TOOLS)
 TRIGGER_KINDS = ("cron", "signal")
 DEFAULT_LIMITS: dict[str, int] = {"max_scheduled_runs_per_day": 24, "max_tool_calls": 40, "max_pending_proposals": 5}
 
