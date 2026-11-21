@@ -11,7 +11,7 @@ import { useMonitoringStore } from "../stores/monitoring";
 import { unseenCount, useNotificationsStore } from "../stores/notifications";
 import { useShellStore, type Workspace } from "../stores/shell";
 import { useThemeStore, type ThemeMode } from "../stores/theme";
-import { ActivityIcon, MenuIcon, PlusIcon, PromptsIcon, SearchIcon, SettingsIcon, SlidersIcon, SparklesIcon, XIcon } from "./icons";
+import { ActivityIcon, BotIcon, MenuIcon, PlusIcon, PromptsIcon, SearchIcon, SettingsIcon, SlidersIcon, SparklesIcon, XIcon } from "./icons";
 import { PANEL_BREAKPOINT, ResponsivePanel } from "./ResponsivePanel";
 
 /** Global actions live behind window events so any workspace can open them without prop drilling. */
@@ -151,6 +151,7 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
               trailing={monBadge > 0 ? <span className={cn("font-medium tabular-nums", monTone ? "text-destructive" : "text-[var(--warning)]")} aria-label={`${monBadge} need attention`}>{monBadge}</span>
                 : monitorDown ? <span className="text-[var(--warning)]" aria-label="Live monitor is not running">!</span> : undefined}
               badge={monBadge > 0 ? <span aria-hidden="true" className={cn("absolute top-0.5 right-1 hidden min-w-4 rounded-full px-1 text-center text-[10px] leading-4 font-semibold lg:group-data-[collapsed=true]/sb:block", monTone ? "bg-[var(--danger-soft)] text-destructive" : "bg-[var(--warning-soft)] text-[var(--warning)]")}>{monBadge}</span> : undefined} />
+            <NavItem icon={<BotIcon />} label="Bots" current={workspace === "bots"} onClick={go(() => setWorkspace("bots"))} />
             <NavItem icon={<OfficeIcon />} label="Office" current={workspace === "office"} onClick={go(() => setWorkspace("office"))} />
           </nav>
           <div className={cn("mt-2 flex min-h-0 flex-1 flex-col", RAIL_HIDE)}>{sidebarBody}</div>

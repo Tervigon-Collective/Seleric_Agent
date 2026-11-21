@@ -507,9 +507,11 @@ class TurnState:
     today: date | None = None  # the mission calendar's today (its timezone); None falls back to IST
 
 
-def tool_defs(raw_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Allowlisted tool definitions, sorted by name and cleaned once, so the prompt prefix stays byte-stable."""
-    keep = {t["name"]: t for t in raw_tools if t.get("name") in ALLOW}
+def tool_defs(raw_tools: list[dict[str, Any]], extra: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+    """Allowlisted tool definitions, sorted by name and cleaned once, so the prompt prefix stays byte-stable.
+    ``extra``: a bot's additional read-only tools (checked against services/bots/store.READ_TOOLS when saved)."""
+    allowed = {*ALLOW, *extra}
+    keep = {t["name"]: t for t in raw_tools if t.get("name") in allowed}
     return [{"name": n, "description": _desc(keep[n].get("description") or ""),
              "schema": _clean_schema(keep[n].get("inputSchema") or {"type": "object"})} for n in sorted(keep)]
 

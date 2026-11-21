@@ -1,6 +1,6 @@
 /** The app's icon names, backed by lucide (shadcn's icon library). Same names and props as before. */
 import {
-  ActivityIcon as Activity, ArchiveIcon as Archive, ArrowDownIcon as ArrowDown, ArrowRightIcon as ArrowRight,
+  ActivityIcon as Activity, BotIcon as Bot, ArchiveIcon as Archive, ArrowDownIcon as ArrowDown, ArrowRightIcon as ArrowRight,
   BookTextIcon as BookText, CheckIcon as Check, ChevronDownIcon as ChevronDown, CopyIcon as Copy, DownloadIcon as Download,
   EllipsisIcon as Ellipsis, ImageIcon as Image, LinkIcon as Link, Maximize2Icon as Maximize, MenuIcon as Menu,
   MicIcon as Mic, MicOffIcon as MicOff, Minimize2Icon as Minimize, MoonIcon as Moon, PanelRightIcon as PanelRight,
@@ -21,6 +21,7 @@ const wrap = (Icon: LucideIcon) => ({ size, className, ariaHidden = true }: Icon
   <Icon size={size} className={className} aria-hidden={ariaHidden} focusable="false" />;
 
 export const MenuIcon = wrap(Menu);
+export const BotIcon = wrap(Bot);
 export const BellIcon = wrap(Bell);
 export const BellRingIcon = wrap(BellRing);
 export const SettingsIcon = wrap(Settings);

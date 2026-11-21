@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type DetailTab = "Causal" | "Debug" | "Memory";
-export type Workspace = "conversation" | "office" | "ops";
+export type Workspace = "conversation" | "office" | "ops" | "bots";
 export type OpsPage = "dashboard" | "monitoring" | "notifications" | "live";
 
 const DETAIL_TABS: readonly DetailTab[] = ["Debug", "Causal", "Memory"];
@@ -61,6 +61,7 @@ function initialWorkspace(): Workspace {
   // Legacy ?notifications=1 opens Monitoring on the Notifications tab.
   if (params.get("notifications") === "1") return "ops";
   if (params.get("office") === "1") return "office";
+  if (params.has("bots")) return "bots";
   return params.has("ops") ? "ops" : "conversation";
 }
 

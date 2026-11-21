@@ -16,7 +16,7 @@ export function readRoute(url = new URL(location.href)): AppRoute {
   return {
     workspace: legacyNotify || url.searchParams.has("ops")
       ? "ops"
-      : url.searchParams.get("office") === "1" ? "office" : "conversation",
+      : url.searchParams.get("office") === "1" ? "office" : url.searchParams.has("bots") ? "bots" : "conversation",
     threadId: url.searchParams.get("thread"),
     missionId: url.searchParams.get("mission"),
     opsPage: legacyNotify ? "notifications"
@@ -32,6 +32,8 @@ export function writeRoute(route: Partial<AppRoute>, replace = false): void {
     else url.searchParams.delete("office");
     if (route.workspace === "ops") url.searchParams.set("ops", route.opsPage ?? "dashboard");
     else url.searchParams.delete("ops");
+    if (route.workspace === "bots") url.searchParams.set("bots", "1");
+    else url.searchParams.delete("bots");
   }
   if ("threadId" in route) {
     if (route.threadId) url.searchParams.set("thread", route.threadId);

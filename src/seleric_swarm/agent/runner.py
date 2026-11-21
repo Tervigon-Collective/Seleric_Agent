@@ -175,16 +175,16 @@ async def _catalogue_snapshot(runtime: SwarmRuntime) -> CatalogueSnapshot:
         return CatalogueSnapshot()
 
 
-async def _tool_definitions(mcp: Any) -> list[dict[str, Any]]:
-    """The MCP server's read tools (schemas as published), cached for an hour per gateway."""
-    key = id(mcp)
+async def _tool_definitions(mcp: Any, extra: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+    """The MCP server's read tools (schemas as published), cached for an hour per gateway (and per bot tool set)."""
+    key = (id(mcp), extra)
     cached = _tool_defs_cache.get(key)
     if cached is not None and time.monotonic() - cached[0] < _TOOL_DEFS_TTL_S:
         return cached[1]
     lister = getattr(mcp, "list_tools", None)
     if lister is None:
         return []
-    defs = tool_defs(await lister())
+    defs = tool_defs(await lister(), extra)
     if defs:
         _tool_defs_cache[key] = (time.monotonic(), defs)
     return defs
@@ -442,6 +442,8 @@ async def run_v3_mission(
     thread_id: str | None = None,
     run_id: str | None = None,
     on_stream: Callable[[str, str], None] | None = None,
+    bot_brief: str = "",
+    extra_tools: tuple[str, ...] = (),
     **_ignored: Any,
 ) -> dict[str, Any]:
     """Execute the reasoning loop and persist for conversations + Office UI.
@@ -485,7 +487,7 @@ async def run_v3_mission(
         try:
             bundle = _context_bundle(context_bundle)
             catalogue, defs, guide = await asyncio.gather(
-                _catalogue_snapshot(runtime), _tool_definitions(mcp), _server_guide(mcp)
+                _catalogue_snapshot(runtime), _tool_definitions(mcp, tuple(sorted(extra_tools))), _server_guide(mcp)
             )
             prior_queries, prior_payloads, prior_payload_refs = _thread_memory(
                 artifact_store, workspace_id, thread_id
@@ -534,6 +536,7 @@ async def run_v3_mission(
                     prior_payloads=prior_payloads,
                     thread_summary=thread_summary,
                     workspace_notes=workspace_notes,
+                    bot_brief=bot_brief,
                     is_cancelled=lambda: is_cancel_requested(mission_id, runtime),
                     snapshot_loader=_snapshot_loader(runtime),
                     on_stream=on_stream,

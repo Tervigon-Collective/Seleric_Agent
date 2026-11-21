@@ -253,6 +253,21 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # D-244 Bots worker: schedules bot triggers (cron, monitoring signals) and runs queued bot runs on the agent
+  # runner. Same image/env/volumes/networks as recovery; BOTS_ENABLED=false is the global bots kill switch.
+  bots-cron:
+    extends:
+      service: recovery
+    command: python -m seleric_swarm.services.bots.worker
+    stop_grace_period: 30s
+    environment:
+      RUN_WORKER_ID: bots-worker
+      BOTS_ENABLED: ${BOTS_ENABLED:-true}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Voice agent worker (docs/features/voice-agent/). Opt-in:
   #   docker compose --profile voice up
   # Needs the `voice` extra in the image and real LiveKit + STT/TTS creds.
