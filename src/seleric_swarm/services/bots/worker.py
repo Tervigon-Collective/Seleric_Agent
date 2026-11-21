@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from seleric_swarm.services.bots import hindsight, schedule, store
+from seleric_swarm.services.bots import delivery, hindsight, schedule, store
 
 _log = logging.getLogger("seleric.bots")
 
@@ -174,8 +174,18 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
             store.add_activity(conn, run["run_id"], bot["bot_id"], kind="memory", **row)
         if error:
             store.add_activity(conn, run["run_id"], bot["bot_id"], kind="note", outcome="failed", summary=error[:500])
+        previous = store.previous_auto_outcome(conn, bot["bot_id"], run["run_id"])
         store.finish_run(conn, run["run_id"], status=status, outcome=outcome, answer=answer, error=error,
                          mission_id=mission_id, instructions_version=bot["instructions_version"], tool_calls=len(calls))
+    try:
+        sent = await delivery.deliver(bot, run, outcome, why, answer, previous)
+    except Exception:  # noqa: BLE001 - delivery never changes the run's result
+        _log.warning("bot_delivery_failed run=%s", run["run_id"], exc_info=True)
+        sent = [{"tool": "notification_center", "outcome": "failed", "summary": "Delivery failed (see worker log)"}]
+    if sent:
+        with engine.begin() as conn:
+            for row in sent:
+                store.add_activity(conn, run["run_id"], bot["bot_id"], kind="delivery", **row)
 
 
 async def _recall(mem: hindsight.Memory | None, bot: dict[str, Any], run: dict[str, Any]) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:

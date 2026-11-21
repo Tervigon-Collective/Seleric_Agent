@@ -327,6 +327,13 @@ def finish_run(conn: Connection, run_id: str, *, status: str, outcome: str | Non
                   "tc": tool_calls, "r": run_id})
 
 
+def previous_auto_outcome(conn: Connection, bot_id: str, run_id: str) -> str | None:
+    """Outcome of the bot's last finished automatic run before this one (for the 'unverified twice' rule, B20)."""
+    return conn.execute(text("""SELECT outcome FROM bots.runs WHERE bot_id = :b AND run_id <> :r AND trigger_kind = ANY(:auto)
+                                AND status IN ('completed', 'partial', 'failed') ORDER BY finished_at DESC NULLS LAST LIMIT 1"""),
+                        {"b": bot_id, "r": run_id, "auto": list(AUTO_KINDS)}).scalar()
+
+
 def fail_stale_runs(conn: Connection, older_than_s: int) -> int:
     """A worker that died mid-run leaves 'running' rows; free the bot so its queue moves again."""
     return conn.execute(text("""UPDATE bots.runs SET status = 'failed', error = 'worker stopped during the run',

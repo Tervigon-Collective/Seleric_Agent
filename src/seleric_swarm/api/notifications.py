@@ -1,6 +1,7 @@
 """Notification center API: the live ads monitor's status, findings with their narration, and one-click actions.
 
-``GET  /v1/notifications``                                       status strip, pulse, open + recently resolved findings, activity
+``GET  /v1/notifications``                                       status strip, pulse, open + recently resolved findings, activity,
+                                                                 bot runs reported in the last 48 h (``bots``)
 ``GET  /v1/notifications/{finding_id}/events``                    the finding's trail (state changes, actions, diagnosis)
 ``GET  /v1/notifications/entities/{level}/{entity_id}/activity``  activity across findings for one entity
 ``POST /v1/notifications/{finding_id}/label``                     useful / noise / wrong_action (the tuning signal)
@@ -23,6 +24,7 @@ from seleric_swarm.api.mission_access import request_principal
 router = APIRouter(prefix="/v1/notifications")
 STALE_AFTER_TICKS = 3
 RESOLVED_WINDOW_H = 24
+BOTS_WINDOW_H = 48
 
 
 class LabelBody(BaseModel):
@@ -103,7 +105,7 @@ def _read(brand_id: int | None) -> dict[str, Any]:
     cfg, meta = C.load()
     tenants = [t for t in cfg.tenants if brand_id is None or t.brand_id == brand_id]
     brands = sorted({t.brand_id for t in tenants})
-    out: dict[str, Any] = {"tenants": [], "items": [], "activity": [], "config_error": meta.get("error")}
+    out: dict[str, Any] = {"tenants": [], "items": [], "activity": [], "bots": [], "config_error": meta.get("error")}
     if not brands:
         return out
     with store.engine().connect() as conn:
@@ -128,6 +130,14 @@ def _read(brand_id: int | None) -> dict[str, Any]:
                FROM monitor.finding_events e JOIN monitor.findings f USING (finding_id)
                WHERE f.brand_id = ANY(:b) AND f.detector LIKE 'live.%' AND e.note <> ''
                ORDER BY e.at DESC LIMIT 50"""), {"b": brands}).mappings()]
+        # D-244 bots: runs the delivery rule (B20) reported; the rule itself lives in services/bots/delivery.py
+        out["bots"] = [dict(r) for r in conn.execute(text(
+            """SELECT a.at, a.run_id, a.bot_id, b.name AS bot_name, r.outcome, r.trigger_kind, a.summary,
+                      a.detail->>'reason' AS reason
+               FROM bots.activity a JOIN bots.runs r USING (run_id) JOIN bots.bots b ON b.bot_id = a.bot_id
+               WHERE a.kind = 'delivery' AND a.tool = 'notification_center' AND a.outcome = 'completed'
+                 AND b.brand_id = ANY(:b) AND a.at > NOW() - make_interval(hours => :h)
+               ORDER BY a.at DESC LIMIT 50"""), {"b": brands, "h": BOTS_WINDOW_H}).mappings()]
     open_items = [i for i in out["items"] if i["state"] != "resolved"]
     out["counts"] = {s: sum(1 for i in open_items if i["severity"] == s) for s in ("critical", "warning", "info")}
     return out
