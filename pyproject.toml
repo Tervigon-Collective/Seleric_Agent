@@ -5,6 +5,7 @@ description = "Dynamic multi-agent business intelligence swarm scaffold"
 requires-python = ">=3.11"
 dependencies = [
   "dowhy>=0.14",
+  "cryptography>=44",
   "fastapi>=0.115",
   "httpx>=0.28",
   "jsonschema>=4.23",

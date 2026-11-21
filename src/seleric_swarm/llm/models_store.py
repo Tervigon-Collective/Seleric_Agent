@@ -66,9 +66,15 @@ def _fernet() -> Any:
     raw = os.getenv("SELERIC_MODELS_KEY", "").strip()
     if not raw:
         return None
-    from cryptography.fernet import Fernet
+    try:
+        from cryptography.fernet import Fernet
 
-    return Fernet(raw.encode())
+        return Fernet(raw.encode())
+    except Exception:  # noqa: BLE001 - a missing package or bad key disables saved keys; it must never stop startup
+        import logging
+
+        logging.getLogger("seleric.models").error("SELERIC_MODELS_KEY unusable; saved providers are ignored")
+        return None
 
 
 def load() -> dict[str, Any]:
