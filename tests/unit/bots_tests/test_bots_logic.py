@@ -137,6 +137,15 @@ def test_watch_fingerprints_only_the_watched_fields():
     assert schedule.project({"success": False, "error": "x"}, ["effective_status"]) is None
 
 
+def test_watch_reads_budgets_in_rupees_and_distrusts_partial_pages():
+    from seleric_swarm.services.bots import schedule
+
+    rows = schedule.project({"success": True, "data": [{"id": "1", "daily_budget": "300000"}]}, ["daily_budget"])
+    assert rows == {"id=1": {"daily_budget": 3000.0}}
+    assert schedule.truncated({"success": True, "data": [], "paging": {"after": "QVF"}})
+    assert not schedule.truncated({"success": True, "data": [], "paging": {"after": None, "has_next": False}})
+
+
 def test_brief_labels_webhook_data_and_adds_enabled_skills():
     bot = {"name": "Marketing", "role": "", "template": "marketing", "brand_id": 20, "instructions_version": 1,
            "instructions": "Watch Meta.", "skills": [{"name": "Pacing", "body": "Compare to budget.", "enabled": True},

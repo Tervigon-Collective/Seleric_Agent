@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from croniter import croniter
 from sqlalchemy import Connection, text
 
+from seleric_swarm.agent.live_rows import MINOR_UNIT_FIELDS
 from seleric_swarm.services.bots import store
 
 
@@ -119,6 +120,22 @@ def _row_key(row: dict[str, Any]) -> str:
     return ",".join(ids) or json.dumps(row, sort_keys=True, default=str)
 
 
+def _value(field: str, value: Any) -> Any:
+    """Budgets in rupees, as the bot reads them (live_rows), so a change reads '3000.0 -> 2500.0' not paise."""
+    if field in MINOR_UNIT_FIELDS and value not in (None, ""):
+        try:
+            return float(value) / 100
+        except (TypeError, ValueError):
+            return value
+    return value
+
+
+def truncated(payload: Any) -> bool:
+    """More pages exist: a row moving between pages would read as gone/new, so such a check is not trusted."""
+    paging = payload.get("paging") if isinstance(payload, dict) else None
+    return isinstance(paging, dict) and bool(paging.get("after") or paging.get("has_next"))
+
+
 def project(payload: Any, fields: list[str]) -> dict[str, dict[str, Any]] | None:
     """The watched fields of each row, keyed by the row's ids; None when the payload is not a row list."""
     if not isinstance(payload, dict) or payload.get("success") is not True or not isinstance(payload.get("data"), list):
@@ -126,7 +143,7 @@ def project(payload: Any, fields: list[str]) -> dict[str, dict[str, Any]] | None
     out: dict[str, dict[str, Any]] = {}
     for row in payload["data"]:
         if isinstance(row, dict):
-            out[_row_key(row)] = {f: row.get(f) for f in fields}
+            out[_row_key(row)] = {f: _value(f, row.get(f)) for f in fields}
     return out
 
 
@@ -156,6 +173,8 @@ def record_watch(conn: Connection, trig: dict[str, Any], payload: Any, error: st
     Returns ``baseline`` (first good check: remembered, no run), ``same``, ``error`` (the check failed: the last good
     state stays, no run) or the enqueue status. A check is not a run, so it writes no activity row unless it fires."""
     cfg, state = trig["config"], dict(trig.get("state") or {})
+    if not error and truncated(payload):
+        error = "the result has more pages than one call returns; narrow the arguments (e.g. status) or raise limit"
     rows = None if error else project(payload, cfg["fields"])
     if rows is None:
         state |= {"checked_at": now.isoformat(), "error": error or "the tool did not return a row list"}

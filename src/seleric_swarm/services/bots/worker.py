@@ -179,7 +179,7 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
                          mission_id=mission_id, instructions_version=bot["instructions_version"], tool_calls=len(calls))
     try:
         sent = await delivery.deliver(bot, run, outcome, why, answer, previous)
-    except Exception:  # noqa: BLE001 - delivery never changes the run's result
+    except Exception:
         _log.warning("bot_delivery_failed run=%s", run["run_id"], exc_info=True)
         sent = [{"tool": "notification_center", "outcome": "failed", "summary": "Delivery failed (see worker log)"}]
     if sent:

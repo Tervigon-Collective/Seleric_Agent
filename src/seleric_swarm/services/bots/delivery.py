@@ -76,7 +76,7 @@ async def email(bot: dict[str, Any], run: dict[str, Any], outcome: str | None, w
         rec = mail.service.create(draft, meta={"bot_id": bot["bot_id"], "bot_run_id": run["run_id"]}, run_id=run["run_id"])
         mail.service.approve(rec.id, rec.version)
         rec = await mail.service.send(rec.id)
-    except Exception as exc:  # noqa: BLE001 - a failed email is recorded, it never fails the run
+    except Exception as exc:
         return {"tool": "email", "target": ", ".join(to), "outcome": "failed", "summary": f"Email not sent: {type(exc).__name__}"}
     sent = rec.status is SendStatus.SUBMITTED
     return {"tool": "email", "target": ", ".join(to), "outcome": "completed" if sent else "failed",
