@@ -159,7 +159,7 @@ def changes(before: dict[str, dict[str, Any]], after: dict[str, dict[str, Any]],
         if key not in before:
             out.append(f"{label}: new")
         elif key not in after:
-            out.append(f"{label}: gone")
+            out.append(f"{label}: no longer in the result (e.g. paused or deleted)")
         else:
             moved = [f"{f} {before[key].get(f)} -> {after[key].get(f)}" for f in after[key] if before[key].get(f) != after[key].get(f)]
             if moved:
