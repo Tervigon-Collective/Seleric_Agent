@@ -63,10 +63,20 @@ def _helper_gateway(settings: Settings, chain: list[tuple[str, str, str | None]]
     chain = [(c, m) for c, m, _ in chain if c in known]
     if not chain:
         raise ValueError("the helper model list has no entry on a connected provider")
-    adapters: dict[str, LLMPort] = {
-        c: AzureOpenAICompatibleAdapter(settings, base_url=known[c].base_url, api_key=known[c].api_key)
-        for c in dict.fromkeys(c for c, _ in chain)
-    }
+
+    def adapter_for(connection_id: str) -> LLMPort:
+        conn = known[connection_id]
+        if conn.provider == "chatgpt":
+            from seleric_swarm.llm.adapters.subscription import ChatGPTPlanAdapter
+
+            return ChatGPTPlanAdapter(connection_id)
+        if conn.provider == "claude-code":
+            from seleric_swarm.llm.adapters.subscription import ClaudeCodeAdapter
+
+            return ClaudeCodeAdapter()
+        return AzureOpenAICompatibleAdapter(settings, base_url=conn.base_url, api_key=conn.api_key)
+
+    adapters: dict[str, LLMPort] = {c: adapter_for(c) for c in dict.fromkeys(c for c, _ in chain)}
     fallback_timeout = min(15.0, settings.llm_timeout_s)
     specs = [
         ModelSpec(id=f"{c}:{m}", priority=i, timeout_s=settings.llm_timeout_s if i == 0 else fallback_timeout)

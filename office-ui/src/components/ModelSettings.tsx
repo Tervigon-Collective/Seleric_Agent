@@ -7,8 +7,8 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 
 /**
- * Settings → Models, laid out like Rakazo's: Providers (connect with an API key or a compatible server URL),
- * Main model + fallbacks with a Thinking level on the first, and a Helper model list. Applies to the whole workspace.
+ * Settings → Models: a ChatGPT plan sign-in, the Claude Code CLI signed in on this machine,
+ * or an API key. Main model + fallbacks, and a Helper list.
  */
 export function ModelSettings({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [data, setData] = useState<Settings | null>(null);
@@ -19,6 +19,7 @@ export function ModelSettings({ open, onClose }: { open: boolean; onClose: () =>
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [signIn, setSignIn] = useState<{ id: string; url: string } | null>(null);
 
   const load = (next?: Settings) => {
     const apply = (s: Settings) => { setData(s); setMain(s.main); setHelper(s.helper); };
@@ -44,30 +45,39 @@ export function ModelSettings({ open, onClose }: { open: boolean; onClose: () =>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Models</DialogTitle>
-          <DialogDescription>Choose which AI models the agent thinks with, using your own API key from any provider. These settings apply to everyone in this workspace.</DialogDescription>
+          <DialogDescription>Which models the agent uses.</DialogDescription>
         </DialogHeader>
         {error && <Alert variant="destructive" role="alert"><AlertDescription>{error}</AlertDescription></Alert>}
         {!data ? <p className="text-sm text-muted-foreground">Loading…</p> : (
           <div className="flex flex-col gap-6">
+            <RoleList
+              title="Main model"
+              rows={main} onChange={setMain} defaults={data.defaults.main} data={data} models={models} loadModels={loadModels} nameOf={nameOf} thinking
+            />
+            <RoleList
+              title="Helper model"
+              rows={helper} onChange={setHelper} defaults={data.defaults.helper} data={data} models={models} loadModels={loadModels} nameOf={nameOf}
+            />
+
             <section aria-labelledby="models-providers" className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <h3 id="models-providers" className="text-sm font-semibold">Providers</h3>
-                {!adding && <Button size="sm" variant="outline" onClick={() => setAdding(true)} disabled={!data.can_save_keys}>Add provider</Button>}
-              </div>
+              <h3 id="models-providers" className="text-sm font-semibold">Providers</h3>
               {!data.can_save_keys && <p className="text-xs text-muted-foreground">Adding providers needs SELERIC_MODELS_KEY on the server.</p>}
-              <ul className="flex flex-col divide-y rounded-lg border">
+              <div className="overflow-hidden rounded-lg border">
                 {data.connections.map((c) => (
-                  <li key={c.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
-                    <span className="min-w-0 truncate">{c.label}{c.key_hint && <span className="text-muted-foreground"> · ••••{c.key_hint}</span>}{c.builtin && <span className="text-muted-foreground"> · server</span>}</span>
-                    {!c.builtin && (
-                      <Button size="sm" variant="ghost" disabled={pending !== null}
-                        onClick={() => window.confirm(`Disconnect ${c.label}? Its models leave both lists.`) && void run("disconnect", async () => { await modelSettingsApi.disconnect(c.id); load(); })}>
-                        {pending === "disconnect" ? "Disconnecting…" : "Disconnect"}
-                      </Button>
-                    )}
-                  </li>
+                  <ProviderRow key={c.id} connection={c} models={models[c.id]} pending={pending}
+                    onOpen={() => loadModels(c.id)}
+                    onDisconnect={!c.builtin ? () => window.confirm(`Disconnect ${c.label}? Its models leave both lists.`) && void run("disconnect", async () => { await modelSettingsApi.disconnect(c.id); load(); }) : undefined}
+                  />
                 ))}
-              </ul>
+                {!adding && (
+                  <button type="button" className="flex w-full items-center gap-2 px-3 py-3 text-left text-sm text-muted-foreground hover:bg-muted/40" onClick={() => setAdding(true)} disabled={!data.can_save_keys}>
+                    + Add provider
+                  </button>
+                )}
+              </div>
+              {signIn && (
+                <p className="text-xs text-muted-foreground">Waiting for ChatGPT to return to this site. The plan sign-in is saved when that tab finishes. If the tab did not open, <a className="underline" href={signIn.url} target="_blank" rel="noreferrer">open ChatGPT sign-in</a>.</p>
+              )}
               {adding && (
                 <ConnectForm
                   providers={data.providers}
@@ -77,21 +87,35 @@ export function ModelSettings({ open, onClose }: { open: boolean; onClose: () =>
                     const r = await modelSettingsApi.connect(body);
                     setModels((m) => ({ ...m, [r.connection.id]: r.models }));
                     setAdding(false);
-                    const next = await modelSettingsApi.get();
-                    setData(next);
+                    setData(await modelSettingsApi.get());
+                  })}
+                  onChatGPT={() => run("connect", async () => {
+                    const started = await modelSettingsApi.startChatGPT();
+                    setSignIn({ id: started.login_id, url: started.url });
+                    window.open(started.url, "_blank", "noopener,noreferrer");
+                    const deadline = Date.now() + 5 * 60 * 1000;
+                    while (Date.now() < deadline) {
+                      await new Promise((r) => setTimeout(r, 1500));
+                      const status = await modelSettingsApi.chatgptStatus(started.login_id);
+                      if (status.status === "connected" && status.connection) {
+                        setModels((m) => ({ ...m, [status.connection!.id]: status.models ?? [] }));
+                        setAdding(false);
+                        setData(await modelSettingsApi.get());
+                        return;
+                      }
+                      if (status.status === "error") throw new Error(status.error || "Sign-in failed");
+                    }
+                    throw new Error("Sign-in timed out");
+                  }).finally(() => setSignIn(null))}
+                  onClaude={() => run("connect", async () => {
+                    const r = await modelSettingsApi.connectClaude();
+                    setModels((m) => ({ ...m, [r.connection.id]: r.models }));
+                    setAdding(false);
+                    setData(await modelSettingsApi.get());
                   })}
                 />
               )}
             </section>
-
-            <RoleList
-              title="Main model" description="What every question uses. If it fails or hits a limit, the agent moves to the next fallback."
-              rows={main} onChange={setMain} defaults={data.defaults.main} data={data} models={models} loadModels={loadModels} nameOf={nameOf} thinking
-            />
-            <RoleList
-              title="Helper model" description="Rewrites questions and small checks. A fast, inexpensive model works well here."
-              rows={helper} onChange={setHelper} defaults={data.defaults.helper} data={data} models={models} loadModels={loadModels} nameOf={nameOf}
-            />
 
             <div className="flex items-center justify-end gap-2">
               {saved && <span className="text-sm text-muted-foreground" role="status">Saved</span>}
@@ -107,32 +131,68 @@ export function ModelSettings({ open, onClose }: { open: boolean; onClose: () =>
   );
 }
 
-function ConnectForm({ providers, busy, onCancel, onConnect }: {
+function ConnectForm({ providers, busy, onCancel, onConnect, onChatGPT, onClaude }: {
   providers: Settings["providers"]; busy: boolean; onCancel: () => void;
   onConnect: (body: { provider: string; api_key: string; base_url?: string }) => void;
+  onChatGPT: () => void;
+  onClaude: () => void;
 }) {
   const [provider, setProvider] = useState(providers[0]?.id ?? "openai");
   const [key, setKey] = useState("");
   const [url, setUrl] = useState("");
+  const selected = providers.find((p) => p.id === provider);
+  const auth = selected?.auth ?? "key";
   const custom = provider === "compatible";
-  const name = providers.find((p) => p.id === provider)?.name ?? provider;
+  const name = selected?.name ?? provider;
   return (
-    <form className="flex flex-col gap-2 rounded-lg border p-3" onSubmit={(e) => { e.preventDefault(); onConnect({ provider, api_key: key, ...(custom ? { base_url: url } : {}) }); }}>
+    <form className="flex flex-col gap-2 rounded-lg border p-3" onSubmit={(e) => { e.preventDefault(); if (auth === "key") onConnect({ provider, api_key: key, ...(custom ? { base_url: url } : {}) }); }}>
       <NativeSelect aria-label="Provider" className="w-full" value={provider} onChange={(e) => setProvider(e.target.value)}>
         {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </NativeSelect>
-      {custom && <Input aria-label="Server URL" placeholder="https://your-server/v1" value={url} onChange={(e) => setUrl(e.target.value)} required />}
-      <Input aria-label="API key" type="password" autoComplete="off" placeholder="API key" value={key} onChange={(e) => setKey(e.target.value)} required />
+      {auth === "oauth" && <p className="text-xs text-muted-foreground">Opens ChatGPT sign-in in a new tab. ChatGPT sends you back to this site, and the plan sign-in is saved here. The plan pays for the runs.</p>}
+      {auth === "cli" && <p className="text-xs text-muted-foreground">Uses the Claude Code sign-in already on this machine. Run claude auth login first. The plan pays for the runs, and the token stays in Claude Code.</p>}
+      {auth === "key" && custom && <Input aria-label="Server URL" placeholder="https://your-server/v1" value={url} onChange={(e) => setUrl(e.target.value)} required />}
+      {auth === "key" && <Input aria-label="API key" type="password" autoComplete="off" placeholder="API key" value={key} onChange={(e) => setKey(e.target.value)} required />}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
-        <Button type="submit" size="sm" disabled={busy}>{busy ? "Connecting…" : `Connect ${name}`}</Button>
+        {auth === "oauth" && <Button type="button" size="sm" disabled={busy} onClick={onChatGPT}>{busy ? "Waiting for sign-in…" : "Sign in with ChatGPT"}</Button>}
+        {auth === "cli" && <Button type="button" size="sm" disabled={busy} onClick={onClaude}>{busy ? "Checking…" : "Use Claude Code"}</Button>}
+        {auth === "key" && <Button type="submit" size="sm" disabled={busy}>{busy ? "Connecting…" : `Connect ${name}`}</Button>}
       </div>
     </form>
   );
 }
 
-function RoleList({ title, description, rows, onChange, defaults, data, models, loadModels, nameOf, thinking }: {
-  title: string; description: string; rows: ModelChoice[]; onChange: (rows: ModelChoice[]) => void; defaults: ModelChoice[];
+function ProviderRow({ connection, models, pending, onOpen, onDisconnect }: {
+  connection: Settings["connections"][number]; models: string[] | undefined; pending: string | null;
+  onOpen: () => void; onDisconnect?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const count = models ? `${models.length} model${models.length === 1 ? "" : "s"}` : "…";
+  return (
+    <div className="border-b last:border-b-0">
+      <button type="button" className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left text-sm hover:bg-muted/40"
+        aria-expanded={open}
+        onClick={() => { onOpen(); setOpen((v) => !v); }}>
+        <span className="min-w-0 truncate">{connection.label}</span>
+        <span className="shrink-0 text-muted-foreground">{count} ›</span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-2 border-t px-3 py-2">
+          <p className="text-xs text-muted-foreground">{models?.length ? models.slice(0, 8).join(", ") : "No models listed"}{models && models.length > 8 ? "…" : ""}</p>
+          {onDisconnect && (
+            <Button size="sm" variant="ghost" className="self-start" disabled={pending !== null} onClick={onDisconnect}>
+              {pending === "disconnect" ? "Disconnecting…" : "Disconnect"}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RoleList({ title, rows, onChange, defaults, data, models, loadModels, nameOf, thinking }: {
+  title: string; rows: ModelChoice[]; onChange: (rows: ModelChoice[]) => void; defaults: ModelChoice[];
   data: Settings; models: Record<string, string[]>; loadModels: (id: string) => void; nameOf: (id: string) => string; thinking?: boolean;
 }) {
   const id = title.toLowerCase().replace(" ", "-");
@@ -143,35 +203,45 @@ function RoleList({ title, description, rows, onChange, defaults, data, models, 
   return (
     <section aria-labelledby={id} className="flex flex-col gap-2">
       <h3 id={id} className="text-sm font-semibold">{title}</h3>
-      <p className="text-xs text-muted-foreground">{description}</p>
-      {rows.length === 0 && (
-        <p className="text-sm text-muted-foreground">Server default: {defaults.length ? defaults.map((d) => `${nameOf(d.connection)} · ${d.model}`).join(" → ") : "none"}</p>
-      )}
-      {rows.map((row, i) => (
-        <div key={i} className="flex flex-wrap items-center gap-2" aria-label={i === 0 ? title : `Fallback ${i}`} role="group">
-          <span className="w-16 text-xs text-muted-foreground">{i === 0 ? "Main" : `Fallback ${i}`}</span>
-          <NativeSelect aria-label="Provider" size="sm" value={row.connection} onChange={(e) => set(i, { connection: e.target.value })}>
-            {data.connections.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-          </NativeSelect>
-          <Input aria-label="Model" className="h-7 w-48" list={`${id}-${row.connection}`} value={row.model} placeholder="Model" onChange={(e) => set(i, { model: e.target.value })} />
-          <datalist id={`${id}-${row.connection}`}>{(models[row.connection] ?? []).map((m) => <option key={m} value={m} />)}</datalist>
-          {thinking && i === 0 && (
-            <NativeSelect aria-label="Thinking" size="sm" value={row.thinking ?? ""} onChange={(e) => set(i, { thinking: e.target.value || undefined })}>
-              <option value="">Thinking: default</option>
-              {data.thinking_levels.map((t) => <option key={t} value={t}>Thinking: {t}</option>)}
-            </NativeSelect>
-          )}
-          <Button size="xs" variant="ghost" disabled={i === 0} onClick={() => move(i, i - 1)} aria-label="Move up">↑</Button>
-          <Button size="xs" variant="ghost" disabled={i === rows.length - 1} onClick={() => move(i, i + 1)} aria-label="Move down">↓</Button>
-          <Button size="xs" variant="ghost" onClick={() => onChange(rows.filter((_, j) => j !== i).map((r, j) => (j ? { ...r, thinking: undefined } : r)))} aria-label="Remove">Remove</Button>
-        </div>
-      ))}
-      {rows.length <= data.max_fallbacks && (
-        <Button size="sm" variant="outline" className="self-start" disabled={!first}
-          onClick={() => onChange([...rows, { connection: rows.at(-1)?.connection ?? first, model: "" }])}>
-          {rows.length ? "Add fallback" : "Choose model"}
-        </Button>
-      )}
+      <div className="overflow-hidden rounded-lg border">
+        {rows.length === 0 && (
+          <p className="border-b px-3 py-3 text-sm text-muted-foreground">Server default: {defaults.length ? defaults.map((d) => `${nameOf(d.connection)} · ${d.model}`).join(" → ") : "none"}</p>
+        )}
+        {rows.map((row, i) => (
+          <div key={i} className="flex flex-col gap-2 border-b px-3 py-3" aria-label={i === 0 ? title : `Fallback ${i}`} role="group">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm">{row.model || (i === 0 ? "Choose a model" : `Fallback ${i}`)}</p>
+                <p className="text-xs text-muted-foreground">{nameOf(row.connection)}</p>
+              </div>
+              <div className="flex shrink-0 items-center">
+                <Button size="xs" variant="ghost" disabled={i === 0} onClick={() => move(i, i - 1)} aria-label="Move up">↑</Button>
+                <Button size="xs" variant="ghost" disabled={i === rows.length - 1} onClick={() => move(i, i + 1)} aria-label="Move down">↓</Button>
+                <Button size="xs" variant="ghost" onClick={() => onChange(rows.filter((_, j) => j !== i).map((r, j) => (j ? { ...r, thinking: undefined } : r)))} aria-label="Remove">Remove</Button>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <NativeSelect aria-label="Provider" size="sm" value={row.connection} onChange={(e) => set(i, { connection: e.target.value })}>
+                {data.connections.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </NativeSelect>
+              <Input aria-label="Model" className="h-7 w-48" list={`${id}-${row.connection}`} value={row.model} placeholder="Model" onChange={(e) => set(i, { model: e.target.value })} />
+              <datalist id={`${id}-${row.connection}`}>{(models[row.connection] ?? []).map((m) => <option key={m} value={m} />)}</datalist>
+              {thinking && i === 0 && (
+                <NativeSelect aria-label="Thinking" size="sm" value={row.thinking ?? ""} onChange={(e) => set(i, { thinking: e.target.value || undefined })}>
+                  <option value="">Thinking: default</option>
+                  {data.thinking_levels.map((t) => <option key={t} value={t}>Thinking: {t}</option>)}
+                </NativeSelect>
+              )}
+            </div>
+          </div>
+        ))}
+        {rows.length <= data.max_fallbacks && (
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-3 text-left text-sm text-muted-foreground hover:bg-muted/40 disabled:opacity-50" disabled={!first}
+            onClick={() => onChange([...rows, { connection: rows.at(-1)?.connection ?? first, model: "" }])}>
+            {rows.length ? "+ Add fallback" : "Choose model"}
+          </button>
+        )}
+      </div>
     </section>
   );
 }

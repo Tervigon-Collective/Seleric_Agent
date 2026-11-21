@@ -36,7 +36,10 @@ def _is_exempt(path: str) -> bool:
     # Office UI static bundle: public assets only; its /v1 calls stay guarded.
     if normalized == "/ui" or normalized.startswith("/ui/"):
         return True
-    return normalized in {"/", "/health", "/readyz", "/docs", "/openapi.json", "/redoc", "/v1/voice/dev"}
+    # ChatGPT returns the browser here with no API key. The state value is the secret.
+    return normalized in {
+        "/", "/health", "/readyz", "/docs", "/openapi.json", "/redoc", "/v1/voice/dev", "/auth/callback",
+    }
 
 
 def _identity_header(request: Request, *names: str, default: str) -> str:

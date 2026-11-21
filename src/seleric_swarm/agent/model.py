@@ -123,7 +123,7 @@ def resolve_loop_model(settings: Settings) -> Model:
         return TestModel(call_tools=[])
 
     from pydantic_ai.models.fallback import FallbackModel
-    from pydantic_ai.models.openai import OpenAIChatModelSettings
+    from pydantic_ai.models.openai import OpenAIChatModelSettings, OpenAIResponsesModel
     from pydantic_ai.providers.openai import OpenAIProvider
 
     from seleric_swarm.llm.adapters.azure_openai_compatible import AzureOpenAICompatibleAdapter
@@ -137,19 +137,38 @@ def resolve_loop_model(settings: Settings) -> Model:
             providers[conn.id] = OpenAIProvider(openai_client=adapter.async_client)
         return providers[conn.id]
 
-    models: list[Model] = []
-    for conn, name, thinking in chain:
-        reasoning = bool(thinking) or is_reasoning_model(name)
+    def tuning_for(name: str, thinking: str | None, reasoning: bool) -> OpenAIChatModelSettings:
         if reasoning:
-            tuning = OpenAIChatModelSettings(
+            return OpenAIChatModelSettings(
                 openai_reasoning_effort=thinking or LOOP_REASONING_EFFORT,
                 max_tokens=LOOP_MAX_TOKENS + LOOP_REASONING_BUDGET,
             )
+        return OpenAIChatModelSettings(temperature=0, max_tokens=LOOP_MAX_TOKENS)
+
+    models: list[Model] = []
+    for conn, name, thinking in chain:
+        reasoning = bool(thinking) or is_reasoning_model(name)
+        tuning = tuning_for(name, thinking, reasoning)
+        if conn.provider == "claude-code":
+            from seleric_swarm.llm.claude_code import ClaudeCodeModel
+
+            chat = ClaudeCodeModel(name)
+        elif conn.provider == "chatgpt":
+            from openai import AsyncOpenAI
+
+            from seleric_swarm.llm.chatgpt_plan import RESOURCE, access_token
+
+            client = AsyncOpenAI(api_key=access_token(conn.id), base_url=RESOURCE)
+            chat = OpenAIResponsesModel(
+                name,
+                provider=OpenAIProvider(openai_client=client),
+                profile={"openai_responses_requires_streaming": True, "openai_responses_requires_store_false": True},
+                settings=tuning,
+            )
         else:
-            tuning = OpenAIChatModelSettings(temperature=0, max_tokens=LOOP_MAX_TOKENS)
-        chat: Model = HealthGatedChatModel(
-            name, provider=provider_for(conn), settings=tuning, health=MODEL_HEALTH, health_key=f"loop:{conn.id}:{name}"
-        )
-        models.append(EffortModel(chat) if reasoning else chat)
+            chat = HealthGatedChatModel(
+                name, provider=provider_for(conn), settings=tuning, health=MODEL_HEALTH, health_key=f"loop:{conn.id}:{name}"
+            )
+        models.append(EffortModel(chat) if reasoning and conn.provider != "claude-code" else chat)
     chain_model: Model = models[0] if len(models) == 1 else FallbackModel(*models)
     return PatientModel(chain_model, health=MODEL_HEALTH)

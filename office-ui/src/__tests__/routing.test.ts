@@ -34,6 +34,19 @@ describe("URL routing", () => {
     expect(readRoute().workspace).toBe("conversation");
   });
 
+  it("maps legacy notifications=1 and ops live/notifications tabs", () => {
+    history.replaceState({}, "", "/app?notifications=1");
+    expect(readRoute()).toMatchObject({ workspace: "ops", opsPage: "notifications" });
+
+    writeRoute({ workspace: "ops", opsPage: "live" });
+    expect(location.search).toContain("ops=live");
+    expect(location.search).not.toContain("notifications=");
+    expect(readRoute()).toMatchObject({ workspace: "ops", opsPage: "live" });
+
+    writeRoute({ workspace: "ops", opsPage: "notifications" });
+    expect(readRoute().opsPage).toBe("notifications");
+  });
+
   it("drops the ops card anchor when the chat opens a thread", () => {
     history.replaceState({}, "", "/app?ops=dashboard#ops-performance-net_roas");
     writeRoute({ workspace: "conversation", threadId: "thread-3" });

@@ -7,6 +7,10 @@
 ``DELETE /v1/monitoring/config/{domain}``  back to the shipped defaults
 ``POST /v1/monitoring/refresh/{domain}``   resolve one domain now instead of waiting for the cron
 ``GET  /v1/monitoring/targets``            target monitoring: open findings, latest value per metric against its band
+``GET  /v1/monitoring/live/schema``        live ads monitor: rules, params schemas, actions, fields (drives the form)
+``GET|PUT|DELETE /v1/monitoring/live/config``  live ads monitor configuration (validated, versioned, 409 on conflict)
+``POST /v1/monitoring/live/config/dry-run`` what an unsaved configuration would flag on the last snapshot
+``GET  /v1/monitoring/live/baselines``     per-entity baselines, guardrails and the tracking reference
 
 Everything is under ``/v1`` so the API-key middleware applies. Reads and writes need an authenticated principal.
 """
@@ -213,6 +217,103 @@ async def reset_config(domain: str, request: Request) -> dict[str, Any]:
     OverrideStore(store.base_dir).reset(domain)
     profiles, store = _profiles()
     return await _state_for(profiles, store, domain)
+
+
+# ------------------------------------------------------------------------------------------- live ads monitor
+
+def _live_view() -> dict[str, Any]:
+    from seleric_swarm.services.live_monitor import config as live
+
+    cfg, meta = live.load()
+    return {"config": cfg.model_dump(mode="json"), "defaults": live.defaults(), **meta}
+
+
+async def _live_body(request: Request) -> tuple[dict[str, Any], int | None]:
+    try:
+        body = await request.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="body must be JSON") from exc
+    if not isinstance(body, dict) or not isinstance(body.get("config"), dict):
+        raise HTTPException(status_code=422, detail="body must be {config, expected_version}")
+    expected = body.get("expected_version")
+    if expected is not None and (isinstance(expected, bool) or not isinstance(expected, int)):
+        raise HTTPException(status_code=422, detail="expected_version must be an integer")
+    return body["config"], expected
+
+
+@router.get("/live/schema")
+async def live_schema(request: Request) -> dict[str, Any]:
+    request_principal(request)
+    from seleric_swarm.services.live_monitor.core import schema
+
+    return schema.build()
+
+
+@router.get("/live/config")
+async def live_config(request: Request) -> dict[str, Any]:
+    request_principal(request)
+    return await asyncio.to_thread(_live_view)
+
+
+@router.put("/live/config")
+async def save_live_config(request: Request) -> dict[str, Any]:
+    principal = request_principal(request)
+    from seleric_swarm.services.live_monitor import config as live
+
+    payload, expected = await _live_body(request)
+    try:
+        await asyncio.to_thread(lambda: live.save(payload, expected_version=expected, updated_by=principal.user_id))
+    except VersionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ConfigError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return await asyncio.to_thread(_live_view)
+
+
+@router.delete("/live/config")
+async def reset_live_config(request: Request) -> dict[str, Any]:
+    request_principal(request)
+    from seleric_swarm.services.live_monitor import config as live
+
+    await asyncio.to_thread(live.reset)
+    return await asyncio.to_thread(_live_view)
+
+
+@router.post("/live/config/dry-run")
+async def dry_run_live_config(request: Request) -> dict[str, Any]:
+    """What the given (unsaved) configuration would flag on the last snapshot. Nothing is written."""
+    request_principal(request)
+    from seleric_swarm.services.live_monitor import config as live
+    from seleric_swarm.services.live_monitor.runner import evaluate_stored
+
+    payload, _ = await _live_body(request)
+    try:
+        cfg = live.validate(payload)
+    except ConfigError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    tenants = [t for t in cfg.tenants if t.enabled]
+    return {"tenants": [await asyncio.to_thread(evaluate_stored, cfg, t) for t in tenants]}
+
+
+@router.get("/live/baselines")
+async def live_baselines(request: Request, tenant_id: str, level: str | None = None, entity_id: str | None = None) -> dict[str, Any]:
+    request_principal(request)
+    from seleric_swarm.services.live_monitor import config as live
+    from seleric_swarm.services.live_monitor import guardrails, store
+
+    def _q() -> dict[str, Any]:
+        cfg, _ = live.load()
+        if cfg.tenant(tenant_id) is None:
+            raise HTTPException(status_code=404, detail=f"unknown tenant {tenant_id}")
+        with store.engine().connect() as conn:
+            return {
+                "tenant_id": tenant_id, "rows": store.baselines_view(conn, tenant_id, level, entity_id),
+                "guardrails": guardrails.effective(cfg.guardrails, store.get_state(conn, tenant_id, "guardrails")).to_json(),
+                "tracking": store.get_state(conn, tenant_id, "tracking"), "run": store.get_state(conn, tenant_id, "baselines_meta"),
+                "defaults": cfg.baselines.model_dump(mode="json")["defaults"],
+            }
+
+    return await asyncio.to_thread(_q)
 
 
 @router.post("/refresh/{domain}")

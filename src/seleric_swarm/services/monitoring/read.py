@@ -25,7 +25,7 @@ def read_state(conn: Connection, brand_id: int) -> dict[str, Any]:
     findings = [dict(r) for r in conn.execute(
         text("""SELECT f.finding_id, f.metric_id, m.label, f.detector, f.state, f.severity, f.summary, f.opened_at, f.updated_at, f.resolved_at
                 FROM monitor.findings f LEFT JOIN monitor.metrics m USING (metric_id)
-                WHERE f.brand_id = :b ORDER BY f.updated_at DESC LIMIT 200"""), {"b": brand_id}).mappings()]
+                WHERE f.brand_id = :b AND f.detector NOT LIKE 'live.%' ORDER BY f.updated_at DESC LIMIT 200"""), {"b": brand_id}).mappings()]
     latest = [dict(r) for r in conn.execute(
         text("""SELECT DISTINCT ON (e.metric_id) e.metric_id, m.label, m.unit, m.direction_bad, e.period_start, e.run_at, e.observed, e.status,
                        e.data_status, e.details->>'severity' AS severity, e.details->>'explained_by' AS explained_by,

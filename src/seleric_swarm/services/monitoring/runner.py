@@ -279,7 +279,8 @@ def open_findings(conn: Connection, brand_id: int) -> list[tuple[str, str, str]]
     """(metric or detector, detector, severity) of every open critical / warning finding, for the alert push."""
     rows = conn.execute(
         text("SELECT COALESCE(metric_id, finding_id), detector, severity FROM monitor.findings "
-             "WHERE brand_id = :b AND state <> 'resolved' AND severity IN ('critical', 'warning') ORDER BY 1"), {"b": brand_id}
+             "WHERE brand_id = :b AND state <> 'resolved' AND severity IN ('critical', 'warning') "
+             "AND detector NOT LIKE 'live.%' ORDER BY 1"), {"b": brand_id}
     ).all()
     return [(r[0], r[1], r[2]) for r in rows]
 

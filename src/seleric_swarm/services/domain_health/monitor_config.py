@@ -46,8 +46,8 @@ def _now() -> str:
 
 
 class OverrideStore:
-    def __init__(self, base_dir: str | Path) -> None:
-        self._path = Path(base_dir) / "_config" / "overrides.json"
+    def __init__(self, base_dir: str | Path, filename: str = "overrides.json") -> None:
+        self._path = Path(base_dir) / "_config" / filename
 
     def load(self) -> dict[str, Any]:
         try:
@@ -73,7 +73,7 @@ class OverrideStore:
 
     def _write(self, data: dict[str, Any]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_name(".overrides.json.tmp")
+        tmp = self._path.with_name(f".{self._path.name}.tmp")
         tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
         os.replace(tmp, self._path)
 

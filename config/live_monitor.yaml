@@ -1,0 +1,75 @@
+# Live ads monitor defaults (services/live_monitor). Editable in Seleric Agent (Ops > Monitoring > Live monitoring);
+# a save stores the whole document as an override beside the domain-health overrides, so no redeploy is needed.
+# Seeded 2026-11-20 from brand 20 Meta history (28 days account, 14 days ad level) and 30 days of finance.
+tenants:
+  - tenant_id: th-meta
+    name: Tilting Heads (Meta)
+    brand_id: 20
+    platform: meta
+    account_id: act_1685189008684458
+    timezone: Asia/Kolkata
+    enabled: true
+    structure_cache_ttl_min: 30
+    exclude_entity_ids: []
+    expectations:
+      pixel_id: "1533635213935845"
+      conversion_event: PURCHASE
+      display_domain: tiltingheads.com
+      attribution: [{event_type: CLICK_THROUGH, window_days: 7}, {event_type: VIEW_THROUGH, window_days: 1}]
+      # Playbook naming TH-{sku}-{PRODUCT}-...; compliance rules apply to campaigns whose name matches this.
+      compliance_name_pattern: "^TH-\\d+-"
+      label_from_name: "^(TH-\\d+-[A-Z0-9]+)"
+    actions:
+      budget_step_pct: 20
+      max_daily_budget_minor: 100000
+      min_daily_budget_minor: 10000
+
+guardrails:
+  # auto: recomputed nightly from finance (contribution margin, net AOV) and Meta AOV; manual: use the values below.
+  mode: auto
+  target_roas_multiple: 1.3
+  manual: {be_roas_platform: 2.2, target_roas: 2.9, allowable_cpa: 1200}
+  campaign_overrides: []
+
+baselines:
+  window_days: 14
+  curve_days: 28
+  weekday_aware: true
+  min_days: 5
+  overrides: []
+  # Used until an entity (or a parent) has min_days of history. p10 / p50 / p90 / pooled mean.
+  defaults:
+    account:
+      cpm: {p10: 472, p50: 577, p90: 686, mean: 585}
+      ctr_link: {p10: 1.48, p50: 1.63, p90: 1.79, mean: 1.61}
+      lpv_per_click: {p10: 0.87, p50: 0.94, p90: 0.97}
+      cvr_lpv: {p10: 1.75, p50: 2.58, p90: 5.16, mean: 3.2}
+      roas: {p10: 1.10, p50: 1.90, p90: 3.58, mean: 2.18}
+      cpa: {p10: 732, p50: 1471, p90: 2213, mean: 1221}
+      aov: {p10: 2382, p50: 2607, p90: 3035, mean: 2665}
+      spend: {p10: 23600, p50: 36200, p90: 49300}
+      purchases: {p10: 11, p50: 24, p90: 60}
+      impressions: {p10: 38000, p50: 62000, p90: 84000}
+      purchases_per_inr: {mean: 0.000819}
+    ad:
+      frequency: {p10: 1.24, p50: 1.36, p90: 1.50}
+      ctr_link: {p10: 1.12, p50: 1.66, p90: 2.33}
+      cpm: {p10: 368, p50: 662, p90: 1182}
+      roas: {p10: 0.87, p50: 2.62, p90: 4.91}
+      cpa: {p10: 539, p50: 1035, p90: 3042}
+
+stats:
+  confidence: 0.8
+  prior_events: 2.0
+  prior_orders: 3.0
+  prior_trials_ctr: 2000
+  prior_trials_cvr: 300
+  learning_min_age_days: 3
+
+rules: {}
+custom_rules: []
+
+notify:
+  quiet_hours: {start: "23:00", end: "08:00"}
+  cooldown_ticks: 2
+  max_narrations_per_tick: 20

@@ -88,6 +88,15 @@ async def test_run_python_with_an_unknown_query_id_says_so_instead_of_reading_ev
     assert result.success is False and "q_missing" in result.summary
 
 
+@pytest.mark.asyncio
+async def test_run_python_on_a_dataset_with_no_rows_says_it_is_empty_not_missing():
+    state = TurnState()
+    state.by_query["ds_empty"] = []  # a build whose sources held nothing for the window registers its handle with no evidence
+    tool = next(t for t in build_local_tools(state) if t.__name__ == "run_python")
+    result = await tool(None, code="result = 1", query_ids=["ds_empty"])
+    assert result.success is False and "no rows" in result.summary and "No fetched result" not in result.summary
+
+
 def test_failure_text_is_chosen_by_type_not_by_digits_in_a_message():
     assert _user_facing_agent_failure(RuntimeError("request 4291 failed"))[1] == "V3_AGENT_FAILED"
     assert _user_facing_agent_failure(TimeoutError("slow"))[1] == "V3_AGENT_TIMEOUT"

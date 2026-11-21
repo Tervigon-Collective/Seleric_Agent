@@ -195,9 +195,12 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None, is_cance
         ids = _evidence_for(state, query_ids)
         if query_ids and ids is None:
             known = sorted(state.by_query)
-            return ToolResult(
-                success=False, retryable=True, error_code="INSUFFICIENT_EVIDENCE",
-                summary=f"No fetched result has query_id {query_ids}. Fetched this turn: {known or 'nothing yet'}.")
+            empty = [q for q in query_ids if q in state.by_query]  # fetched, but the source returned no rows for them
+            summary = (f"{empty} loaded with no rows: the source holds no data for that window or those filters. "
+                       "Do not retry the script; check the freshness and first/latest bucket the fetch reported, or "
+                       "query another source or period.") if empty else (
+                f"No fetched result has query_id {query_ids}. Fetched this turn: {known or 'nothing yet'}.")
+            return ToolResult(success=False, retryable=True, error_code="INSUFFICIENT_EVIDENCE", summary=summary)
         rows = await asyncio.to_thread(full_evidence_rows, state, query_ids, ctx.deps) if query_ids else None  # 100k rows take seconds
         return await sandbox.run_python(ctx, code, ids, purpose, rows=rows)
 

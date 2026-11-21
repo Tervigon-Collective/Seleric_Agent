@@ -2,8 +2,9 @@
 
 One JSON file next to the monitoring overrides, on the volume the api and recovery containers share, so a save in
 the UI reaches the next mission without a restart. Keys are Fernet-encrypted with ``SELERIC_MODELS_KEY``; nothing
-here ever returns a key, only its last four characters. Every connection speaks the OpenAI wire protocol (each
-provider below serves an OpenAI-compatible endpoint), so the agent needs one client type: base URL + key.
+here ever returns a key, only its last four characters. API-key connections speak an OpenAI-compatible
+endpoint. ChatGPT subscription keeps an encrypted plan sign-in. Claude subscription stores nothing: the
+Claude Code CLI on this machine already holds that sign-in.
 
 The server's own connections (Azure from env, OpenAI from ``SELERIC_OPENAI_API_KEY``) are always listed and cannot
 be edited here. With no Main model saved, the agent keeps the env chain (``LLM_MODELS`` / ``AZURE_OPENAI_MODELS``).
@@ -25,13 +26,17 @@ from urllib.parse import urlsplit
 
 from seleric_swarm.config.settings import Settings
 
-# Offered under "Add provider". Each is the vendor's OpenAI-compatible endpoint.
+# Offered under "Add provider". API-key rows speak an OpenAI-compatible endpoint.
+# chatgpt is a ChatGPT plan sign-in (official Sign in with ChatGPT). claude-code runs the
+# Claude Code CLI already signed in on this machine and stores no Claude token.
 PROVIDERS: dict[str, dict[str, str]] = {
-    "openai": {"name": "OpenAI", "base_url": "https://api.openai.com/v1"},
-    "anthropic": {"name": "Anthropic", "base_url": "https://api.anthropic.com/v1/"},
-    "google": {"name": "Google Gemini", "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/"},
-    "openrouter": {"name": "OpenRouter", "base_url": "https://openrouter.ai/api/v1"},
-    "compatible": {"name": "OpenAI-compatible server", "base_url": ""},
+    "chatgpt": {"name": "ChatGPT subscription", "base_url": "https://api.openai.com/v1", "auth": "oauth"},
+    "claude-code": {"name": "Claude subscription", "base_url": "", "auth": "cli"},
+    "openai": {"name": "OpenAI", "base_url": "https://api.openai.com/v1", "auth": "key"},
+    "anthropic": {"name": "Anthropic", "base_url": "https://api.anthropic.com/v1/", "auth": "key"},
+    "google": {"name": "Google Gemini", "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/", "auth": "key"},
+    "openrouter": {"name": "OpenRouter", "base_url": "https://openrouter.ai/api/v1", "auth": "key"},
+    "compatible": {"name": "OpenAI-compatible server", "base_url": "", "auth": "key"},
 }
 MAX_MODEL_BACKUPS = 10  # Rakazo's limit: the main model plus ten fallbacks
 THINKING_LEVELS = ("minimal", "low", "medium", "high")
@@ -53,8 +58,9 @@ class Connection:
     provider: str
     label: str
     base_url: str | None  # None = the adapter's Azure settings
-    api_key: str | None  # None = the adapter's own env key
+    api_key: str | None  # None = the adapter's own env key, or a CLI sign-in with no stored secret
     builtin: bool = False
+    auth: str = "key"  # key | oauth | cli
 
 
 def _path() -> Path:
@@ -134,13 +140,17 @@ def connections(settings: Settings) -> dict[str, Connection]:
     found = {c.id: c for c in builtin_connections(settings)}
     fernet = _fernet()
     for row in load()["connections"]:
+        auth = row.get("auth") or "key"
+        if auth == "cli":  # the Claude Code CLI holds its own sign-in; this row has no secret
+            found[row["id"]] = Connection(row["id"], row["provider"], row["label"], None, None, auth="cli")
+            continue
         if fernet is None:
-            break  # keys cannot be read without SELERIC_MODELS_KEY: saved connections are skipped, not half-used
+            continue  # a key row cannot be read; a later CLI sign-in still can
         try:
             key = fernet.decrypt(row["key_enc"].encode()).decode()
         except Exception:  # noqa: BLE001 - a rotated or wrong key must not take the agent down
             continue
-        found[row["id"]] = Connection(row["id"], row["provider"], row["label"], row["base_url"], key)
+        found[row["id"]] = Connection(row["id"], row["provider"], row["label"], row["base_url"], key, auth=auth)
     return found
 
 
@@ -165,6 +175,8 @@ def check_base_url(url: str) -> str:
 def add_connection(provider: str, api_key: str, base_url: str = "", label: str = "") -> dict[str, Any]:
     if provider not in PROVIDERS:
         raise ModelsError(f"Unknown provider {provider!r}")
+    if PROVIDERS[provider].get("auth", "key") != "key":
+        raise ModelsError(f"{PROVIDERS[provider]['name']} uses sign-in, not an API key")
     fernet = _fernet()
     if fernet is None:
         raise ModelsError("Saving keys needs SELERIC_MODELS_KEY on the server")
@@ -179,6 +191,66 @@ def add_connection(provider: str, api_key: str, base_url: str = "", label: str =
         "base_url": base_url,
         "key_enc": fernet.encrypt(api_key.encode()).decode(),
         "key_hint": api_key[-4:],
+    }
+    _mutate(None, lambda data: data["connections"].append(row))
+    return row
+
+
+def _require_fernet() -> Any:
+    fernet = _fernet()
+    if fernet is None:
+        raise ModelsError("Saving keys needs SELERIC_MODELS_KEY on the server")
+    return fernet
+
+
+def add_oauth_connection(provider: str, secret: str, *, label: str = "", hint: str = "") -> dict[str, Any]:
+    """Store a ChatGPT plan credential. ``secret`` is the encrypted JSON blob's plaintext."""
+    if PROVIDERS.get(provider, {}).get("auth") != "oauth":
+        raise ModelsError(f"{provider!r} is not a sign-in provider")
+    fernet = _require_fernet()
+    secret = (secret or "").strip()
+    if not secret:
+        raise ModelsError("Sign-in did not return a credential")
+    row = {
+        "id": f"c_{secrets.token_hex(4)}",
+        "provider": provider,
+        "auth": "oauth",
+        "label": (label or "").strip() or PROVIDERS[provider]["name"],
+        "base_url": PROVIDERS[provider]["base_url"],
+        "key_enc": fernet.encrypt(secret.encode()).decode(),
+        "key_hint": (hint or "plan")[-4:],
+    }
+    _mutate(None, lambda data: data["connections"].append(row))
+    return row
+
+
+def replace_oauth_secret(connection_id: str, secret: str) -> None:
+    """Write a refreshed ChatGPT credential back. The refresh token rotates, so this must not race."""
+    fernet = _require_fernet()
+    encoded = fernet.encrypt(secret.encode()).decode()
+
+    def change(data: dict[str, Any]) -> None:
+        for row in data["connections"]:
+            if row["id"] == connection_id and row.get("auth") == "oauth":
+                row["key_enc"] = encoded
+                return
+        raise ModelsError("Unknown sign-in")
+
+    _mutate(None, change)
+
+
+def add_cli_connection(provider: str, *, label: str = "", hint: str = "") -> dict[str, Any]:
+    """A Claude Code sign-in that already exists on this machine. No token is stored."""
+    if PROVIDERS.get(provider, {}).get("auth") != "cli":
+        raise ModelsError(f"{provider!r} is not a local CLI sign-in")
+    row = {
+        "id": f"c_{secrets.token_hex(4)}",
+        "provider": provider,
+        "auth": "cli",
+        "label": (label or "").strip() or PROVIDERS[provider]["name"],
+        "base_url": "",
+        "key_enc": "",
+        "key_hint": (hint or "cli")[:12],
     }
     _mutate(None, lambda data: data["connections"].append(row))
     return row
@@ -247,7 +319,7 @@ def view(settings: Settings) -> dict[str, Any]:
         "providers": [{"id": k, **v} for k, v in PROVIDERS.items()],
         "connections": [
             {"id": c.id, "provider": c.provider, "label": c.label, "base_url": c.base_url or "", "builtin": c.builtin,
-             "key_hint": hints.get(c.id, "")}
+             "auth": c.auth, "key_hint": hints.get(c.id, "")}
             for c in connections(settings).values()
         ],
         "main": data["main"],

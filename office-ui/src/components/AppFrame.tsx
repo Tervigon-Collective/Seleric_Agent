@@ -8,6 +8,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { cn } from "cn";
 import { useConversationStore } from "../stores/conversation";
 import { useMonitoringStore } from "../stores/monitoring";
+import { unseenCount, useNotificationsStore } from "../stores/notifications";
 import { useShellStore, type Workspace } from "../stores/shell";
 import { useThemeStore, type ThemeMode } from "../stores/theme";
 import { ActivityIcon, MenuIcon, PlusIcon, PromptsIcon, SearchIcon, SettingsIcon, SlidersIcon, SparklesIcon, XIcon } from "./icons";
@@ -99,6 +100,13 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
   // The nav shows how many metrics need attention, so Monitoring is loaded once here; its own page keeps it fresh.
   const alerts = useMonitoringStore((s) => s.state?.domains.reduce((n, d) => n + (d.counts.alert ?? 0), 0) ?? 0);
   useEffect(() => { if (!useMonitoringStore.getState().state) void useMonitoringStore.getState().load(); }, []);
+  // Live ads findings poll here so Monitoring's badge updates without opening the tab.
+  const unseen = useNotificationsStore((s) => unseenCount(s.feed, s.seen));
+  const critical = useNotificationsStore((s) => s.feed?.items.some((i) => i.state !== "resolved" && i.severity === "critical" && !s.seen[i.finding_id]) ?? false);
+  const monitorDown = useNotificationsStore((s) => s.feed?.tenants.some((t) => t.status === "down" || t.status === "stale") ?? false);
+  useEffect(() => useNotificationsStore.getState().startPolling(), []);
+  const monBadge = alerts + unseen;
+  const monTone = critical || alerts > 0;
 
   // Gesture: a swipe right from the left edge opens the navigation (touch and pen only; the toggle button does the same).
   useEffect(() => {
@@ -138,7 +146,11 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
           <NavItem icon={<PlusIcon />} label="New chat" current={workspace === "conversation" && !selectedThreadId} onClick={go(() => { setWorkspace("conversation"); void createThread(); })} />
           <NavItem icon={<SearchIcon />} label="Search" onClick={() => fire(APP_EVENTS.search)} trailing={<Kbd>⌘K</Kbd>} />
           <nav aria-label="Workspace" className="flex flex-col gap-0.5">
-            <NavItem icon={<ActivityIcon />} label="Monitoring" current={workspace === "ops"} onClick={go(() => openOps("dashboard"))} trailing={alerts > 0 ? <span className="font-medium text-destructive tabular-nums" aria-label={`${alerts} need attention`}>{alerts}</span> : undefined} badge={alerts > 0 ? <span aria-hidden="true" className="absolute top-0.5 right-1 hidden min-w-4 rounded-full bg-[var(--danger-soft)] px-1 text-center text-[10px] leading-4 font-semibold text-destructive lg:group-data-[collapsed=true]/sb:block">{alerts}</span> : undefined} />
+            <NavItem icon={<ActivityIcon />} label="Monitoring" current={workspace === "ops"}
+              onClick={go(() => openOps(unseen > 0 ? "notifications" : "dashboard"))}
+              trailing={monBadge > 0 ? <span className={cn("font-medium tabular-nums", monTone ? "text-destructive" : "text-[var(--warning)]")} aria-label={`${monBadge} need attention`}>{monBadge}</span>
+                : monitorDown ? <span className="text-[var(--warning)]" aria-label="Live monitor is not running">!</span> : undefined}
+              badge={monBadge > 0 ? <span aria-hidden="true" className={cn("absolute top-0.5 right-1 hidden min-w-4 rounded-full px-1 text-center text-[10px] leading-4 font-semibold lg:group-data-[collapsed=true]/sb:block", monTone ? "bg-[var(--danger-soft)] text-destructive" : "bg-[var(--warning-soft)] text-[var(--warning)]")}>{monBadge}</span> : undefined} />
             <NavItem icon={<OfficeIcon />} label="Office" current={workspace === "office"} onClick={go(() => setWorkspace("office"))} />
           </nav>
           <div className={cn("mt-2 flex min-h-0 flex-1 flex-col", RAIL_HIDE)}>{sidebarBody}</div>

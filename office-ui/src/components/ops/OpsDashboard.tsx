@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,9 +6,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMonitoringStore } from "../../stores/monitoring";
 import type { DomainView } from "../../api/monitoring";
-import { useShellStore } from "../../stores/shell";
+import { unseenCount, useNotificationsStore } from "../../stores/notifications";
+import { useShellStore, type OpsPage } from "../../stores/shell";
+import { NotificationsPanel } from "../notifications/NotificationCenter";
 import { AnomalyFeed } from "./AnomalyFeed";
 import { BusinessState } from "./BusinessState";
+import { LiveMonitoringConfig } from "./LiveMonitoringConfig";
 import { MetricCard } from "./MetricCard";
 import { collectAnomalies } from "./anomalies";
 import { ago, formatValue } from "./format";
@@ -113,15 +116,33 @@ function PageHeader({ domains }: { domains: DomainView[] }) {
   );
 }
 
+function tabFromOps(page: OpsPage): string {
+  if (page === "notifications" || page === "live") return page;
+  return "overview";
+}
+
 export function OpsDashboard() {
   const state = useMonitoringStore((s) => s.state);
   const loading = useMonitoringStore((s) => s.loading);
   const error = useMonitoringStore((s) => s.error);
   const openOps = useShellStore((s) => s.openOps);
+  const opsPage = useShellStore((s) => s.opsPage);
   const notice = useMonitoringStore((s) => s.notice);
-  const [tab, setTab] = useState("overview");
+  const unseen = useNotificationsStore((s) => unseenCount(s.feed, s.seen));
+  const [tab, setTab] = useState(() => tabFromOps(opsPage));
+
+  useEffect(() => {
+    if (opsPage === "notifications" || opsPage === "live") setTab(opsPage);
+  }, [opsPage]);
+
+  const selectTab = (value: string) => {
+    setTab(value);
+    if (value === "notifications" || value === "live") openOps(value);
+    else if (opsPage === "notifications" || opsPage === "live") openOps("dashboard");
+  };
+
   const jump = (id: string) => {
-    setTab("domains");
+    selectTab("domains");
     requestAnimationFrame(() => { const el = document.getElementById(id); el?.closest("details")?.setAttribute("open", ""); el?.scrollIntoView({ behavior: "smooth", block: "center" }); });
   };
   if (!state) {
@@ -135,15 +156,19 @@ export function OpsDashboard() {
   return (
     <div className="stagger flex flex-col gap-4">
       <PageHeader domains={state.domains} />
-      <Tabs value={tab} onValueChange={setTab} className="gap-3">
+      <Tabs value={tab} onValueChange={selectTab} className="gap-3">
         <TabsList variant="line" className="h-auto w-full justify-start gap-1 rounded-none border-b p-0" aria-label="Monitoring sections">
           <TabsTrigger value="overview" className="flex-none rounded-none px-3 py-2 data-active:border-b-brand">Overview</TabsTrigger>
           <TabsTrigger value="anomalies" className="flex-none rounded-none px-3 py-2 data-active:border-b-brand">Anomalies <span className="tabular-nums text-muted-foreground">{state.domains.reduce((n, d) => n + (d.counts.alert ?? 0), 0)}</span></TabsTrigger>
           <TabsTrigger value="domains" className="flex-none rounded-none px-3 py-2 data-active:border-b-brand">Domains <span className="tabular-nums text-muted-foreground">{state.domains.length}</span></TabsTrigger>
+          <TabsTrigger value="notifications" className="flex-none rounded-none px-3 py-2 data-active:border-b-brand">
+            Notifications{unseen > 0 ? <span className="tabular-nums text-[var(--warning)]">{unseen}</span> : null}
+          </TabsTrigger>
+          <TabsTrigger value="live" className="flex-none rounded-none px-3 py-2 data-active:border-b-brand">Live ads</TabsTrigger>
         </TabsList>
         <TabsContent value="overview" forceMount className="flex flex-col gap-3 data-[state=inactive]:hidden">
           <BusinessState domains={state.domains} onJump={jump} />
-          <OverviewPanels domains={state.domains} onTab={setTab} onJump={jump} />
+          <OverviewPanels domains={state.domains} onTab={selectTab} onJump={jump} />
         </TabsContent>
         <TabsContent value="anomalies" forceMount className="data-[state=inactive]:hidden">
           <AnomalyFeed domains={state.domains} />
@@ -181,6 +206,12 @@ export function OpsDashboard() {
           );
         })}
       </section>
+        </TabsContent>
+        <TabsContent value="notifications" forceMount className="data-[state=inactive]:hidden">
+          <NotificationsPanel onConfigure={() => selectTab("live")} />
+        </TabsContent>
+        <TabsContent value="live" forceMount className="data-[state=inactive]:hidden">
+          <LiveMonitoringConfig />
         </TabsContent>
       </Tabs>
     </div>
