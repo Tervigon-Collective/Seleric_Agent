@@ -1,18 +1,45 @@
 import { api, type HttpClient } from "./http";
 
-export type TriggerKind = "cron" | "signal";
-export type RunKind = "manual" | "chat" | "cron" | "signal";
+export type TriggerKind = "cron" | "signal" | "watch" | "webhook";
+export type RunKind = "manual" | "chat" | TriggerKind;
 export type RunStatus = "queued" | "running" | "completed" | "partial" | "failed" | "skipped";
 export type ActivityOutcome = "attempted" | "denied" | "failed" | "completed" | "skipped";
 
 export interface BotTrigger {
   trigger_id: string;
   kind: TriggerKind;
-  config: { cron?: string; timezone?: string; detector_prefix?: string; severities?: string[] };
+  config: {
+    cron?: string; timezone?: string; detector_prefix?: string; severities?: string[];
+    tool?: string; args?: Record<string, unknown>; fields?: string[]; interval_min?: number;
+  };
   enabled: boolean;
   next_run_at: string | null;
   last_fired_at: string | null;
+  state?: { checked_at?: string; error?: string | null };
+  /** Webhook only, and only in the reply that created it: shown once, never stored. */
+  secret?: string;
 }
+
+export interface BotSkill {
+  skill_id: string;
+  name: string;
+  body: string;
+  enabled: boolean;
+  author: string;
+  updated_at: string;
+}
+
+export interface MemoryItem {
+  id: string;
+  text: string;
+  date: string;
+  fact_type: string | null;
+  document_id: string | null;
+  mentioned_at: string | null;
+  tags: string[];
+}
+
+export type MemoryBank = "bot" | "shared";
 
 export interface BotRunSummary {
   run_id: string;
@@ -34,10 +61,12 @@ export interface Bot {
   instructions_version: number;
   tools: string[];
   limits: Record<string, number>;
+  notify?: { email?: string[] };
   version: number;
   updated_at: string;
   updated_by: string;
   triggers?: BotTrigger[];
+  skills?: BotSkill[];
   next_run_at?: string | null;
   last_run?: BotRunSummary | null;
 }
@@ -48,7 +77,7 @@ export interface BotRun extends BotRunSummary {
   query: string;
   answer: string | null;
   error: string | null;
-  merged: { kind: string; reason: string }[];
+  merged: { kind: string; reason: string; data?: string }[];
   instructions_version: number | null;
   mission_id: string | null;
   tool_calls: number;
@@ -59,7 +88,7 @@ export interface BotActivity {
   id: number;
   run_id: string;
   at: string;
-  kind: "trigger" | "tool" | "answer" | "note";
+  kind: "trigger" | "tool" | "answer" | "note" | "memory" | "delivery";
   tool: string | null;
   target: string | null;
   scope: string | null;
@@ -76,7 +105,7 @@ export interface BotTemplate {
   tools: string[];
 }
 
-export type BotChanges = Partial<Pick<Bot, "name" | "role" | "enabled" | "instructions" | "tools" | "limits">>;
+export type BotChanges = Partial<Pick<Bot, "name" | "role" | "enabled" | "instructions" | "tools" | "limits" | "notify">>;
 
 const enc = encodeURIComponent;
 const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) });
@@ -106,6 +135,21 @@ export class BotsApi {
     return this.http.request(`/v1/bots/${enc(id)}/runs${kind ? `?kind=${kind}` : ""}`);
   }
   activity(id: string): Promise<{ activity: BotActivity[] }> { return this.http.request(`/v1/bots/${enc(id)}/activity`); }
+  saveSkill(id: string, skill: { skill_id?: string; name: string; body: string; enabled: boolean }): Promise<{ skills: BotSkill[] }> {
+    return this.http.request(`/v1/bots/${enc(id)}/skills`, json("PUT", skill));
+  }
+  deleteSkill(id: string, skillId: string): Promise<unknown> {
+    return this.http.request(`/v1/bots/${enc(id)}/skills/${enc(skillId)}`, { method: "DELETE" });
+  }
+  memory(id: string, bank: MemoryBank, q = ""): Promise<{ bank: string; items: MemoryItem[]; total: number }> {
+    return this.http.request(`/v1/bots/${enc(id)}/memory?bank=${bank}${q ? `&q=${enc(q)}` : ""}`);
+  }
+  addNote(id: string, bank: MemoryBank, text: string): Promise<{ document_id: string }> {
+    return this.http.request(`/v1/bots/${enc(id)}/memory`, json("POST", { bank, text }));
+  }
+  forget(id: string, bank: MemoryBank, documentId: string): Promise<unknown> {
+    return this.http.request(`/v1/bots/${enc(id)}/memory/${enc(documentId)}?bank=${bank}`, { method: "DELETE" });
+  }
 }
 
 export const botsApi = new BotsApi();

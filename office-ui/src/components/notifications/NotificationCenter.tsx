@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   notificationsApi,
   type ActivityEntry,
+  type BotReport,
   type Feed,
   type FindingAction,
   type NotificationItem,
@@ -15,6 +16,7 @@ import {
   type TenantStatus,
   type TimelineEvent,
 } from "../../api/notifications";
+import { useBotsStore } from "../../stores/bots";
 import { useConversationStore } from "../../stores/conversation";
 import { useNotificationsStore } from "../../stores/notifications";
 import { useShellStore } from "../../stores/shell";
@@ -380,6 +382,24 @@ export function ActionDialog() {
   );
 }
 
+export function BotReports({ reports, now }: { reports: BotReport[]; now: string }) {
+  if (!reports.length) return <p className="text-sm text-muted-foreground">No bot reports in the last 48 hours.</p>;
+  const open = (botId: string) => { useShellStore.getState().setWorkspace("bots"); void useBotsStore.getState().select(botId); };
+  return (
+    <ol className="m-0 flex list-none flex-col gap-2 p-0">
+      {reports.map((r) => (
+        <li key={`${r.run_id}-${r.at}`}>
+          <button type="button" onClick={() => open(r.bot_id)} className="flex w-full gap-2 rounded-md px-1 py-1 text-left text-xs hover:bg-accent">
+            <span aria-hidden="true" className={cn("mt-1 size-1.5 shrink-0 rounded-full", r.outcome === "action_needed" ? "bg-destructive" : "bg-muted-foreground/50")} />
+            <span className="min-w-0 flex-1"><span className="font-medium">{r.bot_name}</span> · {r.reason}<br /><span className="text-muted-foreground">{r.summary}</span></span>
+            <span className="shrink-0 text-muted-foreground tabular-nums">{since(r.at, now)}</span>
+          </button>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export function NotificationList({ feed }: { feed: Feed }) {
   const open = feed.items.filter((i) => i.state !== "resolved");
   const resolved = feed.items.filter((i) => i.state === "resolved");
@@ -388,6 +408,7 @@ export function NotificationList({ feed }: { feed: Feed }) {
       <TabsList>
         <TabsTrigger value="open">Open{open.length ? ` (${open.length})` : ""}</TabsTrigger>
         <TabsTrigger value="activity">Activity</TabsTrigger>
+        <TabsTrigger value="bots">Bots{feed.bots?.length ? ` (${feed.bots.length})` : ""}</TabsTrigger>
         <TabsTrigger value="resolved">Resolved</TabsTrigger>
       </TabsList>
       <TabsContent value="open" className="flex flex-col gap-2">
@@ -395,6 +416,7 @@ export function NotificationList({ feed }: { feed: Feed }) {
           : <p className="text-sm text-muted-foreground">All clear. The monitor checks every 5 minutes and will post here when something changes.</p>}
       </TabsContent>
       <TabsContent value="activity"><ActivityList activity={feed.activity} now={feed.server_time} /></TabsContent>
+      <TabsContent value="bots"><BotReports reports={feed.bots ?? []} now={feed.server_time} /></TabsContent>
       <TabsContent value="resolved" className="flex flex-col gap-2">
         {resolved.length ? resolved.map((i) => <FindingCard key={i.finding_id} item={i} now={feed.server_time} actionsEnabled={false} />)
           : <p className="text-sm text-muted-foreground">Nothing resolved in the last 24 hours.</p>}

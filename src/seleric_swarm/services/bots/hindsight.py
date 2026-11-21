@@ -94,7 +94,10 @@ class Memory:
     async def list(self, bank: str, *, limit: int = 50, offset: int = 0, q: str = "") -> dict[str, Any]:
         params = {"limit": limit, "offset": offset, **({"q": q} if q else {})}
         found = await self._call("GET", bank, "/memories/list", timeout=RECALL_TIMEOUT_S * 2, params=params)
-        return found or {"items": [], "total": 0, "limit": limit, "offset": offset}
+        found = found or {"items": [], "total": 0, "limit": limit, "offset": offset}
+        for item in found.get("items") or []:
+            item["text"] = str(item.get("text") or "").rstrip(" |")  # Hindsight appends " | <context>"
+        return found
 
     async def forget(self, bank: str, document_id: str) -> None:
         """Delete a document and every fact extracted from it (a run's learning, an operator note)."""

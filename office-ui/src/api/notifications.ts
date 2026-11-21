@@ -127,10 +127,23 @@ export interface ActivityEntry {
   kind: string | null;
 }
 
+/** A bot run the delivery rule reported (D-244 B20): scheduled summaries, action needed, could-not-check twice. */
+export interface BotReport {
+  at: string;
+  run_id: string;
+  bot_id: string;
+  bot_name: string;
+  outcome: string | null;
+  trigger_kind: string;
+  summary: string;
+  reason: string | null;
+}
+
 export interface Feed {
   tenants: TenantStatus[];
   items: NotificationItem[];
   activity: ActivityEntry[];
+  bots?: BotReport[];
   counts?: Record<Severity, number>;
   config_error: string | null;
   actions_enabled: boolean;

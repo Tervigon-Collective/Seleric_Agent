@@ -2,7 +2,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { botsApi, type Bot, type BotActivity, type BotRun } from "../api/bots";
-import { ActivityTimeline, BotsWorkspace, groupByRun, stepText, triggerText } from "../components/bots/BotsWorkspace";
+import { ActivityTimeline, BotsWorkspace, groupByRun, stepLabel, stepText, triggerText } from "../components/bots/BotsWorkspace";
+import { BotReports } from "../components/notifications/NotificationCenter";
+import { useShellStore } from "../stores/shell";
 import { readRoute, writeRoute } from "../routing";
 import { useBotsStore } from "../stores/bots";
 
@@ -74,6 +76,31 @@ describe("activity timeline", () => {
     expect(triggerText(bot.triggers![0])).toBe("Schedule 0 9 * * * (Asia/Kolkata)");
     expect(triggerText({ ...bot.triggers![0], kind: "signal", config: { detector_prefix: "live.meta.", severities: ["critical"] } }))
       .toBe("Monitoring: live.meta.* · critical");
+    expect(triggerText({ ...bot.triggers![0], kind: "watch", config: { tool: "meta_campaigns_list", fields: ["effective_status"], interval_min: 15 } }))
+      .toBe("Watch meta_campaigns_list: effective_status · every 15 min");
+    expect(triggerText({ ...bot.triggers![0], kind: "webhook", config: {} })).toBe("Webhook");
+  });
+
+  it("names memory and delivery steps in words", () => {
+    expect(stepLabel(act_(1, "r", { kind: "memory", tool: "memory_recall" }))).toBe("Memory");
+    expect(stepLabel(act_(1, "r", { kind: "delivery", tool: "notification_center" }))).toBe("Notified");
+    expect(stepLabel(act_(1, "r", { kind: "answer", decision: "action_needed" }))).toBe("Answer: action needed");
+  });
+});
+
+describe("notification center bot reports", () => {
+  it("lists reported runs and opens the bot", async () => {
+    const real = useBotsStore.getState().select;
+    const select = vi.fn(async () => {});
+    useBotsStore.setState({ select });
+    await act(async () => root.render(<BotReports now="2026-11-21T10:05:00Z" reports={[{
+      at: "2026-11-21T10:00:00Z", run_id: "run_a", bot_id: "bot_1", bot_name: "Marketing", outcome: "action_needed",
+      trigger_kind: "signal", summary: "[Seleric bot] Marketing: action needed — Sale overspending", reason: "action needed" }]} />));
+    expect(container.textContent).toContain("Marketing · action needed");
+    await act(async () => { container.querySelector("button")!.click(); });
+    expect(useShellStore.getState().workspace).toBe("bots");
+    expect(select).toHaveBeenCalledWith("bot_1");
+    useBotsStore.setState({ select: real });
   });
 });
 

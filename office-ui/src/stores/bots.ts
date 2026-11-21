@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { ApiError } from "../api/http";
-import { botsApi, type Bot, type BotActivity, type BotChanges, type BotRun, type BotTemplate, type TriggerKind, type BotTrigger } from "../api/bots";
+import { botsApi, type Bot, type BotActivity, type BotChanges, type BotRun, type BotSkill, type BotTemplate, type TriggerKind, type BotTrigger } from "../api/bots";
 
 /** Bot runs take tens of seconds; polling every 10 s while a bot is open shows a run finishing promptly. */
 export const POLL_MS = 10_000;
@@ -16,6 +16,8 @@ interface BotsStore {
   activity: BotActivity[];
   error: string | null;
   busy: boolean;
+  /** A webhook's secret from the reply that created it; shown once, cleared when another bot opens. */
+  newSecret: { triggerId: string; secret: string } | null;
   loadList: () => Promise<void>;
   select: (id: string | null) => Promise<void>;
   refresh: () => Promise<void>;
@@ -26,6 +28,8 @@ interface BotsStore {
   deleteTrigger: (triggerId: string) => Promise<void>;
   runNow: (message?: string) => Promise<void>;
   ask: (message: string) => Promise<void>;
+  saveSkill: (skill: Pick<BotSkill, "name" | "body" | "enabled"> & { skill_id?: string }) => Promise<boolean>;
+  deleteSkill: (skillId: string) => Promise<void>;
 }
 
 const message = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : String(e));
@@ -47,7 +51,7 @@ export const useBotsStore = create<BotsStore>((set, get) => {
 
   return {
     bots: [], templates: [], readTools: [], selectedId: null, bot: null, runs: [], chat: [], activity: [],
-    error: null, busy: false,
+    error: null, busy: false, newSecret: null,
 
     loadList: async () => {
       try {
@@ -58,7 +62,7 @@ export const useBotsStore = create<BotsStore>((set, get) => {
     },
 
     select: async (id) => {
-      set({ selectedId: id, bot: null, runs: [], chat: [], activity: [], error: null });
+      set({ selectedId: id, bot: null, runs: [], chat: [], activity: [], error: null, newSecret: null });
       if (id) await get().refresh();
     },
 
@@ -92,7 +96,10 @@ export const useBotsStore = create<BotsStore>((set, get) => {
 
     addTrigger: async (kind, config) => {
       const id = get().selectedId;
-      const ok = !!id && await attempt(() => botsApi.addTrigger(id, kind, config));
+      const ok = !!id && await attempt(async () => {
+        const t = await botsApi.addTrigger(id, kind, config);
+        if (t.secret) set({ newSecret: { triggerId: t.trigger_id, secret: t.secret } });
+      });
       if (ok) await get().refresh();
       return ok;
     },
@@ -115,6 +122,18 @@ export const useBotsStore = create<BotsStore>((set, get) => {
     ask: async (text) => {
       const id = get().selectedId;
       if (id && text.trim() && await attempt(() => botsApi.run(id, "chat", text.trim()))) await get().refresh();
+    },
+
+    saveSkill: async (skill) => {
+      const id = get().selectedId;
+      const ok = !!id && await attempt(() => botsApi.saveSkill(id, skill));
+      if (ok) await get().refresh();
+      return ok;
+    },
+
+    deleteSkill: async (skillId) => {
+      const id = get().selectedId;
+      if (id && await attempt(() => botsApi.deleteSkill(id, skillId))) await get().refresh();
     },
   };
 });

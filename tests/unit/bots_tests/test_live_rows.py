@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
 from seleric_swarm.agent.live_rows import as_query_result
@@ -13,7 +14,6 @@ from seleric_swarm.agent.mcp_toolset import all_evidence
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
-from zoneinfo import ZoneInfo
 
 FIX = json.loads((Path(__file__).parent / "fixtures" / "meta_live.json").read_text())
 TODAY = date(2026, 11, 21)
