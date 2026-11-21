@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from seleric_swarm.services.bots import schedule, store
+from seleric_swarm.services.bots import hindsight, schedule, store
 
 _log = logging.getLogger("seleric.bots")
 
@@ -48,7 +48,7 @@ def _webhook_data(data: str) -> str:
             f"<webhook_data>\n{data[:WEBHOOK_SHOWN]}\n</webhook_data>")
 
 
-def brief(bot: dict[str, Any], run: dict[str, Any], history: list[dict[str, Any]]) -> str:
+def brief(bot: dict[str, Any], run: dict[str, Any], history: list[dict[str, Any]], recalled: list[dict[str, str]] | None = None) -> str:
     skills = [k for k in bot.get("skills") or [] if k["enabled"]]
     parts = [
         f'You are running as the Seleric bot "{bot["name"]}" ({bot["role"] or bot["template"]}) for brand {bot["brand_id"]}.',
@@ -61,6 +61,8 @@ def brief(bot: dict[str, Any], run: dict[str, Any], history: list[dict[str, Any]
         RULES,
         OUTCOME_RULE,
     ]
+    if recalled:
+        parts.append(hindsight.recalled_block(recalled))
     if history:
         lines = [f"Q: {h['query']}\nA: {(h['answer'] or '')[:600]}" for h in reversed(history)]
         parts.append("Your recent conversation with the operator (oldest first):\n" + "\n\n".join(lines))
@@ -140,10 +142,15 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
         history = history if run["trigger_kind"] == "chat" else []
     mission_id = f"MS3-{uuid4().hex[:10]}"
     status, answer, error, steps = "failed", "", None, []
+    mem = hindsight.memory()
+    recalled, recall_rows = await _recall(mem, bot, run)
+    with engine.begin() as conn:  # before the run, so the sidebar shows it first
+        for row in recall_rows:
+            store.add_activity(conn, run["run_id"], bot["bot_id"], kind="memory", **row)
     try:
         dispatched = await run_v3_mission(
             runtime, query=question(run), mission_id=mission_id, thread_id=f"bot-{bot['bot_id']}",
-            owner_user_id=f"bot:{bot['bot_id']}", bot_brief=brief(bot, run, history), extra_tools=tuple(bot["tools"]),
+            owner_user_id=f"bot:{bot['bot_id']}", bot_brief=brief(bot, run, history, recalled), extra_tools=tuple(bot["tools"]),
         )
         result = dispatched.get("result") or {}
         status = str(result.get("status") or "failed")
@@ -155,6 +162,7 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
     status = status if status in ("completed", "partial", "failed") else "partial"
     outcome, why = outcome_of(answer)
     calls = tool_activity(steps)
+    memory_rows = await _retain(mem, bot, run, outcome, why)
     with engine.begin() as conn:
         for row in calls:
             store.add_activity(conn, run["run_id"], bot["bot_id"], kind="tool", **row)
@@ -162,10 +170,42 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
             store.add_activity(conn, run["run_id"], bot["bot_id"], kind="answer",
                                outcome="skipped" if outcome == "cleared" else "completed",
                                decision=outcome, summary=why or answer[:300], detail={"mission_id": mission_id})
+        for row in memory_rows:
+            store.add_activity(conn, run["run_id"], bot["bot_id"], kind="memory", **row)
         if error:
             store.add_activity(conn, run["run_id"], bot["bot_id"], kind="note", outcome="failed", summary=error[:500])
         store.finish_run(conn, run["run_id"], status=status, outcome=outcome, answer=answer, error=error,
                          mission_id=mission_id, instructions_version=bot["instructions_version"], tool_calls=len(calls))
+
+
+async def _recall(mem: hindsight.Memory | None, bot: dict[str, Any], run: dict[str, Any]) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
+    """Best-effort: a Hindsight failure is one 'failed' memory row in the sidebar, never a failed or unverified run."""
+    if mem is None:
+        return [], []
+    try:
+        items, error = await mem.recall(bot, f"{run['reason']}\n{question(run)}")
+    except Exception as exc:
+        items, error = [], f"{type(exc).__name__}: {exc}"
+    row = {"tool": "memory_recall", "target": mem.bot_bank(bot), "outcome": "failed" if error and not items else "completed",
+           "summary": f"Recalled {len(items)} memories" + (f" (not reachable: {error})" if error else ""),
+           "detail": {"banks": mem.banks(bot), "items": items[:20]}}
+    return items, [row]
+
+
+async def _retain(mem: hindsight.Memory | None, bot: dict[str, Any], run: dict[str, Any], outcome: str | None,
+                  why: str) -> list[dict[str, Any]]:
+    note = hindsight.learning(run, outcome, why)
+    if mem is None or note is None:
+        return []
+    bank = mem.bot_bank(bot)
+    try:
+        op = await mem.retain(bank, content=note, document_id=run["run_id"], kind="learning",
+                              context=f"Seleric bot {bot['name']} run {run['run_id']}",
+                              timestamp=datetime.now(UTC).isoformat(), tags=[f"run:{run['run_id']}"])
+    except Exception as exc:
+        return [{"tool": "memory_retain", "target": bank, "outcome": "failed", "summary": f"Learning not saved: {type(exc).__name__}"}]
+    return [{"tool": "memory_retain", "target": bank, "outcome": "completed", "summary": note[:300],
+             "detail": {"document_id": run["run_id"], "operation_id": op}}]
 
 
 async def drain(runtime: Any, running: set[asyncio.Task[None]]) -> None:

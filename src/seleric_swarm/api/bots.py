@@ -12,6 +12,8 @@
 ``GET    /v1/bots/{id}/runs``                     recent runs (``?kind=chat`` for the conversation)
 ``GET    /v1/bots/{id}/activity``                 the right-sidebar timeline
 ``PUT    /v1/bots/{id}/skills``                   create (no skill_id) or replace a skill; ``DELETE .../skills/{sid}``
+``GET    /v1/bots/{id}/memory?bank=bot|shared``  what Hindsight holds (``q``, ``offset``); ``POST`` adds a note
+``DELETE /v1/bots/{id}/memory/{document_id}``    forget a run's learning or a note, with every fact taken from it
 ``POST   /hooks/bots/{trigger_id}``               webhook trigger: ``X-Bot-Secret`` header, body = data for the run (64 KB max)
 
 Under ``/v1`` so the API-key middleware applies; every route needs an authenticated principal (as Monitoring).
@@ -25,12 +27,13 @@ import asyncio
 from hmac import compare_digest
 from typing import Any, Literal
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from seleric_swarm.api.mission_access import request_principal
 from seleric_swarm.conversations.contracts import Principal
-from seleric_swarm.services.bots import schedule, store
+from seleric_swarm.services.bots import hindsight, schedule, store
 
 router = APIRouter(prefix="/v1/bots")
 hooks_router = APIRouter(prefix="/hooks/bots")
@@ -74,6 +77,11 @@ class SkillBody(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     body: str = Field(min_length=1, max_length=8000)
     enabled: bool = True
+
+
+class NewNote(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    bank: Literal["bot", "shared"] = "bot"
 
 
 class NewRun(BaseModel):
@@ -218,3 +226,47 @@ async def webhook(trigger_id: str, request: Request) -> dict[str, Any]:
     if done is None:
         raise HTTPException(status_code=404, detail="not found")
     return done
+
+
+def _memory_bank(bot_id: str, bank: str) -> tuple[hindsight.Memory, str]:
+    mem = hindsight.memory()
+    if mem is None:
+        raise HTTPException(status_code=503, detail="bot memory is not set up on this server (no Hindsight key)")
+    try:
+        with store.engine().begin() as conn:
+            bot = store.get_bot(conn, bot_id)
+    except KeyError as exc:
+        raise _bad(exc) from exc
+    if bank not in ("bot", "shared"):
+        raise HTTPException(status_code=400, detail="bank must be bot or shared")
+    return mem, mem.bot_bank(bot) if bank == "bot" else mem.shared_bank(bot)
+
+
+async def _hindsight(call: Any) -> Any:
+    try:
+        return await call
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"memory service error: {type(exc).__name__}") from exc
+
+
+@router.get("/{bot_id}/memory")
+async def get_memory(bot_id: str, bank: str = "bot", q: str = "", offset: int = 0,
+                     _: Principal = Depends(request_principal)) -> dict[str, Any]:
+    mem, bank_id = await asyncio.to_thread(_memory_bank, bot_id, bank)
+    found = await _hindsight(mem.list(bank_id, limit=50, offset=max(offset, 0), q=q.strip()[:200]))
+    return {"bank": bank_id, **found}
+
+
+@router.post("/{bot_id}/memory", status_code=202)
+async def add_note(bot_id: str, body: NewNote, who: Principal = Depends(request_principal)) -> dict[str, Any]:
+    mem, bank_id = await asyncio.to_thread(_memory_bank, bot_id, body.bank)
+    doc = hindsight.new_note_id()
+    await _hindsight(mem.retain(bank_id, content=body.text.strip(), document_id=doc, kind="note",
+                                context=f"Note from {who.user_id} for Seleric bots"))
+    return {"bank": bank_id, "document_id": doc}  # facts appear once Hindsight has extracted them
+
+
+@router.delete("/{bot_id}/memory/{document_id}", status_code=204)
+async def forget(bot_id: str, document_id: str, bank: str = "bot", _: Principal = Depends(request_principal)) -> None:
+    mem, bank_id = await asyncio.to_thread(_memory_bank, bot_id, bank)
+    await _hindsight(mem.forget(bank_id, document_id))
