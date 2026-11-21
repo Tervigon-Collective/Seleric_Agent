@@ -23,6 +23,7 @@ import { readRoute, writeRoute } from "./routing";
 const OfficeWorkspace = lazy(() => import("./components/OfficeWorkspace").then((m) => ({ default: m.OfficeWorkspace })));
 const OpsWorkspace = lazy(() => import("./components/ops/OpsWorkspace").then((m) => ({ default: m.OpsWorkspace })));
 const CommandSearch = lazy(() => import("./components/CommandSearch").then((m) => ({ default: m.CommandSearch })));
+const ModelSettings = lazy(() => import("./components/ModelSettings").then((m) => ({ default: m.ModelSettings })));
 const AdminDiagnostics = lazy(() => import("./components/AdminDiagnostics").then((m) => ({ default: m.AdminDiagnostics })));
 const PromptRegistryModal = lazy(() => import("./components/PromptRegistryModal").then((m) => ({ default: m.PromptRegistryModal })));
 
@@ -72,6 +73,7 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [modelsOpen, setModelsOpen] = useState(false);
   const [routingReady, setRoutingReady] = useState(false);
   const dark = useThemeStore((s) => s.dark);
   const syncSystemTheme = useThemeStore((s) => s.syncSystem);
@@ -151,7 +153,7 @@ export default function App() {
       }
       // Modals handle their own Escape; this only folds the side panels.
       // A dialog that just consumed this Escape (Radix marks it handled) must not also fold the sidebar behind it.
-      if (event.key === "Escape" && !event.defaultPrevented && !searchOpen && !promptsOpen && !diagnosticsOpen) {
+      if (event.key === "Escape" && !event.defaultPrevented && !searchOpen && !promptsOpen && !diagnosticsOpen && !modelsOpen) {
         const shell = useShellStore.getState();
         if (shell.detailsOpen) shell.toggleDetails();
         else if (shell.sidebarOpen) shell.toggleSidebar();
@@ -160,6 +162,7 @@ export default function App() {
     const openPrompts = () => { setWorkspace("conversation"); setPromptsOpen(true); };
     const openSearch = () => setSearchOpen(true);
     const openDiagnostics = () => setDiagnosticsOpen(true);
+    const openModels = () => setModelsOpen(true);
     const result = (event: Event) => {
       const detail = (event as CustomEvent<{ thread_id?: string }>).detail;
       if (detail?.thread_id) { setWorkspace("conversation"); void selectThread(detail.thread_id); }
@@ -179,6 +182,7 @@ export default function App() {
     window.addEventListener(APP_EVENTS.prompts, openPrompts);
     window.addEventListener(APP_EVENTS.search, openSearch);
     window.addEventListener(APP_EVENTS.diagnostics, openDiagnostics);
+    window.addEventListener(APP_EVENTS.models, openModels);
     window.addEventListener("popstate", popstate);
     return () => {
       window.removeEventListener("keydown", keyboard);
@@ -186,13 +190,15 @@ export default function App() {
       window.removeEventListener(APP_EVENTS.prompts, openPrompts);
       window.removeEventListener(APP_EVENTS.search, openSearch);
       window.removeEventListener(APP_EVENTS.diagnostics, openDiagnostics);
+      window.removeEventListener(APP_EVENTS.models, openModels);
       window.removeEventListener("popstate", popstate);
     };
-  }, [clearSelection, selectThread, setWorkspace, searchOpen, promptsOpen, diagnosticsOpen]);
+  }, [clearSelection, selectThread, setWorkspace, searchOpen, promptsOpen, diagnosticsOpen, modelsOpen]);
 
   const dialogs = (
     <>
       {searchOpen && <Suspense fallback={null}><CommandSearch open onClose={() => setSearchOpen(false)} /></Suspense>}
+      {modelsOpen && <Suspense fallback={null}><ModelSettings open onClose={() => setModelsOpen(false)} /></Suspense>}
       {diagnosticsOpen && <Suspense fallback={null}><AdminDiagnostics open onClose={() => setDiagnosticsOpen(false)} /></Suspense>}
       <VoiceOverlay />
     </>

@@ -1,9 +1,10 @@
 """Resolve the pydantic-ai model the V3 agent should run with.
 
-Uses the same Azure OpenAI-compatible client the rest of this repo already
-talks through. ``llm_provider=fake`` (tests) or missing credentials fall
-back to the existing stub ``TestModel`` so the UI path stays exercisable
-without a live LLM.
+Uses the same OpenAI-compatible client the rest of this repo already talks
+through, pointed at the OpenAI platform or Azure per chain entry.
+``llm_provider=fake`` (tests) or no credentials for any entry fall back to
+the existing stub ``TestModel`` so the UI path stays exercisable without a
+live LLM.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from seleric_swarm.agent.model_health import (
     HealthGatedChatModel,
     PatientModel,
 )
-from seleric_swarm.config.settings import Settings, configured_chat_model
+from seleric_swarm.config.settings import Settings
 
 # Read timeout (httpx) for the agent's model client. A hung call costs its
 # full timeout (measured), so the default stays short. Reasoning models
@@ -107,14 +108,18 @@ class EffortModel(WrapperModel):
 
 
 def resolve_loop_model(settings: Settings) -> Model:
-    """The loop's model chain: ``AZURE_OPENAI_MODELS`` in order, each with its own request shape.
+    """The loop's model chain: Settings → Models "Main model" + fallbacks, else ``LLM_MODELS`` / ``AZURE_OPENAI_MODELS``.
 
-    A reasoning model gets ``reasoning_effort`` (low by default, raised by ``escalate``) and a completion cap with
-    thinking headroom; any other model gets temperature 0 and the plain cap, and never ``reasoning_effort`` (a
-    non-reasoning fallback rejects it). Cooldown, per-request cap and patience come from the shared health gate.
+    Each entry runs on its connection (base URL + key); an entry whose connection is gone or keyless is left out.
+    A reasoning model (or one given a Thinking level) gets ``reasoning_effort`` and a completion cap with thinking
+    headroom; any other model gets temperature 0 and the plain cap, never ``reasoning_effort`` (a non-reasoning
+    fallback rejects it). Cooldown and patience come from the shared health gate, so a 429 moves to the next entry.
     """
-    model_name = configured_chat_model(settings)
-    if settings.llm_provider == "fake" or not model_name or not settings.azure_openai_api_key.strip():
+    from seleric_swarm.llm.models_store import connections, role_chain
+
+    known = connections(settings)
+    chain = [(known[c], name, thinking) for c, name, thinking in role_chain(settings, "main") if c in known]
+    if settings.llm_provider == "fake" or not chain:
         return TestModel(call_tools=[])
 
     from pydantic_ai.models.fallback import FallbackModel
@@ -124,18 +129,27 @@ def resolve_loop_model(settings: Settings) -> Model:
     from seleric_swarm.llm.adapters.azure_openai_compatible import AzureOpenAICompatibleAdapter
 
     settings = settings.model_copy(update={"llm_timeout_s": max(settings.llm_timeout_s, AGENT_LLM_TIMEOUT_S)})
-    provider = OpenAIProvider(openai_client=AzureOpenAICompatibleAdapter(settings).async_client)
+    providers: dict[str, OpenAIProvider] = {}
+
+    def provider_for(conn: Any) -> OpenAIProvider:
+        if conn.id not in providers:
+            adapter = AzureOpenAICompatibleAdapter(settings, base_url=conn.base_url, api_key=conn.api_key)
+            providers[conn.id] = OpenAIProvider(openai_client=adapter.async_client)
+        return providers[conn.id]
+
     models: list[Model] = []
-    for name in settings.resolved_models() or [model_name]:
-        if is_reasoning_model(name):
+    for conn, name, thinking in chain:
+        reasoning = bool(thinking) or is_reasoning_model(name)
+        if reasoning:
             tuning = OpenAIChatModelSettings(
-                openai_reasoning_effort=LOOP_REASONING_EFFORT, max_tokens=LOOP_MAX_TOKENS + LOOP_REASONING_BUDGET
+                openai_reasoning_effort=thinking or LOOP_REASONING_EFFORT,
+                max_tokens=LOOP_MAX_TOKENS + LOOP_REASONING_BUDGET,
             )
         else:
             tuning = OpenAIChatModelSettings(temperature=0, max_tokens=LOOP_MAX_TOKENS)
         chat: Model = HealthGatedChatModel(
-            name, provider=provider, settings=tuning, health=MODEL_HEALTH, health_key=f"loop:{name}"
+            name, provider=provider_for(conn), settings=tuning, health=MODEL_HEALTH, health_key=f"loop:{conn.id}:{name}"
         )
-        models.append(EffortModel(chat) if is_reasoning_model(name) else chat)
-    chain: Model = models[0] if len(models) == 1 else FallbackModel(*models)
-    return PatientModel(chain, health=MODEL_HEALTH)
+        models.append(EffortModel(chat) if reasoning else chat)
+    chain_model: Model = models[0] if len(models) == 1 else FallbackModel(*models)
+    return PatientModel(chain_model, health=MODEL_HEALTH)

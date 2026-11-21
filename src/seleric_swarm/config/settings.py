@@ -71,6 +71,19 @@ class Settings(BaseSettings):
     # is unhealthy (circuit open) or exhausts its own retries. Empty = no
     # gateway wrapping, single-model behavior unchanged.
     llm_fallback_models: str = ""
+    # Provider-routed chains, tried in order: JSON array or comma list of
+    # "provider:model" (provider = openai | azure; no prefix = azure), e.g.
+    # LLM_MODELS=["openai:gpt-5-mini","azure:gpt-5-mini"]. Empty = the Azure-only
+    # AZURE_OPENAI_MODELS behaviour. LLM_HELPER_MODELS is the chain for LLMPort
+    # helper calls (query enhance, value checks); empty = the legacy gateway.
+    llm_models: str = ""
+    llm_helper_models: str = ""
+    # OpenAI platform (company API key, pay per use). Not the SDK's own OPENAI_API_KEY name:
+    # clients built without a key (voice worker) would silently pick that up and send it elsewhere.
+    openai_api_key: str = Field(
+        default="", validation_alias=AliasChoices("SELERIC_OPENAI_API_KEY")
+    )
+    openai_base_url: str = "https://api.openai.com/v1"
 
     azure_openai_endpoint: str = ""
     azure_openai_api_key: str = ""
@@ -495,19 +508,9 @@ class Settings(BaseSettings):
         string) if set; otherwise falls back to the legacy
         AZURE_OPENAI_MODEL1/MODEL2 pair, then the singular AZURE_OPENAI_MODEL.
         """
-        raw = (self.azure_openai_models or "").strip()
-        if raw:
-            ids: list[str] = []
-            if raw.startswith("["):
-                try:
-                    parsed = json.loads(raw)
-                    ids = [str(m).strip() for m in parsed if str(m).strip()]
-                except (json.JSONDecodeError, TypeError):
-                    ids = []
-            if not ids:
-                ids = [m.strip() for m in raw.split(",") if m.strip()]
-            if ids:
-                return ids
+        ids = parse_model_list(self.azure_openai_models)
+        if ids:
+            return ids
         ids = [m for m in (self.azure_openai_model1, self.azure_openai_model2) if m]
         if ids:
             return ids
@@ -520,6 +523,48 @@ class Settings(BaseSettings):
     def numbered_fallback_models(self) -> list[str]:
         """Every configured model after the primary, in priority order."""
         return self.resolved_models()[1:]
+
+    def loop_chain(self) -> list[tuple[str, str]]:
+        """(provider, model) pairs for the agent loop: LLM_MODELS, else the Azure models."""
+        if (self.llm_models or "").strip():
+            return [split_provider(m) for m in parse_model_list(self.llm_models)]
+        return [("azure", m) for m in self.resolved_models()]
+
+    def helper_chain(self) -> list[tuple[str, str]]:
+        """(provider, model) pairs for LLMPort helper calls; empty = legacy single-adapter gateway."""
+        return [split_provider(m) for m in parse_model_list(self.llm_helper_models)]
+
+    def provider_key(self, provider: str) -> str:
+        """The API key a chain entry would use; "" when that provider is not configured."""
+        if provider == "openai":
+            return self.openai_api_key.strip()
+        return self.azure_openai_api_key.strip() if self.azure_openai_endpoint.strip() else ""
+
+
+LLM_PROVIDERS = ("openai", "azure")
+
+
+def parse_model_list(raw: str | None) -> list[str]:
+    """A JSON array or a comma-separated string of model ids."""
+    raw = (raw or "").strip()
+    if not raw:
+        return []
+    if raw.startswith("["):
+        try:
+            ids = [str(m).strip() for m in json.loads(raw) if str(m).strip()]
+        except (json.JSONDecodeError, TypeError):
+            ids = []
+        if ids:
+            return ids
+    return [m.strip() for m in raw.split(",") if m.strip()]
+
+
+def split_provider(entry: str) -> tuple[str, str]:
+    """"openai:gpt-5-mini" -> ("openai", "gpt-5-mini"); no known prefix -> ("azure", entry)."""
+    provider, sep, model = entry.partition(":")
+    if sep and provider.strip().lower() in LLM_PROVIDERS and model.strip():
+        return provider.strip().lower(), model.strip()
+    return "azure", entry.strip()
 
 
 def helper_chat_model(settings: object) -> str:

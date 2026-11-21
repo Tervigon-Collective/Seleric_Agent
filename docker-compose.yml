@@ -101,6 +101,11 @@ services:
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      # Settings → Models (D-243): saved provider keys are encrypted with this; LLM chains when nothing is saved.
+      SELERIC_MODELS_KEY: ${SELERIC_MODELS_KEY:-}
+      SELERIC_OPENAI_API_KEY: ${SELERIC_OPENAI_API_KEY:-}
+      LLM_MODELS: ${LLM_MODELS:-}
+      LLM_HELPER_MODELS: ${LLM_HELPER_MODELS:-}
       AZURE_AUTH_STYLE: ${AZURE_AUTH_STYLE:-openai_compatible}
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-05-01-preview}
       AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
@@ -208,6 +213,11 @@ services:
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      # Settings → Models (D-243): saved provider keys are encrypted with this; LLM chains when nothing is saved.
+      SELERIC_MODELS_KEY: ${SELERIC_MODELS_KEY:-}
+      SELERIC_OPENAI_API_KEY: ${SELERIC_OPENAI_API_KEY:-}
+      LLM_MODELS: ${LLM_MODELS:-}
+      LLM_HELPER_MODELS: ${LLM_HELPER_MODELS:-}
       AZURE_AUTH_STYLE: ${AZURE_AUTH_STYLE:-openai_compatible}
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-05-01-preview}
       AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
@@ -316,6 +326,11 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      # Settings → Models (D-243): saved provider keys are encrypted with this; LLM chains when nothing is saved.
+      SELERIC_MODELS_KEY: ${SELERIC_MODELS_KEY:-}
+      SELERIC_OPENAI_API_KEY: ${SELERIC_OPENAI_API_KEY:-}
+      LLM_MODELS: ${LLM_MODELS:-}
+      LLM_HELPER_MODELS: ${LLM_HELPER_MODELS:-}
       AZURE_AUTH_STYLE: ${AZURE_AUTH_STYLE:-openai_compatible}
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-05-01-preview}
       AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
@@ -366,6 +381,11 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      # Settings → Models (D-243): saved provider keys are encrypted with this; LLM chains when nothing is saved.
+      SELERIC_MODELS_KEY: ${SELERIC_MODELS_KEY:-}
+      SELERIC_OPENAI_API_KEY: ${SELERIC_OPENAI_API_KEY:-}
+      LLM_MODELS: ${LLM_MODELS:-}
+      LLM_HELPER_MODELS: ${LLM_HELPER_MODELS:-}
       AZURE_AUTH_STYLE: ${AZURE_AUTH_STYLE:-openai_compatible}
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-05-01-preview}
       AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}

@@ -10,11 +10,11 @@ import { useConversationStore } from "../stores/conversation";
 import { useMonitoringStore } from "../stores/monitoring";
 import { useShellStore, type Workspace } from "../stores/shell";
 import { useThemeStore, type ThemeMode } from "../stores/theme";
-import { ActivityIcon, MenuIcon, PlusIcon, PromptsIcon, SearchIcon, SettingsIcon, SlidersIcon, XIcon } from "./icons";
+import { ActivityIcon, MenuIcon, PlusIcon, PromptsIcon, SearchIcon, SettingsIcon, SlidersIcon, SparklesIcon, XIcon } from "./icons";
 import { PANEL_BREAKPOINT, ResponsivePanel } from "./ResponsivePanel";
 
 /** Global actions live behind window events so any workspace can open them without prop drilling. */
-export const APP_EVENTS = { search: "seleric:open-search", prompts: "seleric:open-prompts", diagnostics: "seleric:open-diagnostics" } as const;
+export const APP_EVENTS = { search: "seleric:open-search", prompts: "seleric:open-prompts", diagnostics: "seleric:open-diagnostics", models: "seleric:open-models" } as const;
 const fire = (name: string) => window.dispatchEvent(new Event(name));
 
 const THEME_LABEL: Record<ThemeMode, string> = { light: "Light", system: "System", dark: "Dark" };
@@ -57,7 +57,7 @@ function SettingsMenu() {
       {/* No asChild: the Button part is not a forwardRef component under React 18, which would drop the menu's anchor and leave it off-screen. */}
       <DropdownMenuTrigger aria-label="Settings" className={cn(buttonVariants({ variant: "ghost" }), "h-auto w-full justify-start gap-3 rounded-lg px-2.5 py-2 text-left font-normal lg:group-data-[collapsed=true]/sb:justify-center lg:group-data-[collapsed=true]/sb:px-0")}>
         <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--brand-soft)] text-[var(--brand-text)]"><SettingsIcon /></span>
-        <span className={cn("flex min-w-0 flex-col leading-tight", RAIL_HIDE)}><span className="text-sm font-medium">Settings</span><span className="text-xs text-muted-foreground">Theme, prompts and tools</span></span>
+        <span className={cn("flex min-w-0 flex-col leading-tight", RAIL_HIDE)}><span className="text-sm font-medium">Settings</span><span className="text-xs text-muted-foreground">Theme, models, prompts and tools</span></span>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="w-56">
         <DropdownMenuLabel>Theme</DropdownMenuLabel>
@@ -65,6 +65,7 @@ function SettingsMenu() {
           {(Object.keys(THEME_LABEL) as ThemeMode[]).map((m) => <DropdownMenuRadioItem key={m} value={m}>{THEME_LABEL[m]}</DropdownMenuRadioItem>)}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => fire(APP_EVENTS.models)}><SparklesIcon />Models</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => fire(APP_EVENTS.prompts)}><PromptsIcon />Prompts</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => fire(APP_EVENTS.diagnostics)} aria-label="Open admin diagnostics"><SlidersIcon />Diagnostics</DropdownMenuItem>
       </DropdownMenuContent>

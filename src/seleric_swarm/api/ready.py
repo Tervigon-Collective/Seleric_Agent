@@ -185,11 +185,10 @@ def check_readiness(runtime: SwarmRuntime, *, timeout_s: float | None = None) ->
     checks["provider"]["sample"] = caps[:5]
     checks["mcp"] = dict(checks["provider"])
 
-    llm_configured = settings.llm_provider == "fake" or bool(
-        settings.azure_openai_endpoint
-        and settings.azure_openai_api_key
-        and settings.primary_model()
-    )
+    from seleric_swarm.llm.models_store import connections, role_chain
+
+    known = connections(settings)
+    llm_configured = settings.llm_provider == "fake" or any(c in known for c, _, _ in role_chain(settings, "main"))
     checks["llm"] = {
         "ok": llm_configured,
         "required": True,

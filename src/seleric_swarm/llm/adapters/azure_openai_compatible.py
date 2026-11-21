@@ -104,18 +104,21 @@ def normalize_openai_error(exc: BaseException) -> LLMError:
 class AzureOpenAICompatibleAdapter:
     """Azure AI Inference / OpenAI-compatible client isolated behind LLMPort."""
 
-    def __init__(self, settings: Settings) -> None:
-        api_key = resolve_secret("AZURE_OPENAI_API_KEY", settings, settings.azure_openai_api_key)
+    def __init__(self, settings: Settings, *, base_url: str | None = None, api_key: str | None = None) -> None:
+        """``base_url`` + ``api_key`` point the adapter at a plain OpenAI-compatible
+        endpoint (the OpenAI platform) instead of the Azure one in settings."""
+        key_name = "SELERIC_OPENAI_API_KEY" if base_url else "AZURE_OPENAI_API_KEY"
+        api_key = resolve_secret(key_name, settings, api_key if base_url else settings.azure_openai_api_key)
         if not api_key:
             raise LLMError(
                 LLMErrorCode.AUTH,
-                "AZURE_OPENAI_API_KEY is not set. Use env for local or Key Vault in deploy.",
+                f"{key_name} is not set. Use env for local or Key Vault in deploy.",
                 retryable=False,
             )
         self._settings = settings
         self._model = settings.primary_model()
         self._dev = settings.is_dev_surface()
-        client = self._build_client(settings, api_key)
+        client = self._build_client(settings, api_key, base_url)
         self._client, self._traced = self._wrap_tracing(client)
         self._max_retries = max(0, settings.llm_max_retries)
         # Per-model learned param quirks, e.g. reasoning models (gpt-5*, o-series)
@@ -134,12 +137,13 @@ class AzureOpenAICompatibleAdapter:
         return self._client
 
     @staticmethod
-    def _build_client(settings: Settings, api_key: str) -> Any:
+    def _build_client(settings: Settings, api_key: str, base_url: str | None = None) -> Any:
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            return AzureOpenAICompatibleAdapter._new_client(settings, api_key)
+            return AzureOpenAICompatibleAdapter._new_client(settings, api_key, base_url)
         key = (
+            base_url,
             settings.azure_auth_style,
             settings.azure_openai_endpoint,
             settings.azure_openai_api_version,
@@ -149,11 +153,13 @@ class AzureOpenAICompatibleAdapter:
         clients = _CLIENTS.setdefault(loop, {})
         client = clients.get(key)
         if client is None or client.is_closed():
-            client = clients[key] = AzureOpenAICompatibleAdapter._new_client(settings, api_key)
+            client = clients[key] = AzureOpenAICompatibleAdapter._new_client(settings, api_key, base_url)
         return client
 
     @staticmethod
-    def _new_client(settings: Settings, api_key: str) -> Any:
+    def _new_client(settings: Settings, api_key: str, base_url: str | None = None) -> Any:
+        if base_url:
+            return AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=settings.llm_timeout_s, max_retries=0)
         endpoint = settings.azure_openai_endpoint.rstrip("/")
         # `*.services.ai.azure.com` is Azure AI Inference (OpenAI-compatible), which
         # does not use classic Azure "deployment name" routing. Default to the
