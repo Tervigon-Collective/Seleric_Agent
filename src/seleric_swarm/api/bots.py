@@ -30,6 +30,7 @@ from typing import Any, Literal
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 
 from seleric_swarm.api.mission_access import request_principal
 from seleric_swarm.conversations.contracts import Principal
@@ -209,6 +210,8 @@ def _hook(trigger_id: str, secret: str, data: str, idempotency_key: str) -> dict
         status = schedule.fire(conn, trig, bot, kind="webhook", reason=f"webhook {trigger_id} ({len(data)} characters)",
                                dedupe_key=f"webhook:{trigger_id}:{idempotency_key}" if idempotency_key else None,
                                detail={"data": data[:4000]}, query=data)
+        if status != "duplicate":
+            conn.execute(text("UPDATE bots.triggers SET last_fired_at = NOW() WHERE trigger_id = :t"), {"t": trigger_id})
         return {"status": status}
 
 
