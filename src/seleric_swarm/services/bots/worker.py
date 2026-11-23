@@ -35,7 +35,8 @@ OUTCOME_RULE = (
     "unverified> — <one-line reason>. action_needed: the data you read shows something a person should act on. "
     "no_action: you checked and all is in order. cleared: the condition that started this run is no longer there. "
     "unverified: you could not check (a tool failed, data was missing) — say what you could not check; never "
-    "choose action_needed only because a check failed.")
+    "choose action_needed only because a check failed. Today is not over: a drop of today-so-far against a full "
+    "earlier day is not a finding — compare the same hours (hourly insights) before calling anything a drop.")
 
 
 def bots_enabled() -> bool:
