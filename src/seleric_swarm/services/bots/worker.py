@@ -73,7 +73,8 @@ def question(run: dict[str, Any]) -> str:
     if run["trigger_kind"] in ("chat", "manual") and run["query"].strip():
         return run["query"].strip()
     if run["trigger_kind"] == "watch":
-        return ("A watched value changed (see why above). Confirm the change on live data, say what it means for the "
+        return ("A watched value changed (see why above). Confirm it on live data with the same tool and arguments shown "
+                "there (they are what the watch checks), or fetch the changed item by its id; say what it means for the "
                 "account, then do your standing task for it.")
     if run["trigger_kind"] == "webhook":
         return "A webhook started this run (see why above). Do your standing task for what it reports."

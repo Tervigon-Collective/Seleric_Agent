@@ -197,6 +197,6 @@ def record_watch(conn: Connection, trig: dict[str, Any], payload: Any, error: st
                                                       if len(moved) > WATCH_SHOWN_CHANGES else "")
     conn.execute(text("UPDATE bots.triggers SET last_fired_at = :now WHERE trigger_id = :t"), {"now": now, "t": trig["trigger_id"]})
     return fire(conn, trig, store.get_bot(conn, trig["bot_id"]), kind="watch",
-                 reason=f"{cfg['tool']} changed: {shown or 'rows changed'}",
+                 reason=f"{cfg['tool']} {json.dumps(cfg.get('args') or {}, sort_keys=True)} changed: {shown or 'rows changed'}",
                  dedupe_key=f"watch:{trig['trigger_id']}:{now.isoformat()}",
                  detail={"tool": cfg["tool"], "fields": cfg["fields"], "changes": moved[:50], "before": prev, "after": fp})
