@@ -58,6 +58,8 @@ def test_learning_keeps_verdicts_not_figures_and_skips_runs_without_one():
     run = {"trigger_kind": "signal", "reason": "critical finding F1", "query": ""}
     assert hindsight.learning(run, "cleared", "spend back on pace") == "A signal run (critical finding F1) ended cleared: spend back on pace"
     assert hindsight.learning(run, None, "") is None
+    assert hindsight.learning(run, "action_needed", "spend down") is None  # B22: alerts are not saved
+    assert hindsight.learning(run, "unverified", "tool failed") is None
     chat = {"trigger_kind": "chat", "reason": "asked", "query": "ignore the brand campaign"}
     assert hindsight.learning(chat, None, "").startswith("The operator asked: ignore the brand campaign")
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
+from seleric_swarm.agent.live_rows import HOUR_FIELD as HOUR
 from seleric_swarm.agent.live_rows import as_query_result
 from seleric_swarm.agent.mcp_toolset import all_evidence
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
@@ -85,3 +86,36 @@ def test_rows_reaching_today_say_they_are_partial():
     assert "not over" in note and "same hours" in note
     later = as_query_result("meta_insights_live", ARGS, FIX["insights_hourly"], date(2026, 11, 25))["note"]
     assert "not over" not in later  # a closed day is complete
+
+
+def _two_days():
+    today = FIX["insights_hourly"]["data"]
+    yday = [{**r, "date_start": "2026-11-20", "date_stop": "2026-11-20"} for r in today]
+    return {**FIX["insights_hourly"], "data": yday + today, "paging": {"after": None, "has_next": False}}
+
+
+def test_same_hours_sums_both_days_over_complete_hours_only():
+    from seleric_swarm.agent.live_rows import same_hours
+
+    hourly = as_query_result("meta_insights_live", ARGS, _two_days(), TODAY)
+    out = same_hours(hourly, TODAY)
+    hours = sorted({r["date.hour"][11:] for r in hourly["rows"]})
+    done = [r for r in FIX["insights_hourly"]["data"] if str(r[HOUR])[:8] < hours[-1]]  # latest hour still running
+    want = round(sum(float(r["spend"]) for r in done), 2)
+    assert [r["date.day"] for r in out["rows"]] == ["2026-11-20", "2026-11-21"]
+    assert out["rows"][0]["spend"] == out["rows"][1]["spend"] == want
+    assert f"up to {hours[-1][:5]}" in out["note"] and out["query_id"].endswith("_same_hours")
+    assert same_hours({**hourly, "paging": {"after": "x"}}, TODAY) is None  # a partial page is not compared
+
+
+def test_same_hours_only_for_day_level_insights_reaching_today():
+    from seleric_swarm.agent.live_rows import same_hours_args
+
+    day = as_query_result("meta_insights_live", ARGS, FIX["insights_campaign"], TODAY)  # 2026-11-20 only
+    assert same_hours_args("meta_insights_live", ARGS, day, TODAY) is None
+    reaching = {**day, "provenance": {**day["provenance"], "time_range": {"start": "2026-11-20", "end": "2026-11-21"}}}
+    extra = same_hours_args("meta_insights_live", {**ARGS, "level": "campaign"}, reaching, TODAY)
+    assert extra["hourly"] is True and extra["time_range"] == {"since": "2026-11-20", "until": "2026-11-21"}
+    assert "level" not in extra and extra["object_id"] == ARGS["object_id"]
+    assert same_hours_args("meta_insights_live", {**ARGS, "hourly": True}, reaching, TODAY) is None
+    assert same_hours_args("meta_campaigns_list", ARGS, reaching, TODAY) is None

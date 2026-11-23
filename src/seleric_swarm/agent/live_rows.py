@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 # Meta reports these in the account currency's minor unit (paise for INR); spend and insights are major units.
@@ -109,3 +109,45 @@ def _note(query_id: str, measures: list[str], time_col: str | None) -> str:
     return (f"Live platform rows; budget fields are rupees (converted from paise). In run_python pass "
             f"query_ids=[{query_id!r}]: evidence then holds one item per row and measure — filter "
             f"e['metric_id'] == {example!r} and read e['value'];{when} Names are keys too (e['campaign_name']).")
+
+
+def same_hours_args(tool: str, args: dict[str, Any], result: Any, today: date) -> dict[str, Any] | None:
+    """Arguments for the hourly call behind ``same_hours`` when day-level insights reach today; else None.
+    shortcut: compares the called object's totals only (no level/breakdown split); per-campaign same-hours waits for an owner ask."""
+    if tool != "meta_insights_live" or args.get("hourly") or args.get("breakdowns") or not isinstance(result, dict):
+        return None
+    if str((result.get("provenance") or {}).get("time_range", {}).get("end", "")) < today.isoformat() or "rows" not in result:
+        return None
+    extra = {k: args[k] for k in ("object_id", "brand_id", "account_id", "fields", "filtering") if args.get(k)}
+    return extra | {"time_range": {"since": (today - timedelta(days=1)).isoformat(), "until": today.isoformat()},
+                    "time_increment": "1", "hourly": True, "limit": 500}
+
+
+def same_hours(hourly: Any, today: date) -> dict[str, Any] | None:
+    """Today and yesterday summed over the same complete hours (D-244 Q-P2-1: computed in code, live 2026-11-21 the bot
+    read a partial today against a full yesterday as -35 % when the same hours were -11 %). The latest hour of today is
+    still running, so the comparison stops before it."""
+    if not isinstance(hourly, dict) or not hourly.get("rows") or (hourly.get("paging") or {}).get("after"):
+        return None
+    t, y = today.isoformat(), (today - timedelta(days=1)).isoformat()
+    stamps = [str(r.get("date.hour") or "") for r in hourly["rows"]]
+    cutoff = max((h[11:] for h in stamps if h.startswith(t)), default="")
+    if not cutoff or cutoff <= "00:00:00":
+        return None
+    measures = hourly["provenance"]["metric_ids"]
+    sums = {d: dict.fromkeys(measures, 0.0) for d in (y, t)}
+    for row, stamp in zip(hourly["rows"], stamps, strict=True):
+        if stamp[:10] in sums and stamp[11:] < cutoff:
+            for m in measures:
+                sums[stamp[:10]][m] += row.get(m) or 0.0
+    query_id = f"{hourly['query_id']}_same_hours"
+    return {
+        "query_id": query_id,
+        "columns": ["date.day", *measures],
+        "rows": [{"date.day": d, **{m: round(v, 2) for m, v in sums[d].items()}} for d in (y, t)],
+        "row_count": 2,
+        "provenance": {**hourly["provenance"], "query_id": query_id, "time_range": {"start": y, "end": t}},
+        "note": (f"Computed in code: today and yesterday over the same complete hours, 00:00 up to {cutoff[:5]} (account "
+                 f"time). Use these rows (query_id {query_id!r}) for any today-vs-yesterday statement; full-day rows "
+                 "for today are partial."),
+    }

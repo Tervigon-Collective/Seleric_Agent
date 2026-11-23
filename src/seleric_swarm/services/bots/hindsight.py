@@ -122,12 +122,18 @@ def recalled_block(items: list[dict[str, str]]) -> str:
             "current data; check anything it says against live data):\n" + "\n".join(lines))
 
 
+# B22 (owner, 2026-11-23): only calm verdicts are saved (plus what people write): a retained alert was recalled into
+# later runs and repeated (23 recalled memories, alerts stopped after the preview banks were wiped).
+RETAINED_OUTCOMES = frozenset({"no_action", "cleared"})
+
+
 def learning(run: dict[str, Any], outcome: str | None, why: str) -> str | None:
     """What a run teaches the next one: the trigger, the verdict and its reason, and for chat the operator's question.
     Not the run's figures: yesterday's spend recalled next week as a fact would read as current (advisor, P2)."""
+    calm = outcome in RETAINED_OUTCOMES and bool(why)
     if run["trigger_kind"] == "chat":
         q = run["query"].strip()
-        return f"The operator asked: {q[:800]}" + (f"\nYou concluded ({outcome}): {why}" if outcome and why else "")
-    if not outcome or not why:
+        return f"The operator asked: {q[:800]}" + (f"\nYou concluded ({outcome}): {why}" if calm else "")
+    if not calm:
         return None
     return f"A {run['trigger_kind']} run ({run['reason'][:300]}) ended {outcome}: {why}"
