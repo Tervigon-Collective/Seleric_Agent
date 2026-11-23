@@ -16,12 +16,13 @@ from sqlalchemy import Connection, Engine, create_engine, text
 
 from seleric_swarm.config.settings import get_settings
 from seleric_swarm.protocols.mcp.servers.seleric_remote import ADS_READ_TOOLS
+from seleric_swarm.services.bots import eda
 
 TEMPLATES_DIR = Path("config/bots")  # relative to the working dir, like config/live_monitor.yaml (/app in the image)
 
 # Phase 1 is read-only: a bot may only add these Seleric MCP tools to the agent's base (catalogue/metrics) set.
 # Write tools reach bots in Phase 3, through per-bot D-239 keys, never through this list.
-READ_TOOLS: frozenset[str] = frozenset(ADS_READ_TOOLS)
+READ_TOOLS: frozenset[str] = frozenset({*ADS_READ_TOOLS, eda.TOOL})
 TRIGGER_KINDS = ("cron", "signal", "watch", "webhook")
 # Triggers with no person waiting: they merge into a queued run and count toward max_scheduled_runs_per_day.
 AUTO_KINDS = ("cron", "signal", "watch", "webhook")
@@ -85,8 +86,8 @@ def check_trigger(kind: str, config: dict[str, Any]) -> dict[str, Any]:
         return {}
     if kind == "watch":
         tool, fields = str(config.get("tool") or ""), [str(f) for f in config.get("fields") or [] if str(f).strip()]
-        if tool not in READ_TOOLS:
-            raise BotError(f"watch tool must be one of the bot read tools, got {tool!r}")
+        if tool not in ADS_READ_TOOLS:  # a watch calls MCP directly; bot_eda is computed in the agent, not an MCP tool
+            raise BotError(f"watch tool must be one of the live ad read tools, got {tool!r}")
         if not fields:
             raise BotError("watch trigger needs the fields whose change should start a run (e.g. effective_status)")
         args = config.get("args") or {}

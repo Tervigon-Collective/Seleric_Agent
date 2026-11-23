@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from seleric_swarm.services.bots import delivery, hindsight, schedule, store
+from seleric_swarm.services.bots import delivery, eda, hindsight, schedule, store
 
 _log = logging.getLogger("seleric.bots")
 
@@ -36,7 +36,8 @@ OUTCOME_RULE = (
     "no_action: you checked and all is in order. cleared: the condition that started this run is no longer there. "
     "unverified: you could not check (a tool failed, data was missing) — say what you could not check; never "
     "choose action_needed only because a check failed. Today is not over: a drop of today-so-far against a full "
-    "earlier day is not a finding — compare the same hours (hourly insights) before calling anything a drop.")
+    "earlier day is not a finding — compare the same hours (hourly insights) before calling anything a drop. A value inside its normal range for "
+    "this hour (p10-p90 in bot_eda, when you have it) is not a finding on its own.")
 
 
 def bots_enabled() -> bool:
@@ -83,6 +84,12 @@ def question(run: dict[str, Any]) -> str:
         return ("A monitoring finding started this run (see why above). It may be stale: re-check that condition on live "
                 "data first. If it has cleared, say so and why no action is needed; otherwise do your standing task for it.")
     return "Do your standing task now."
+
+
+def skipped_eda(bot: dict[str, Any], run: dict[str, Any], calls: list[dict[str, Any]]) -> bool:
+    """A standing run (not chat) of a bot that has the EDA tool, which never got a completed EDA."""
+    return (eda.TOOL in bot["tools"] and run["trigger_kind"] != "chat"
+            and not any(c["tool"] == eda.TOOL and c["outcome"] == "completed" for c in calls))
 
 
 def outcome_of(answer: str) -> tuple[str | None, str]:
@@ -176,6 +183,9 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
             store.add_activity(conn, run["run_id"], bot["bot_id"], kind="memory", **row)
         if error:
             store.add_activity(conn, run["run_id"], bot["bot_id"], kind="note", outcome="failed", summary=error[:500])
+        if skipped_eda(bot, run, calls):
+            store.add_activity(conn, run["run_id"], bot["bot_id"], kind="note", outcome="skipped", tool=eda.TOOL,
+                               summary="The run did not read its EDA (B27): its verdict rests on its own reads only.")
         previous = store.previous_auto_outcome(conn, bot["bot_id"], run["run_id"])
         store.finish_run(conn, run["run_id"], status=status, outcome=outcome, answer=answer, error=error,
                          mission_id=mission_id, instructions_version=bot["instructions_version"], tool_calls=len(calls))
