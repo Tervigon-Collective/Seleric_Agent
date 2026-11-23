@@ -106,6 +106,8 @@ def test_bot_eda_is_a_bot_tool_and_a_skip_is_recorded():
     assert worker.skipped_eda(bot, {"trigger_kind": "cron"}, [{"tool": "meta_insights_live", "outcome": "completed"}])
     assert not worker.skipped_eda(bot, {"trigger_kind": "cron"}, [{"tool": eda.TOOL, "outcome": "completed"}])
     assert not worker.skipped_eda(bot, {"trigger_kind": "chat"}, [])
+    assert not worker.skipped_eda(bot, {"trigger_kind": "manual", "query": "what did Sale spend?"}, [])
+    assert worker.skipped_eda(bot, {"trigger_kind": "manual", "query": " "}, [])
 
 
 def test_model_view_of_a_full_pack_fits_the_tool_result_cap():

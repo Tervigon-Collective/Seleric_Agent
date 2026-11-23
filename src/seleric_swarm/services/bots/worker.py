@@ -87,8 +87,10 @@ def question(run: dict[str, Any]) -> str:
 
 
 def skipped_eda(bot: dict[str, Any], run: dict[str, Any], calls: list[dict[str, Any]]) -> bool:
-    """A standing run (not chat) of a bot that has the EDA tool, which never got a completed EDA."""
-    return (eda.TOOL in bot["tools"] and run["trigger_kind"] != "chat"
+    """A standing-task run (what question() treats as one: not chat, not a manual run with its own question) of a bot
+    that has the EDA tool, which never got a completed EDA."""
+    standing = run["trigger_kind"] != "chat" and not (run["trigger_kind"] == "manual" and str(run.get("query") or "").strip())
+    return (eda.TOOL in bot["tools"] and standing
             and not any(c["tool"] == eda.TOOL and c["outcome"] == "completed" for c in calls))
 
 
