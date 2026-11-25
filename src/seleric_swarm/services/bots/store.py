@@ -154,10 +154,11 @@ def create_bot(conn: Connection, *, template: str, actor: str, name: str | None 
     if tpl is None:
         raise BotError(f"unknown template {template!r}")
     bot_id = new_id("bot")
+    name = unique_name(conn, (name or tpl["name"]).strip())
     conn.execute(text("""
         INSERT INTO bots.bots(bot_id, brand_id, name, template, role, instructions, tools, limits, notify, created_by, updated_by)
         VALUES (:b, :brand, :name, :tpl, :role, :ins, CAST(:tools AS jsonb), CAST(:limits AS jsonb), CAST(:notify AS jsonb), :a, :a)"""),
-        {"b": bot_id, "brand": brand_id, "name": (name or tpl["name"]).strip(), "tpl": template, "role": tpl.get("role", ""),
+        {"b": bot_id, "brand": brand_id, "name": name, "tpl": template, "role": tpl.get("role", ""),
          "ins": tpl.get("instructions", ""), "tools": _j(check_tools(tpl.get("tools") or [])), "limits": _j(DEFAULT_LIMITS),
          "notify": _j(check_notify(tpl.get("notify") or {})), "a": actor})
     conn.execute(text("INSERT INTO bots.instruction_versions(bot_id, version, body, author) VALUES (:b, 1, :body, :a)"),
@@ -167,6 +168,24 @@ def create_bot(conn: Connection, *, template: str, actor: str, name: str | None 
     for skill in tpl.get("skills") or []:
         save_skill(conn, bot_id, name=skill["name"], body=skill["body"], author=actor)
     return get_bot(conn, bot_id)
+
+
+def unique_name(conn: Connection, base: str) -> str:
+    """Two bots from one template must be told apart in the list: the second "Marketing" becomes "Marketing 2"."""
+    taken = {r[0] for r in conn.execute(text("SELECT name FROM bots.bots"))}
+    name, n = base, 2
+    while name in taken:
+        name, n = f"{base} {n}", n + 1
+    return name
+
+
+def delete_bot(conn: Connection, bot_id: str) -> None:
+    """Removes the bot with its triggers, runs, activity and skills (FK cascade). Its Hindsight memory bank is kept.
+    Refused while a run is in progress: the worker would write activity for a run that no longer exists."""
+    if conn.execute(text("SELECT 1 FROM bots.runs WHERE bot_id = :b AND status = 'running' LIMIT 1"), {"b": bot_id}).first():
+        raise BotError("a run is in progress; delete the bot once it finishes")
+    if conn.execute(text("DELETE FROM bots.bots WHERE bot_id = :b"), {"b": bot_id}).rowcount == 0:
+        raise KeyError(bot_id)
 
 
 def update_bot(conn: Connection, bot_id: str, *, expected_version: int, actor: str, changes: dict[str, Any]) -> dict[str, Any]:

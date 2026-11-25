@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "cn";
 import { AppFrame } from "../AppFrame";
-import { BotIcon, PlusIcon } from "../icons";
+import { ActivityIcon, BotIcon, PlusIcon, XIcon } from "../icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -448,13 +448,14 @@ export function ActivityTimeline({ activity }: { activity: BotActivity[] }) {
   );
 }
 
-function BotDetail({ bot }: { bot: Bot }) {
+function BotDetail({ bot, onShowActivity }: { bot: Bot; onShowActivity?: () => void }) {
   const runs = useBotsStore((s) => s.runs);
   const chat = useBotsStore((s) => s.chat);
   const save = useBotsStore((s) => s.save);
   const runNow = useBotsStore((s) => s.runNow);
   const busy = useBotsStore((s) => s.busy);
   const activity = useBotsStore((s) => s.activity);
+  const remove = useBotsStore((s) => s.remove);
   const running = runs.some((r) => r.status === "queued" || r.status === "running");
   return (
     <div className="flex flex-col gap-4">
@@ -466,6 +467,9 @@ function BotDetail({ bot }: { bot: Bot }) {
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 text-sm"><Switch checked={bot.enabled} onCheckedChange={(v) => void save({ enabled: v })} aria-label="Bot enabled" />{bot.enabled ? "On" : "Paused"}</label>
           <Button disabled={busy || !bot.enabled} onClick={() => void runNow()}>{running ? "Run queued…" : "Run now"}</Button>
+          <Button variant="destructive" disabled={busy}
+            onClick={() => window.confirm(`Delete “${bot.name}”? Its runs, activity, triggers and skills are removed for good. Its memory is kept.`) && void remove(bot.bot_id)}>Delete</Button>
+          {onShowActivity && <Button variant="outline" className="max-lg:hidden" aria-label="Show activity" onClick={onShowActivity}><ActivityIcon /> Activity</Button>}
         </div>
       </header>
       <Tabs defaultValue="runs">
@@ -499,6 +503,7 @@ export function BotsWorkspace() {
   const activity = useBotsStore((s) => s.activity);
   const error = useBotsStore((s) => s.error);
   const selectedId = useBotsStore((s) => s.selectedId);
+  const [activityOpen, setActivityOpen] = useState(true);
 
   useEffect(() => {
     void loadList();
@@ -511,11 +516,14 @@ export function BotsWorkspace() {
       <div className="flex min-h-0 flex-1">
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pb-10 max-md:px-3">
           {error && <p role="alert" className="m-0 mb-3 rounded-md bg-[var(--danger-soft)] px-3 py-2 text-sm text-destructive">{error}</p>}
-          {bot ? <div className="mx-auto max-w-4xl pt-1"><BotDetail bot={bot} /></div> : <p className="text-sm text-muted-foreground">{selectedId ? "Loading…" : "Create a bot from a template in the left panel."}</p>}
+          {bot ? <div className="mx-auto max-w-4xl pt-1"><BotDetail bot={bot} onShowActivity={activityOpen ? undefined : () => setActivityOpen(true)} /></div> : <p className="text-sm text-muted-foreground">{selectedId ? "Loading…" : "Create a bot from a template in the left panel."}</p>}
         </main>
-        {bot && (
+        {bot && activityOpen && (
           <aside aria-label="Bot activity" className="w-[340px] shrink-0 overflow-y-auto border-l px-3 py-3 max-lg:hidden">
-            <h2 className="m-0 mb-3 font-serif text-lg font-medium">Activity</h2>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="m-0 font-serif text-lg font-medium">Activity</h2>
+              <Button variant="ghost" size="icon-sm" aria-label="Hide activity" onClick={() => setActivityOpen(false)}><XIcon /></Button>
+            </div>
             <ActivityTimeline activity={activity} />
           </aside>
         )}

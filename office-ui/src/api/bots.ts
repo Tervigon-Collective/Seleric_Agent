@@ -116,6 +116,7 @@ export class BotsApi {
   templates(): Promise<{ templates: BotTemplate[]; read_tools: string[] }> { return this.http.request("/v1/bots/templates"); }
   create(template: string, name?: string): Promise<Bot> { return this.http.request("/v1/bots", json("POST", { template, name })); }
   get(id: string): Promise<Bot> { return this.http.request(`/v1/bots/${enc(id)}`); }
+  remove(id: string): Promise<unknown> { return this.http.request(`/v1/bots/${enc(id)}`, { method: "DELETE" }); }
   update(id: string, expectedVersion: number, changes: BotChanges): Promise<Bot> {
     return this.http.request(`/v1/bots/${enc(id)}`, json("PATCH", { expected_version: expectedVersion, ...changes }));
   }

@@ -5,6 +5,7 @@
 ``POST   /v1/bots``                               create from a template
 ``GET    /v1/bots/{id}``                          one bot with its triggers
 ``PATCH  /v1/bots/{id}``                          name / role / enabled / instructions / tools / limits (needs expected_version)
+``DELETE /v1/bots/{id}``                          the bot with its triggers, runs, activity and skills (refused mid-run)
 ``POST   /v1/bots/{id}/triggers``                 add a cron / signal / watch / webhook trigger (a webhook's secret is in this reply only)
 ``PATCH  /v1/bots/{id}/triggers/{tid}``           enable / disable
 ``DELETE /v1/bots/{id}/triggers/{tid}``
@@ -125,6 +126,15 @@ def update_bot(bot_id: str, body: UpdateBot, who: Principal = Depends(request_pr
     try:
         with store.engine().begin() as conn:
             return store.update_bot(conn, bot_id, expected_version=body.expected_version, actor=who.user_id, changes=changes)
+    except (store.BotError, KeyError) as exc:
+        raise _bad(exc) from exc
+
+
+@router.delete("/{bot_id}", status_code=204)
+def delete_bot(bot_id: str, _: Principal = Depends(request_principal)) -> None:
+    try:
+        with store.engine().begin() as conn:
+            store.delete_bot(conn, bot_id)
     except (store.BotError, KeyError) as exc:
         raise _bad(exc) from exc
 

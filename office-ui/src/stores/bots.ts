@@ -22,6 +22,7 @@ interface BotsStore {
   select: (id: string | null) => Promise<void>;
   refresh: () => Promise<void>;
   create: (template: string, name?: string) => Promise<void>;
+  remove: (id: string) => Promise<void>;
   save: (changes: BotChanges) => Promise<boolean>;
   addTrigger: (kind: TriggerKind, config: BotTrigger["config"]) => Promise<boolean>;
   setTrigger: (triggerId: string, enabled: boolean) => Promise<void>;
@@ -30,6 +31,14 @@ interface BotsStore {
   ask: (message: string) => Promise<void>;
   saveSkill: (skill: Pick<BotSkill, "name" | "body" | "enabled"> & { skill_id?: string }) => Promise<boolean>;
   deleteSkill: (skillId: string) => Promise<void>;
+}
+
+/** The open bot lives in ?bot= so a reload or a shared link opens the same one. */
+const urlBot = () => new URL(location.href).searchParams.get("bot");
+function writeUrlBot(id: string | null) {
+  const url = new URL(location.href);
+  if (id) url.searchParams.set("bot", id); else url.searchParams.delete("bot");
+  if (url.href !== location.href) history.replaceState(history.state, "", url);
 }
 
 const message = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : String(e));
@@ -57,12 +66,18 @@ export const useBotsStore = create<BotsStore>((set, get) => {
       try {
         const [{ bots }, t] = await Promise.all([botsApi.list(), get().templates.length ? null : botsApi.templates()]);
         set({ bots, ...(t ? { templates: t.templates, readTools: t.read_tools } : {}) });
-        if (!get().selectedId && bots.length) await get().select(bots[0].bot_id);
+        const current = get().selectedId;
+        // First open, or the open bot was deleted (here or elsewhere): open the one in the URL, else the first.
+        if (current ? !bots.some((b) => b.bot_id === current) : bots.length) {
+          const want = urlBot();
+          await get().select((bots.find((b) => b.bot_id === (current ?? want)) ?? bots[0])?.bot_id ?? null);
+        }
       } catch (e) { set({ error: message(e) }); }
     },
 
     select: async (id) => {
       set({ selectedId: id, bot: null, runs: [], chat: [], activity: [], error: null, newSecret: null });
+      writeUrlBot(id);
       if (id) await get().refresh();
     },
 
@@ -82,6 +97,17 @@ export const useBotsStore = create<BotsStore>((set, get) => {
       if (await attempt(async () => { created = await botsApi.create(template, name); })) {
         await get().loadList();
         await get().select((created as Bot | null)?.bot_id ?? null);
+      }
+    },
+
+    remove: async (id) => {
+      const { bots, selectedId } = get();
+      if (!(await attempt(() => botsApi.remove(id)))) return;
+      const rest = bots.filter((b) => b.bot_id !== id);
+      set({ bots: rest });
+      if (selectedId === id) {
+        const at = bots.findIndex((b) => b.bot_id === id);
+        await get().select(rest[Math.min(at, rest.length - 1)]?.bot_id ?? null); // the neighbour below, else above
       }
     },
 

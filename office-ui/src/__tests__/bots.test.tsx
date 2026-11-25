@@ -127,6 +127,49 @@ describe("bots page", () => {
     expect(start).toHaveBeenCalledWith("bot_1", "manual", "");
   });
 
+  it("opens the bot named in the URL, deletes it after confirming, then opens its neighbour", async () => {
+    const second: Bot = { ...bot, bot_id: "bot_2", name: "Marketing 2" };
+    const third: Bot = { ...bot, bot_id: "bot_3", name: "Marketing 3" };
+    let listed = [bot, second, third];
+    vi.spyOn(botsApi, "list").mockImplementation(async () => ({ bots: listed }));
+    vi.spyOn(botsApi, "templates").mockResolvedValue({ templates: [], read_tools: [] });
+    vi.spyOn(botsApi, "get").mockImplementation(async (id) => listed.find((b) => b.bot_id === id)!);
+    vi.spyOn(botsApi, "runs").mockResolvedValue({ runs: [] });
+    vi.spyOn(botsApi, "activity").mockResolvedValue({ activity: [] });
+    const remove = vi.spyOn(botsApi, "remove").mockImplementation(async (id) => { listed = listed.filter((b) => b.bot_id !== id); });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    history.replaceState({}, "", "/?bots=1&bot=bot_2");
+
+    await act(async () => root.render(<BotsWorkspace />));
+    await act(async () => { await Promise.resolve(); });
+    expect(useBotsStore.getState().selectedId).toBe("bot_2");
+
+    const del = [...container.querySelectorAll("button")].find((b) => b.textContent === "Delete")!;
+    await act(async () => { del.click(); });
+    expect(remove).toHaveBeenCalledWith("bot_2");
+    expect(useBotsStore.getState().bots.map((b) => b.bot_id)).toEqual(["bot_1", "bot_3"]);
+    expect(useBotsStore.getState().selectedId).toBe("bot_3");
+    expect(location.search).toContain("bot=bot_3");
+    writeRoute({ workspace: "conversation" });
+    expect(location.search).not.toContain("bot");
+  });
+
+  it("hides the activity panel with its close button and brings it back", async () => {
+    vi.spyOn(botsApi, "list").mockResolvedValue({ bots: [bot] });
+    vi.spyOn(botsApi, "templates").mockResolvedValue({ templates: [], read_tools: [] });
+    vi.spyOn(botsApi, "get").mockResolvedValue(bot);
+    vi.spyOn(botsApi, "runs").mockResolvedValue({ runs: [] });
+    vi.spyOn(botsApi, "activity").mockResolvedValue({ activity: [] });
+    await act(async () => root.render(<BotsWorkspace />));
+    await act(async () => { await Promise.resolve(); });
+    const panel = () => container.querySelector('[aria-label="Bot activity"]');
+    expect(panel()).not.toBeNull();
+    await act(async () => { (container.querySelector('[aria-label="Hide activity"]') as HTMLButtonElement).click(); });
+    expect(panel()).toBeNull();
+    await act(async () => { (container.querySelector('[aria-label="Show activity"]') as HTMLButtonElement).click(); });
+    expect(panel()).not.toBeNull();
+  });
+
   it("shows a version conflict and reloads the bot", async () => {
     const { ApiError } = await import("../api/http");
     vi.spyOn(botsApi, "update").mockRejectedValue(new ApiError(409, "bot changed since you opened it (version 4, you had 3)"));
