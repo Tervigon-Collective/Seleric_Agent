@@ -9,6 +9,7 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { SafeContent } from "../SafeContent";
 import { botsApi, type Bot, type BotActivity, type BotRun, type BotSkill, type BotTrigger, type MemoryBank, type MemoryItem, type TriggerKind } from "../../api/bots";
 import { POLL_MS, useBotsStore } from "../../stores/bots";
 
@@ -69,8 +70,8 @@ function BotList() {
               <span className="text-xs text-muted-foreground">{b.role}</span>
               <span className="text-xs text-muted-foreground">
                 Last: {b.last_run ? `${STATUS_LABEL[b.last_run.status] ?? b.last_run.status} ${when(b.last_run.created_at)}` : "never"}
-                {" · "}Next: {when(b.next_run_at)}
               </span>
+              <span className="text-xs text-muted-foreground">Next: {when(b.next_run_at)}</span>
             </button>
           </li>
         ))}
@@ -387,11 +388,11 @@ function Runs({ runs }: { runs: BotRun[] }) {
             {r.outcome && <Badge variant={OUTCOME_BADGE[r.outcome] ?? "secondary"}>{r.outcome.replace("_", " ")}</Badge>}
             <span className="ml-auto text-xs text-muted-foreground">{when(r.created_at)}{r.instructions_version ? ` · instructions v${r.instructions_version}` : ""}</span>
           </div>
-          <p className="m-0 mt-1 text-xs text-muted-foreground">{r.reason}</p>
-          {r.merged.length > 0 && <p className="m-0 text-xs text-muted-foreground">+ {r.merged.length} merged: {r.merged.map((m) => m.reason).join(" | ")}</p>}
+          <p title={r.reason} className="m-0 mt-1 line-clamp-2 text-xs wrap-anywhere text-muted-foreground">{r.reason}</p>
+          {r.merged.length > 0 && <p className="m-0 line-clamp-2 text-xs wrap-anywhere text-muted-foreground">+ {r.merged.length} merged: {r.merged.map((m) => m.reason).join(" | ")}</p>}
           {(r.answer || r.error) && (
             <details className="mt-1"><summary className="cursor-pointer text-xs">Answer</summary>
-              <div className="mt-1 text-sm whitespace-pre-wrap">{r.answer || r.error}</div>
+              <div className="mt-2 text-sm">{r.answer ? <SafeContent text={r.answer} /> : <span className="whitespace-pre-wrap">{r.error}</span>}</div>
             </details>
           )}
         </li>
@@ -436,7 +437,7 @@ export function ActivityTimeline({ activity }: { activity: BotActivity[] }) {
                   <span className="text-muted-foreground"> · {a.outcome}</span>
                   {a.target && <span className="text-muted-foreground"> · {a.target}</span>}
                   {a.scope && <span className="block text-muted-foreground">scope {a.scope} · {a.decision}</span>}
-                  {stepText(a) && <span className="block text-muted-foreground">{stepText(a)}</span>}
+                  {stepText(a) && <span title={stepText(a)} className="line-clamp-3 wrap-anywhere text-muted-foreground">{stepText(a)}</span>}
                 </span>
               </li>
             ))}
@@ -468,7 +469,7 @@ function BotDetail({ bot }: { bot: Bot }) {
         </div>
       </header>
       <Tabs defaultValue="runs">
-        <TabsList className="max-w-full justify-start overflow-x-auto">
+        <TabsList className="max-w-full justify-start overflow-x-auto overflow-y-hidden [scrollbar-width:none]">
           <TabsTrigger value="runs">Runs</TabsTrigger>
           <TabsTrigger value="chat">Chat</TabsTrigger>
           <TabsTrigger value="instructions">Instructions</TabsTrigger>
@@ -510,7 +511,7 @@ export function BotsWorkspace() {
       <div className="flex min-h-0 flex-1">
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pb-10 max-md:px-3">
           {error && <p role="alert" className="m-0 mb-3 rounded-md bg-[var(--danger-soft)] px-3 py-2 text-sm text-destructive">{error}</p>}
-          {bot ? <BotDetail bot={bot} /> : <p className="text-sm text-muted-foreground">{selectedId ? "Loading…" : "Create a bot from a template in the left panel."}</p>}
+          {bot ? <div className="mx-auto max-w-4xl pt-1"><BotDetail bot={bot} /></div> : <p className="text-sm text-muted-foreground">{selectedId ? "Loading…" : "Create a bot from a template in the left panel."}</p>}
         </main>
         {bot && (
           <aside aria-label="Bot activity" className="w-[340px] shrink-0 overflow-y-auto border-l px-3 py-3 max-lg:hidden">
