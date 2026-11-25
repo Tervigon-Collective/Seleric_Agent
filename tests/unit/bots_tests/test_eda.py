@@ -121,3 +121,19 @@ def test_model_view_of_a_full_pack_fits_the_tool_result_cap():
         parts.append(eda._table(f"t{n}", cols, cols[2:], [row] * rows, TODAY, TODAY, "n" * 300, "s"))
     body = compact(eda.for_model({"note": "x" * 300, "parts": parts, "unavailable": {}}))
     assert len(body) < MAX_RESULT_CHARS and "truncated" not in body
+
+
+def test_account_pacing_inside_its_band_is_settled_in_code_not_by_the_bot():
+    pack = {"parts": [eda._table("where_today_sits", ["metric", "today_so_far", "p10", "p90"], [],
+                                 [{"metric": "ad_spend", "today_so_far": 1480.91, "p10": 407.24, "p90": 2564.48}], TODAY, TODAY, "", "s")]}
+    trig = {"detector": "live.meta.spend_pacing", "entity": "account:act_1"}
+    run = {"trigger_kind": "signal"}
+    steps = [{"kind": "tool_return", "tool": eda.TOOL, "bands": eda.bands(pack)}]
+    outcome, why = worker.settled(run, trig, steps)
+    assert outcome == "cleared" and "1,480.91" in why
+    assert worker.settled(run, {**trig, "entity": "campaign:1"}, steps) is None  # no campaign band: the bot decides
+    assert worker.settled({"trigger_kind": "cron"}, trig, steps) is None
+    hot = [{"kind": "tool_return", "bands": {"ad_spend": {"today_so_far": 3000, "p10": 407.24, "p90": 2564.48}}}]
+    assert worker.settled(run, trig, hot) is None
+    text = worker.with_outcome("Spend is hot.\n\nOUTCOME: action_needed — slow down", outcome, why)
+    assert worker.outcome_of(text)[0] == "cleared" and "action_needed" not in text and text.startswith("Spend is hot.")

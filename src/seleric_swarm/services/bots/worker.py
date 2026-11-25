@@ -17,6 +17,8 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from sqlalchemy import text
+
 from seleric_swarm.services.bots import delivery, eda, hindsight, schedule, store
 
 _log = logging.getLogger("seleric.bots")
@@ -108,6 +110,22 @@ def outcome_of(answer: str) -> tuple[str | None, str]:
     return None, ""
 
 
+def settled(run: dict[str, Any], trigger: dict[str, Any], steps: list[dict[str, Any]]) -> tuple[str, str] | None:
+    """B34: the code's verdict for a single-signal run whose finding metric the EDA bands (latest bot_eda result)."""
+    if run["trigger_kind"] != "signal" or run.get("merged"):
+        return None
+    got = [s["bands"] for s in steps if s.get("kind") == "tool_return" and s.get("bands")]
+    return eda.settle(trigger, got[-1]) if got else None
+
+
+def with_outcome(answer: str, outcome: str, why: str) -> str:
+    """The answer with its closing OUTCOME line replaced by the code's."""
+    lines = answer.rstrip().splitlines()
+    at = next((i for i in range(len(lines) - 1, -1, -1) if lines[i].strip().strip("*").strip().upper().startswith("OUTCOME:")), None)
+    body = lines if at is None else lines[:at] + lines[at + 1:]
+    return "\n".join([*body, "", f"OUTCOME: {outcome} — {why}"]).strip()
+
+
 def _scope(tool: str) -> str:
     # Phase 1 runs on the shared service token, so this is the scope family the call used, not a per-bot grant.
     if tool.startswith("meta_"):
@@ -172,6 +190,15 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
         error = f"{type(exc).__name__}: {exc}"
     status = status if status in ("completed", "partial", "failed") else "partial"
     outcome, why = outcome_of(answer)
+    with engine.begin() as conn:
+        trigger = conn.execute(text("SELECT detail FROM bots.activity WHERE run_id = :r AND kind = 'trigger' ORDER BY id LIMIT 1"),
+                               {"r": run["run_id"]}).scalar() or {}
+    code_verdict = settled(run, trigger, steps) if answer else None
+    overruled = code_verdict is not None and code_verdict[0] != outcome
+    if code_verdict:
+        bot_said = outcome
+        outcome, why = code_verdict
+        answer = with_outcome(answer, outcome, why)
     calls = tool_activity(steps)
     memory_rows = await _retain(mem, bot, run, outcome, why)
     with engine.begin() as conn:
@@ -185,6 +212,9 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
             store.add_activity(conn, run["run_id"], bot["bot_id"], kind="memory", **row)
         if error:
             store.add_activity(conn, run["run_id"], bot["bot_id"], kind="note", outcome="failed", summary=error[:500])
+        if overruled:
+            store.add_activity(conn, run["run_id"], bot["bot_id"], kind="note", outcome="completed", decision=outcome,
+                               summary=f"Verdict set in code (B34): the bot said {bot_said or 'nothing'}; {why}.")
         if skipped_eda(bot, run, calls):
             store.add_activity(conn, run["run_id"], bot["bot_id"], kind="note", outcome="skipped", tool=eda.TOOL,
                                summary="The run did not read its EDA (B27): its verdict rests on its own reads only.")

@@ -48,6 +48,7 @@ def new_findings(conn: Connection, trig: dict[str, Any], brand_id: int, limit: i
         SELECT e.id AS event_id, e.at, f.finding_id, f.detector, f.severity, f.summary, f.entity_type, f.entity_id
         FROM monitor.finding_events e JOIN monitor.findings f ON f.finding_id = e.finding_id
         WHERE e.id > :cursor AND e.to_state = 'open' AND f.brand_id = :brand
+          AND (e.details->>'kind') IS DISTINCT FROM 'diagnosis'  -- diagnose notes are written with to_state 'open' too
           AND starts_with(f.detector, :prefix) AND f.severity = ANY(:sev)
         ORDER BY e.id LIMIT :n"""),
         {"cursor": trig["cursor"] or 0, "brand": brand_id, "prefix": cfg["detector_prefix"],

@@ -656,7 +656,7 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
             state.steps.append({"kind": "tool_call", "tool": name, "args": args, "duplicate": dup})
             state.steps.append({"kind": "tool_return", "tool": name, "ok": not is_err, "ms": ms, "chars": len(body),
                                 "query_id": payload.get("query_id") if isinstance(payload, dict) else None,
-                                "result": body[:2000]})
+                                "result": body[:2000], **({"bands": eda.bands(payload)} if name == eda.TOOL and not is_err else {})})
             return body
 
         return call

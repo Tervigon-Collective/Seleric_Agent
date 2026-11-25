@@ -416,6 +416,27 @@ async def run(call: Call, brand_id: int, account_id: str, today: date) -> dict[s
                      "on its own." + (f" Unavailable: {sorted(failed)}." if failed else ""))}
 
 
+# B34: a live rule whose metric this EDA bands at the same level. Inside the band, the code says "normal", not the model
+# (the 14-day Meta pacing curve and the 56-day warehouse band disagree; four runs on one alert split 2-2 on 2026-11-24).
+BANDED = {("live.meta.spend_pacing", "account"): "ad_spend"}
+
+
+def bands(pack: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """where_today_sits by metric: today so far with its p10 / p90 (what ``settle`` reads)."""
+    part = next((p for p in pack.get("parts") or [] if p["query_id"].startswith("eda_where_today_sits")), {})
+    return {r["metric"]: {k: r.get(k) for k in ("today_so_far", "p10", "p90")} for r in part.get("rows") or []}
+
+
+def settle(trigger: dict[str, Any], bands_now: dict[str, dict[str, Any]]) -> tuple[str, str] | None:
+    """(outcome, reason) when the finding's own metric is inside its p10-p90 for these hours; else None (the bot decides)."""
+    metric = BANDED.get((trigger.get("detector"), str(trigger.get("entity") or "").split(":", 1)[0]))
+    b = bands_now.get(metric) if metric else None
+    if not b or any(b[k] is None for k in ("today_so_far", "p10", "p90")) or not b["p10"] <= b["today_so_far"] <= b["p90"]:
+        return None
+    return "cleared", (f"{metric} so far today {b['today_so_far']:,.2f} is inside its normal range for these hours "
+                       f"(p10 {b['p10']:,.2f} - p90 {b['p90']:,.2f} over {HISTORY_DAYS} days); decided in code, not by the bot")
+
+
 def for_model(pack: dict[str, Any]) -> dict[str, Any]:
     """What the model reads: each table as columns once + rows as lists, no provenance (evidence keeps the full
     tables). The full pack is ~18k characters and the tool-result cap is 14k, so the generic compaction kept only the
