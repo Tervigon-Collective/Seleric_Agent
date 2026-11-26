@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { cn } from "cn";
 import { AppFrame } from "../AppFrame";
 import { ActivityIcon, BotIcon, PlusIcon, XIcon } from "../icons";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -18,9 +17,6 @@ const when = (iso: string | null | undefined) =>
 
 /** Limits the backend enforces today; the rest (tool calls, pending proposals) arrive with proposals in P3. */
 const ENFORCED_LIMITS = ["max_scheduled_runs_per_day"];
-
-/** Run outcomes (B17): only action_needed is an alert; unverified means the bot could not check. */
-const OUTCOME_BADGE: Record<string, "destructive" | "outline" | "secondary"> = { action_needed: "destructive", unverified: "outline" };
 
 const OUTCOME_TONE: Record<string, string> = {
   completed: "bg-[var(--success)]", skipped: "bg-muted-foreground/50", attempted: "bg-[var(--warning)]",
@@ -67,11 +63,10 @@ function BotList() {
                 <span aria-hidden className={cn("size-1.5 rounded-full", b.enabled ? "bg-[var(--success)]" : "bg-muted-foreground/40")} />
                 {b.name}{!b.enabled && <span className="text-xs font-normal text-muted-foreground"> · paused</span>}
               </span>
-              <span className="text-xs text-muted-foreground">{b.role}</span>
-              <span className="text-xs text-muted-foreground">
-                Last: {b.last_run ? `${STATUS_LABEL[b.last_run.status] ?? b.last_run.status} ${when(b.last_run.created_at)}` : "never"}
+              <span className="truncate text-xs text-muted-foreground">{b.role}</span>
+              <span className="mt-0.5 text-xs text-muted-foreground">
+                {b.last_run ? <>Last: <span className="text-foreground/80">{verdictOf(b.last_run).label}</span>, {when(b.last_run.created_at)}</> : "Not run yet"}
               </span>
-              <span className="text-xs text-muted-foreground">Next: {when(b.next_run_at)}</span>
             </button>
           </li>
         ))}
@@ -383,40 +378,102 @@ export function splitAnswer(answer: string): { body: string; reason: string } {
   if (!last.toUpperCase().startsWith("OUTCOME:")) return { body: answer, reason: "" };
   const rest = last.slice("OUTCOME:".length);
   const dash = rest.indexOf("—");
-  return { body: lines.slice(0, -1).join("\n").trim(), reason: dash >= 0 ? rest.slice(dash + 1).trim() : "" };
+  const reason = dash >= 0 ? rest.slice(dash + 1).trim() : "";
+  return { body: lines.slice(0, -1).join("\n").trim(), reason: reason.charAt(0).toUpperCase() + reason.slice(1) };
 }
 
-const VERDICT_TONE: Record<string, string> = {
-  action_needed: "border-destructive/40 bg-[var(--danger-soft)]", unverified: "border-[var(--warning)]/50",
-  cleared: "border-[var(--success)]/40", no_action: "border-[var(--success)]/40",
+/** The run's verdict in the operator's words (B17 outcomes); tone = band colour. */
+const VERDICT: Record<string, { label: string; tone: string; dot: string }> = {
+  action_needed: { label: "Needs action", tone: "bg-[var(--danger-soft)] text-destructive", dot: "bg-destructive" },
+  unverified: { label: "Couldn't check", tone: "bg-[var(--warning-soft)] text-[var(--warning)]", dot: "bg-[var(--warning)]" },
+  cleared: { label: "Alert cleared", tone: "bg-[var(--success-soft)] text-[var(--success)]", dot: "bg-[var(--success)]" },
+  no_action: { label: "All in order", tone: "bg-[var(--success-soft)] text-[var(--success)]", dot: "bg-[var(--success)]" },
+};
+const NO_VERDICT = { label: "", tone: "bg-muted text-foreground", dot: "bg-muted-foreground/50" };
+
+export const KIND_LABEL: Record<string, string> = {
+  cron: "Schedule", signal: "Monitoring alert", watch: "Campaign edit", webhook: "Webhook", manual: "Run now", chat: "Chat",
 };
 
-function Runs({ runs }: { runs: BotRun[] }) {
-  if (!runs.length) return <p className="text-sm text-muted-foreground">No runs yet.</p>;
+const live = (r: BotRun) => r.status === "queued" || r.status === "running";
+
+export function verdictOf(r: Pick<BotRun, "outcome" | "status">) {
+  const v = VERDICT[r.outcome ?? ""];
+  return v ?? { ...NO_VERDICT, label: r.status === "running" || r.status === "queued" ? "Running…" : STATUS_LABEL[r.status] ?? r.status };
+}
+
+function RunMeta({ r }: { r: BotRun }) {
   return (
-    <ol className="m-0 flex list-none flex-col gap-3 p-0">
-      {runs.map((r, i) => {
-        const { body, reason } = splitAnswer(r.answer ?? "");
-        return (
-          <li key={r.run_id} className="rounded-lg border px-4 py-3 text-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              {r.outcome && <Badge variant={OUTCOME_BADGE[r.outcome] ?? "secondary"}>{r.outcome.replace("_", " ")}</Badge>}
-              <span className="font-medium">{STATUS_LABEL[r.status] ?? r.status}</span>
-              <Badge variant="outline">{r.trigger_kind}</Badge>
-              <span className="ml-auto text-xs text-muted-foreground">{when(r.created_at)}{r.instructions_version ? ` · instructions v${r.instructions_version}` : ""}</span>
-            </div>
-            {reason && <p className={cn("m-0 mt-2 rounded-md border px-3 py-2 font-medium", VERDICT_TONE[r.outcome ?? ""])}>{reason}</p>}
-            <p title={r.reason} className="m-0 mt-2 line-clamp-2 text-xs wrap-anywhere text-muted-foreground">Why it ran: {r.reason}</p>
-            {r.merged.length > 0 && <p className="m-0 line-clamp-2 text-xs wrap-anywhere text-muted-foreground">+ {r.merged.length} merged: {r.merged.map((m) => m.reason).join(" | ")}</p>}
-            {(r.answer || r.error) && (
-              <details className="mt-2" open={i === 0}><summary className="cursor-pointer text-xs font-medium">Full answer</summary>
-                <div className="mt-2 max-w-prose text-sm leading-relaxed">{r.answer ? <SafeContent text={body} /> : <span className="whitespace-pre-wrap">{r.error}</span>}</div>
-              </details>
-            )}
-          </li>
-        );
-      })}
-    </ol>
+    <p className="m-0 text-xs text-muted-foreground">
+      <span className="font-medium text-foreground/80">Why it ran:</span> {r.reason || KIND_LABEL[r.trigger_kind]}
+      {r.merged.length > 0 && <> (+ {r.merged.length} more {r.merged.length === 1 ? "trigger" : "triggers"} while it waited)</>}
+      {r.instructions_version ? <> · instructions v{r.instructions_version}</> : null}
+      {r.status === "partial" && <> · some figures could not be traced to a source</>}
+    </p>
+  );
+}
+
+function RunBody({ r, body }: { r: BotRun; body: string }) {
+  if (r.answer) return <div className="max-w-[72ch] text-sm leading-relaxed"><SafeContent text={body} /></div>;
+  if (r.error) return <p className="m-0 text-sm whitespace-pre-wrap text-destructive">{r.error}</p>;
+  return live(r) ? <p className="m-0 text-sm text-muted-foreground">The bot is working; its answer appears here.</p> : null;
+}
+
+/** The newest run, read first: verdict band, the bot's reason, then the answer. */
+function LatestRun({ r }: { r: BotRun }) {
+  const { body, reason } = splitAnswer(r.answer ?? "");
+  const v = verdictOf(r);
+  return (
+    <section aria-label="Latest run" className="overflow-hidden rounded-xl border">
+      <div className={cn("flex flex-wrap items-baseline gap-x-3 gap-y-1 px-5 py-3 max-sm:px-4", v.tone)}>
+        <h2 className="m-0 text-lg font-semibold">{v.label}</h2>
+        <span className="text-xs opacity-80">{KIND_LABEL[r.trigger_kind] ?? r.trigger_kind} · {when(r.created_at)}</span>
+        {reason && <p className="m-0 w-full text-sm text-foreground">{reason}</p>}
+      </div>
+      <div className="flex flex-col gap-3 px-5 py-4 max-sm:px-4">
+        <RunBody r={r} body={body} />
+        <RunMeta r={r} />
+      </div>
+    </section>
+  );
+}
+
+function EarlierRun({ r }: { r: BotRun }) {
+  const { body, reason } = splitAnswer(r.answer ?? "");
+  const v = verdictOf(r);
+  return (
+    <li className="border-b last:border-b-0">
+      <details className="group">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-0.5 px-1 py-2.5 text-sm hover:bg-accent/50 [&::-webkit-details-marker]:hidden">
+          <span aria-hidden className={cn("size-2 shrink-0 rounded-full", v.dot)} />
+          <span className="shrink-0 font-medium sm:w-28">{v.label}</span>
+          <span className="min-w-0 flex-1 truncate text-muted-foreground max-sm:order-last max-sm:line-clamp-2 max-sm:basis-full max-sm:pl-5 max-sm:whitespace-normal">{reason || r.reason}</span>
+          <span className="shrink-0 text-xs text-muted-foreground max-sm:hidden">{KIND_LABEL[r.trigger_kind] ?? r.trigger_kind}</span>
+          <span className="shrink-0 text-right text-xs whitespace-nowrap text-muted-foreground max-sm:ml-auto sm:w-24">{when(r.created_at)}</span>
+        </summary>
+        <div className="flex flex-col gap-3 pt-1 pb-4 pl-6">
+          {reason && <p className="m-0 text-sm font-medium">{reason}</p>}
+          <RunBody r={r} body={body} />
+          <RunMeta r={r} />
+        </div>
+      </details>
+    </li>
+  );
+}
+
+function Runs({ runs }: { runs: BotRun[] }) {
+  if (!runs.length) return <p className="text-sm text-muted-foreground">No runs yet. Press Run now, or add a trigger so the bot runs by itself.</p>;
+  const [latest, ...earlier] = runs;
+  return (
+    <div className="flex flex-col gap-6">
+      <LatestRun r={latest} />
+      {earlier.length > 0 && (
+        <section aria-label="Earlier runs">
+          <h2 className="m-0 mb-1 text-sm font-medium text-muted-foreground">Earlier runs</h2>
+          <ol className="m-0 list-none p-0">{earlier.map((r) => <EarlierRun key={r.run_id} r={r} />)}</ol>
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -430,11 +487,12 @@ export function stepText(a: BotActivity): string {
 
 const STEP_NAME: Record<string, string> = {
   memory_recall: "Memory", memory_retain: "Saved to memory", notification_center: "Notified", email: "Email",
+  bot_eda: "Statistics (EDA)", run_python: "Calculation",
 };
 
 export function stepLabel(a: BotActivity): string {
-  if (a.kind === "answer") return `Answer${a.decision ? `: ${a.decision.replace("_", " ")}` : ""}`;
-  if (a.kind === "trigger") return "Trigger";
+  if (a.kind === "answer") return `Answer${a.decision ? `: ${(VERDICT[a.decision]?.label ?? a.decision.replace("_", " ")).toLowerCase()}` : ""}`;
+  if (a.kind === "trigger") return "Started";
   if (a.kind === "note") return "Note";
   return STEP_NAME[a.tool ?? ""] ?? a.tool ?? a.kind;
 }
@@ -443,26 +501,33 @@ export function ActivityTimeline({ activity }: { activity: BotActivity[] }) {
   const groups = useMemo(() => groupByRun(activity), [activity]);
   if (!groups.length) return <p className="m-0 text-sm text-muted-foreground">Nothing yet. Every trigger, tool call and answer shows here.</p>;
   return (
-    <ol className="m-0 flex list-none flex-col gap-4 p-0">
-      {groups.map((g) => (
-        <li key={g.runId}>
-          <p className="m-0 mb-1 text-xs font-medium text-muted-foreground">Run {g.runId.slice(-6)} · {when(g.rows[0].at)}</p>
-          <ol className="m-0 flex list-none flex-col gap-1.5 border-l pl-3">
-            {g.rows.map((a) => (
-              <li key={a.id} className="flex gap-2 text-xs">
-                <span aria-hidden className={cn("mt-1 size-1.5 shrink-0 rounded-full", OUTCOME_TONE[a.outcome])} />
-                <span className="min-w-0 flex-1 break-words">
-                  <span className="font-medium">{stepLabel(a)}</span>
-                  <span className="text-muted-foreground"> · {a.outcome}</span>
-                  {a.target && <span className="text-muted-foreground"> · {a.target}</span>}
-                  {a.scope && <span className="block text-muted-foreground">scope {a.scope} · {a.decision}</span>}
-                  {stepText(a) && <span title={stepText(a)} className="line-clamp-3 wrap-anywhere text-muted-foreground">{stepText(a)}</span>}
-                </span>
-              </li>
-            ))}
-          </ol>
-        </li>
-      ))}
+    <ol className="m-0 flex list-none flex-col gap-5 p-0">
+      {groups.map((g) => {
+        const verdict = VERDICT[g.rows.find((a) => a.kind === "answer")?.decision ?? ""];
+        return (
+          <li key={g.runId}>
+            <p className="m-0 mb-1.5 flex items-center gap-1.5 text-xs font-medium">
+              {verdict && <span aria-hidden className={cn("size-2 rounded-full", verdict.dot)} />}
+              <span>{verdict?.label ?? "Run"}</span>
+              <span className="font-normal text-muted-foreground">· {when(g.rows[0].at)}</span>
+            </p>
+            <ol className="m-0 flex list-none flex-col gap-1.5 border-l pl-3">
+              {g.rows.map((a) => (
+                <li key={a.id} className="flex gap-2 text-xs">
+                  <span aria-hidden className={cn("mt-1 size-1.5 shrink-0 rounded-full", OUTCOME_TONE[a.outcome])} />
+                  <span className="min-w-0 flex-1 break-words">
+                    <span className="font-medium">{stepLabel(a)}</span>
+                    {a.outcome !== "completed" && <span className="text-muted-foreground"> · {a.outcome}</span>}
+                    {a.target && <span className="text-muted-foreground"> · {a.target}</span>}
+                    {a.scope && <span className="block text-muted-foreground">scope {a.scope} · {a.decision}</span>}
+                    {stepText(a) && <span title={stepText(a)} className="line-clamp-3 wrap-anywhere text-muted-foreground">{stepText(a)}</span>}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -478,17 +543,22 @@ function BotDetail({ bot, onShowActivity }: { bot: Bot; onShowActivity?: () => v
   const running = runs.some((r) => r.status === "queued" || r.status === "running");
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="m-0 flex items-center gap-2 font-serif text-[30px] leading-tight font-normal tracking-tight"><BotIcon />{bot.name}</h1>
-          <p className="m-0 text-sm text-muted-foreground">{bot.role} · brand {bot.brand_id} · read-only</p>
+      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b pb-4">
+        <div className="min-w-0">
+          <h1 className="m-0 flex items-center gap-2 font-serif text-[28px] leading-tight font-semibold tracking-tight"><BotIcon aria-hidden />{bot.name}</h1>
+          <p className="m-0 mt-0.5 text-sm text-muted-foreground">{bot.role}</p>
+          <p className="m-0 mt-2 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+            <span aria-hidden className={cn("size-1.5 rounded-full", bot.enabled ? "bg-[var(--success)]" : "bg-muted-foreground/40")} />
+            <span>{bot.enabled ? (bot.next_run_at ? `On · next scheduled run ${when(bot.next_run_at)}` : "On") : "Paused: no automatic runs"}</span>
+            <span>· Read-only: it proposes changes, a person makes them</span>
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm"><Switch checked={bot.enabled} onCheckedChange={(v) => void save({ enabled: v })} aria-label="Bot enabled" />{bot.enabled ? "On" : "Paused"}</label>
-          <Button disabled={busy || !bot.enabled} onClick={() => void runNow()}>{running ? "Run queued…" : "Run now"}</Button>
-          <Button variant="destructive" disabled={busy}
-            onClick={() => window.confirm(`Delete “${bot.name}”? Its runs, activity, triggers and skills are removed for good. Its memory is kept.`) && void remove(bot.bot_id)}>Delete</Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="mr-1 flex items-center gap-2 text-sm"><Switch checked={bot.enabled} onCheckedChange={(v) => void save({ enabled: v })} aria-label="Bot on" />{bot.enabled ? "On" : "Paused"}</label>
+          <Button disabled={busy || !bot.enabled || running} onClick={() => void runNow()}>{running ? "Running…" : "Run now"}</Button>
           {onShowActivity && <Button variant="outline" className="max-lg:hidden" aria-label="Show activity" onClick={onShowActivity}><ActivityIcon /> Activity</Button>}
+          <Button variant="ghost" className="text-destructive hover:text-destructive" disabled={busy}
+            onClick={() => window.confirm(`Delete “${bot.name}”? Its runs, activity, triggers and skills are removed for good. Its memory is kept.`) && void remove(bot.bot_id)}>Delete bot</Button>
         </div>
       </header>
       <Tabs defaultValue="runs">

@@ -102,7 +102,7 @@ def test_brief_names_trigger_version_and_merged_signals():
     text = worker.brief(bot, run, [])
     assert "version 3" in text and "Watch Meta." in text and "critical finding F1" in text
     assert "OUTCOME:" in text and "read-only" in text and "unverified" in text
-    assert worker.question(run) == "Do your standing task now."
+    assert worker.question(run).startswith("Do your standing task now.") and "| Check |" in worker.question(run)
     assert "re-check" in worker.question({**run, "trigger_kind": "signal"})
     assert worker.question({**run, "trigger_kind": "chat", "query": "why is CPA up?"}) == "why is CPA up?"
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from seleric_swarm.mail.draft import AdHoc, render_ad_hoc
+from seleric_swarm.mail.draft import AdHoc, EmailTable, render_ad_hoc
 from seleric_swarm.mail.recipients import Clarify, resolve
 from seleric_swarm.mail.send import Draft, SendStatus
 from seleric_swarm.mail.session import get_mail_runtime
@@ -47,6 +47,26 @@ def _body(answer: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _cells(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def tables(body: str) -> tuple[str, dict[str, list[EmailTable]]]:
+    """Markdown pipe tables in the answer → email tables (the mail renderer only knows its own), each left as a
+    [[table:id]] placeholder where it stood."""
+    chunks, found = [], {}
+    for chunk in body.split("\n\n"):
+        lines = [ln for ln in chunk.strip().splitlines() if ln.strip()]
+        if len(lines) < 2 or not all(ln.lstrip().startswith("|") for ln in lines):
+            chunks.append(chunk)
+            continue
+        rows = [_cells(ln) for ln in lines if not set(ln) <= set("|-: ")]
+        key = f"answer{len(found) + 1}"
+        found[key] = [EmailTable(title="Checks", subtitle="", headers=rows[0], rows=rows[1:], align=["l"] * len(rows[0]))]
+        chunks.append(f"[[table:{key}]]")
+    return "\n\n".join(chunks), found
+
+
 def subject(bot: dict[str, Any], outcome: str | None, why: str) -> str:
     verdict = OUTCOME_WORDS.get(outcome or "", "finished")
     return f"[Seleric bot] {bot['name']}: {verdict}" + (f" — {why[:120]}" if why else "")
@@ -70,7 +90,8 @@ async def email(bot: dict[str, Any], run: dict[str, Any], outcome: str | None, w
     if not to:
         return {"tool": "email", "outcome": "failed", "summary": "None of the bot's email recipients resolve any more."}
     footer = f"Started by: {run['trigger_kind']} — {run['reason'][:300]}\n\nSent by the Seleric bot \"{bot['name']}\" (read-only)."
-    rendered = render_ad_hoc(AdHoc(subject=subject(bot, outcome, why), body=f"{_body(answer) or why}\n\n{footer}"))
+    body, found = tables(f"{_body(answer) or why}\n\n{footer}")
+    rendered = render_ad_hoc(AdHoc(subject=subject(bot, outcome, why), body=body, tables=found))
     draft = Draft(sender=mail.sender, to=tuple(to), subject=rendered.subject, html=rendered.html, text=rendered.text)
     try:
         rec = mail.service.create(draft, meta={"bot_id": bot["bot_id"], "bot_run_id": run["run_id"]}, run_id=run["run_id"])

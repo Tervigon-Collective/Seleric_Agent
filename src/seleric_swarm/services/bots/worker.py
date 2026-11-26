@@ -41,6 +41,17 @@ OUTCOME_RULE = (
     "earlier day is not a finding — compare the same hours (hourly insights) before calling anything a drop. A value inside its normal range for "
     "this hour (p10-p90 in bot_eda, when you have it) is not a finding on its own.")
 
+ANSWER_FORMAT = (
+    "Lay the answer out in Markdown like this, so the operator can scan it:\n"
+    "**<one sentence: what is happening and whether a person needs to act>**\n\n"
+    "| Check | Now | Normal range | Read |\n|---|---|---|---|\n"
+    "One row per check you made (each bot_eda part when you have it). Read is one word or two: Normal, High, Low or "
+    "Too early. Put – in Normal range when there is none.\n\n"
+    "## Movers\n\n- At most five bullets: the campaign, ad set or ad by name, its figure, why it matters.\n\n"
+    "## What to do\n\n- One bullet per proposed change: **entity**: current value → proposed value. Reason. "
+    "Or the single bullet: Nothing to change.\n\n"
+    "No other sections, no intro, no sign-off; then the OUTCOME line.")
+
 
 def bots_enabled() -> bool:
     """Global kill switch: BOTS_ENABLED=false stops every bot (scheduling and execution)."""
@@ -74,6 +85,12 @@ def brief(bot: dict[str, Any], run: dict[str, Any], history: list[dict[str, Any]
 
 
 def question(run: dict[str, Any]) -> str:
+    """What the run is asked: the operator's own words, or the standing task with the answer layout."""
+    asked = task(run)
+    return asked if run["trigger_kind"] in ("chat", "manual") and run["query"].strip() else f"{asked}\n\n{ANSWER_FORMAT}"
+
+
+def task(run: dict[str, Any]) -> str:
     if run["trigger_kind"] in ("chat", "manual") and run["query"].strip():
         return run["query"].strip()
     if run["trigger_kind"] == "watch":
@@ -237,7 +254,7 @@ async def _recall(mem: hindsight.Memory | None, bot: dict[str, Any], run: dict[s
     if mem is None:
         return [], []
     try:
-        items, error = await mem.recall(bot, f"{run['reason']}\n{question(run)}")
+        items, error = await mem.recall(bot, f"{run['reason']}\n{task(run)}")
     except Exception as exc:
         items, error = [], f"{type(exc).__name__}: {exc}"
     row = {"tool": "memory_recall", "target": mem.bot_bank(bot), "outcome": "failed" if error and not items else "completed",

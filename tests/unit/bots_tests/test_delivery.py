@@ -63,3 +63,10 @@ def test_no_mail_server_is_a_visible_failed_row_and_no_recipients_is_no_row():
     rows = asyncio.run(delivery.deliver({**BOT, "notify": {}}, RUN, "action_needed", "x", ANSWER, None))
     assert [r["tool"] for r in rows] == ["notification_center"]
     assert asyncio.run(delivery.deliver(BOT, {**RUN, "trigger_kind": "chat"}, "action_needed", "x", ANSWER, None)) == []
+
+
+def test_answer_table_becomes_an_email_table_in_place():
+    body, found = delivery.tables("**All calm.**\n\n| Check | Now |\n|---|---|\n| Where today sits | ₹4,181 |\n\n## What to do\n\n- Nothing to change.")
+    assert body == "**All calm.**\n\n[[table:answer1]]\n\n## What to do\n\n- Nothing to change."
+    t = found["answer1"][0]
+    assert t.headers == ["Check", "Now"] and t.rows == [["Where today sits", "₹4,181"]]

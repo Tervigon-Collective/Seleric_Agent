@@ -84,7 +84,7 @@ describe("activity timeline", () => {
   it("names memory and delivery steps in words", () => {
     expect(stepLabel(act_(1, "r", { kind: "memory", tool: "memory_recall" }))).toBe("Memory");
     expect(stepLabel(act_(1, "r", { kind: "delivery", tool: "notification_center" }))).toBe("Notified");
-    expect(stepLabel(act_(1, "r", { kind: "answer", decision: "action_needed" }))).toBe("Answer: action needed");
+    expect(stepLabel(act_(1, "r", { kind: "answer", decision: "action_needed" }))).toBe("Answer: needs action");
   });
 });
 
@@ -117,8 +117,8 @@ describe("bots page", () => {
     await act(async () => { await Promise.resolve(); });
     const text = container.textContent ?? "";
     expect(text).toContain("Paid media watch (Meta)");
-    expect(text).toContain("no action");
-    expect(text).toContain("1 merged: critical finding F1");
+    expect(text).toContain("All in order");
+    expect(text).toContain("+ 1 more trigger while it waited");
     expect(text).toContain("instructions v2");
     expect(container.querySelector('[aria-label="Bot activity"]')?.textContent).toContain("Cron: schedule");
 
@@ -144,7 +144,7 @@ describe("bots page", () => {
     await act(async () => { await Promise.resolve(); });
     expect(useBotsStore.getState().selectedId).toBe("bot_2");
 
-    const del = [...container.querySelectorAll("button")].find((b) => b.textContent === "Delete")!;
+    const del = [...container.querySelectorAll("button")].find((b) => b.textContent === "Delete bot")!;
     await act(async () => { del.click(); });
     expect(remove).toHaveBeenCalledWith("bot_2");
     expect(useBotsStore.getState().bots.map((b) => b.bot_id)).toEqual(["bot_1", "bot_3"]);
