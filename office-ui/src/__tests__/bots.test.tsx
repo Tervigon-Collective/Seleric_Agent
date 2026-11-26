@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { botsApi, type Bot, type BotActivity, type BotRun } from "../api/bots";
-import { ActivityTimeline, BotsWorkspace, groupByRun, stepLabel, stepText, triggerText } from "../components/bots/BotsWorkspace";
+import { ActivityTimeline, BotsWorkspace, cronText, groupByRun, stepLabel, stepText, triggerText } from "../components/bots/BotsWorkspace";
 import { BotReports } from "../components/notifications/NotificationCenter";
 import { useShellStore } from "../stores/shell";
 import { readRoute, writeRoute } from "../routing";
@@ -60,9 +60,10 @@ describe("activity timeline", () => {
       act_(2, "run_a", { outcome: "failed", tool: "metrics_query", target: null }),
     ]} />));
     const text = container.textContent ?? "";
-    expect(text).toContain("google_campaigns_get · denied · customer_id=9");
-    expect(text).toContain("scope google_ads:read · denied");
-    expect(text).toContain("metrics_query · failed");
+    expect(text).toContain("Google campaigns get · denied");
+    expect(text).toContain("Not allowed: google_ads:read (denied)");
+    expect(text).toContain("Metrics query · failed");
+    expect(container.querySelector('[title*="customer_id=9"]')).not.toBeNull();
   });
 
   it("hides raw payloads of completed reads but keeps reasons and script results", () => {
@@ -73,12 +74,13 @@ describe("activity timeline", () => {
   });
 
   it("describes triggers in words", () => {
-    expect(triggerText(bot.triggers![0])).toBe("Schedule 0 9 * * * (Asia/Kolkata)");
+    expect(triggerText(bot.triggers![0])).toBe("Every day at 09:00 (Asia/Kolkata)");
     expect(triggerText({ ...bot.triggers![0], kind: "signal", config: { detector_prefix: "live.meta.", severities: ["critical"] } }))
-      .toBe("Monitoring: live.meta.* · critical");
+      .toBe("On monitoring alerts live.meta.* · critical");
     expect(triggerText({ ...bot.triggers![0], kind: "watch", config: { tool: "meta_campaigns_list", fields: ["effective_status"], interval_min: 15 } }))
-      .toBe("Watch meta_campaigns_list: effective_status · every 15 min");
-    expect(triggerText({ ...bot.triggers![0], kind: "webhook", config: {} })).toBe("Webhook");
+      .toBe("When meta campaigns list changes: effective status · checked every 15 min");
+    expect(triggerText({ ...bot.triggers![0], kind: "webhook", config: {} })).toBe("When another system calls its webhook");
+    expect(cronText("30 7 * * 1", "UTC")).toBe("Schedule 30 7 * * 1 (UTC)");
   });
 
   it("names memory and delivery steps in words", () => {
@@ -144,7 +146,9 @@ describe("bots page", () => {
     await act(async () => { await Promise.resolve(); });
     expect(useBotsStore.getState().selectedId).toBe("bot_2");
 
-    const del = [...container.querySelectorAll("button")].find((b) => b.textContent === "Delete bot")!;
+    const settings = [...container.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Settings")!;
+    await act(async () => { settings.click(); });
+    const del = [...document.body.querySelectorAll("button")].find((b) => b.textContent === "Delete bot")!;
     await act(async () => { del.click(); });
     expect(remove).toHaveBeenCalledWith("bot_2");
     expect(useBotsStore.getState().bots.map((b) => b.bot_id)).toEqual(["bot_1", "bot_3"]);

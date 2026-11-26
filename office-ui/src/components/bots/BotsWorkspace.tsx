@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "cn";
 import { AppFrame } from "../AppFrame";
-import { ActivityIcon, BotIcon, PlusIcon, XIcon } from "../icons";
+import { ActivityIcon, BotIcon, PlusIcon, SettingsIcon, XIcon } from "../icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,11 +27,19 @@ const STATUS_LABEL: Record<string, string> = {
   queued: "Queued", running: "Running", completed: "Done", partial: "Partial", failed: "Failed", skipped: "Skipped",
 };
 
+/** "0 9 * * *" reads as "Every day at 09:00"; any other cron is shown as written. */
+export function cronText(cron: string, tz: string): string {
+  const [min = "", hour = "", ...rest] = cron.trim().split(" ").filter(Boolean);
+  const digits = (x: string) => x.length > 0 && [...x].every((c) => c >= "0" && c <= "9");
+  const daily = rest.length === 3 && rest.every((x) => x === "*") && digits(min) && digits(hour);
+  return daily ? `Every day at ${hour.padStart(2, "0")}:${min.padStart(2, "0")} (${tz})` : `Schedule ${cron} (${tz})`;
+}
+
 export function triggerText(t: BotTrigger): string {
-  if (t.kind === "cron") return `Schedule ${t.config.cron} (${t.config.timezone})`;
-  if (t.kind === "watch") return `Watch ${t.config.tool}: ${(t.config.fields ?? []).join(", ")} · every ${t.config.interval_min} min`;
-  if (t.kind === "webhook") return "Webhook";
-  return `Monitoring: ${t.config.detector_prefix}* · ${(t.config.severities ?? []).join(", ")}`;
+  if (t.kind === "cron") return cronText(String(t.config.cron), String(t.config.timezone));
+  if (t.kind === "watch") return `When ${humanize(String(t.config.tool)).toLowerCase()} changes: ${(t.config.fields ?? []).map((f: string) => f.replaceAll("_", " ")).join(", ")} · checked every ${t.config.interval_min} min`;
+  if (t.kind === "webhook") return "When another system calls its webhook";
+  return `On monitoring alerts ${t.config.detector_prefix}* · ${(t.config.severities ?? []).join(", ")}`;
 }
 
 /** Activity rows grouped by run, newest run first; rows inside a run oldest first so it reads as a story. */
@@ -100,7 +109,7 @@ function Instructions({ bot }: { bot: Bot }) {
       </div>
       <label className="flex flex-col gap-1 text-sm">
         Standing instructions <span className="text-xs text-muted-foreground">version {bot.instructions_version} · every save keeps the old text; each run records the version it used</span>
-        <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={16} className="font-mono text-xs" />
+        <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={18} className="text-sm leading-relaxed" />
       </label>
       <div className="flex gap-2">
         <Button disabled={!dirty || busy || !name.trim()} onClick={() => void save({ instructions: text, name: name.trim(), role })}>Save</Button>
@@ -487,14 +496,18 @@ export function stepText(a: BotActivity): string {
 
 const STEP_NAME: Record<string, string> = {
   memory_recall: "Memory", memory_retain: "Saved to memory", notification_center: "Notified", email: "Email",
-  bot_eda: "Statistics (EDA)", run_python: "Calculation",
+  bot_eda: "Statistics (EDA)", run_python: "Calculation", meta_campaigns_list: "Live campaign list",
+  meta_campaigns_get: "Live campaign details", meta_insights_live: "Live performance",
 };
+
+/** Tool names a person has not seen before read as words: "meta_adsets_list" → "Meta adsets list". */
+const humanize = (name: string) => name.charAt(0).toUpperCase() + name.slice(1).replaceAll("_", " ");
 
 export function stepLabel(a: BotActivity): string {
   if (a.kind === "answer") return `Answer${a.decision ? `: ${(VERDICT[a.decision]?.label ?? a.decision.replace("_", " ")).toLowerCase()}` : ""}`;
   if (a.kind === "trigger") return "Started";
   if (a.kind === "note") return "Note";
-  return STEP_NAME[a.tool ?? ""] ?? a.tool ?? a.kind;
+  return STEP_NAME[a.tool ?? ""] ?? humanize(a.tool ?? a.kind);
 }
 
 export function ActivityTimeline({ activity }: { activity: BotActivity[] }) {
@@ -516,11 +529,10 @@ export function ActivityTimeline({ activity }: { activity: BotActivity[] }) {
                 <li key={a.id} className="flex gap-2 text-xs">
                   <span aria-hidden className={cn("mt-1 size-1.5 shrink-0 rounded-full", OUTCOME_TONE[a.outcome])} />
                   <span className="min-w-0 flex-1 break-words">
-                    <span className="font-medium">{stepLabel(a)}</span>
+                    <span className="font-medium" title={[a.target, a.scope && `scope ${a.scope}: ${a.decision}`].filter(Boolean).join("\n") || undefined}>{stepLabel(a)}</span>
                     {a.outcome !== "completed" && <span className="text-muted-foreground"> · {a.outcome}</span>}
-                    {a.target && <span className="text-muted-foreground"> · {a.target}</span>}
-                    {a.scope && <span className="block text-muted-foreground">scope {a.scope} · {a.decision}</span>}
-                    {stepText(a) && <span title={stepText(a)} className="line-clamp-3 wrap-anywhere text-muted-foreground">{stepText(a)}</span>}
+                    {a.scope && a.decision && !a.decision.startsWith("allowed") && <span className="block text-destructive">Not allowed: {a.scope} ({a.decision})</span>}
+                    {stepText(a) && <span title={stepText(a)} className="line-clamp-2 wrap-anywhere text-muted-foreground">{stepText(a)}</span>}
                   </span>
                 </li>
               ))}
@@ -532,6 +544,48 @@ export function ActivityTimeline({ activity }: { activity: BotActivity[] }) {
   );
 }
 
+/** Everything that configures the bot, kept out of the way of its reports (owner 2026-11-26). */
+function BotSettings({ bot, open, onOpenChange }: { bot: Bot; open: boolean; onOpenChange: (v: boolean) => void }) {
+  const busy = useBotsStore((s) => s.busy);
+  const remove = useBotsStore((s) => s.remove);
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-2xl">
+        <SheetHeader className="border-b px-6 py-4 pr-12 max-sm:px-4 max-sm:pr-12">
+          <SheetTitle className="m-0 text-lg">Settings · {bot.name}</SheetTitle>
+          <SheetDescription className="m-0">Changes apply from the bot's next run.</SheetDescription>
+        </SheetHeader>
+        <Tabs defaultValue="general" className="min-h-0 flex-1">
+          <TabsList className="mx-6 mt-4 max-w-[calc(100%-3rem)] max-sm:mx-4 max-sm:max-w-[calc(100%-2rem)] justify-start overflow-x-auto overflow-y-hidden [scrollbar-width:none]">
+            <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="triggers">When it runs</TabsTrigger>
+            <TabsTrigger value="skills">Skills</TabsTrigger>
+            <TabsTrigger value="memory">Memory</TabsTrigger>
+            <TabsTrigger value="tools">Tools &amp; email</TabsTrigger>
+          </TabsList>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-8 max-sm:px-4">
+            <TabsContent value="general" className="flex flex-col gap-8">
+              <Instructions bot={bot} />
+              <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 px-4 py-3">
+                <div>
+                  <h3 className="m-0 text-sm font-medium">Delete this bot</h3>
+                  <p className="m-0 text-xs text-muted-foreground">Removes its runs, activity, triggers and skills for good. Its memory is kept.</p>
+                </div>
+                <Button variant="destructive" disabled={busy}
+                  onClick={() => window.confirm(`Delete “${bot.name}”? Its runs, activity, triggers and skills are removed for good. Its memory is kept.`) && void remove(bot.bot_id)}>Delete bot</Button>
+              </section>
+            </TabsContent>
+            <TabsContent value="triggers"><Triggers bot={bot} /></TabsContent>
+            <TabsContent value="skills"><Skills bot={bot} /></TabsContent>
+            <TabsContent value="memory"><Memory bot={bot} /></TabsContent>
+            <TabsContent value="tools"><Tools bot={bot} /></TabsContent>
+          </div>
+        </Tabs>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 function BotDetail({ bot, onShowActivity }: { bot: Bot; onShowActivity?: () => void }) {
   const runs = useBotsStore((s) => s.runs);
   const chat = useBotsStore((s) => s.chat);
@@ -539,48 +593,40 @@ function BotDetail({ bot, onShowActivity }: { bot: Bot; onShowActivity?: () => v
   const runNow = useBotsStore((s) => s.runNow);
   const busy = useBotsStore((s) => s.busy);
   const activity = useBotsStore((s) => s.activity);
-  const remove = useBotsStore((s) => s.remove);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const running = runs.some((r) => r.status === "queued" || r.status === "running");
   return (
-    <div className="flex flex-col gap-4">
-      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b pb-4">
+    <div className="flex flex-col gap-5">
+      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
-          <h1 className="m-0 flex items-center gap-2 font-serif text-[28px] leading-tight font-semibold tracking-tight"><BotIcon aria-hidden />{bot.name}</h1>
-          <p className="m-0 mt-0.5 text-sm text-muted-foreground">{bot.role}</p>
-          <p className="m-0 mt-2 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+          <h1 className="m-0 flex items-center gap-2 font-serif text-[26px] leading-tight font-semibold tracking-tight"><BotIcon aria-hidden />{bot.name}</h1>
+          <p className="m-0 mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
+            <span>{bot.role}</span>
+            <span aria-hidden>·</span>
             <span aria-hidden className={cn("size-1.5 rounded-full", bot.enabled ? "bg-[var(--success)]" : "bg-muted-foreground/40")} />
-            <span>{bot.enabled ? (bot.next_run_at ? `On · next scheduled run ${when(bot.next_run_at)}` : "On") : "Paused: no automatic runs"}</span>
-            <span>· Read-only: it proposes changes, a person makes them</span>
+            <span>{bot.enabled ? (bot.next_run_at ? `Next report ${when(bot.next_run_at)}` : "On") : "Paused"}</span>
+            <span aria-hidden>·</span>
+            <span title="It proposes changes; a person makes them.">Read-only</span>
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <label className="mr-1 flex items-center gap-2 text-sm"><Switch checked={bot.enabled} onCheckedChange={(v) => void save({ enabled: v })} aria-label="Bot on" />{bot.enabled ? "On" : "Paused"}</label>
           <Button disabled={busy || !bot.enabled || running} onClick={() => void runNow()}>{running ? "Running…" : "Run now"}</Button>
-          {onShowActivity && <Button variant="outline" className="max-lg:hidden" aria-label="Show activity" onClick={onShowActivity}><ActivityIcon /> Activity</Button>}
-          <Button variant="ghost" className="text-destructive hover:text-destructive" disabled={busy}
-            onClick={() => window.confirm(`Delete “${bot.name}”? Its runs, activity, triggers and skills are removed for good. Its memory is kept.`) && void remove(bot.bot_id)}>Delete bot</Button>
+          <Button variant="outline" onClick={() => setSettingsOpen(true)}><SettingsIcon /> Settings</Button>
+          {onShowActivity && <Button variant="ghost" className="max-lg:hidden" aria-label="Show activity" onClick={onShowActivity}><ActivityIcon /> Activity</Button>}
         </div>
       </header>
       <Tabs defaultValue="runs">
-        <TabsList className="max-w-full justify-start overflow-x-auto overflow-y-hidden [scrollbar-width:none]">
-          <TabsTrigger value="runs">Runs</TabsTrigger>
+        <TabsList>
+          <TabsTrigger value="runs">Reports</TabsTrigger>
           <TabsTrigger value="chat">Chat</TabsTrigger>
-          <TabsTrigger value="instructions">Instructions</TabsTrigger>
-          <TabsTrigger value="triggers">Triggers</TabsTrigger>
-          <TabsTrigger value="skills">Skills</TabsTrigger>
-          <TabsTrigger value="memory">Memory</TabsTrigger>
-          <TabsTrigger value="tools">Tools &amp; limits</TabsTrigger>
           <TabsTrigger value="activity" className="lg:hidden">Activity</TabsTrigger>
         </TabsList>
-        <TabsContent value="runs" className="pt-3"><Runs runs={runs} /></TabsContent>
-        <TabsContent value="chat" className="pt-3"><Chat chat={chat} /></TabsContent>
-        <TabsContent value="instructions" className="pt-3"><Instructions bot={bot} /></TabsContent>
-        <TabsContent value="triggers" className="pt-3"><Triggers bot={bot} /></TabsContent>
-        <TabsContent value="skills" className="pt-3"><Skills bot={bot} /></TabsContent>
-        <TabsContent value="memory" className="pt-3"><Memory bot={bot} /></TabsContent>
-        <TabsContent value="tools" className="pt-3"><Tools bot={bot} /></TabsContent>
-        <TabsContent value="activity" className="pt-3 lg:hidden"><ActivityTimeline activity={activity} /></TabsContent>
+        <TabsContent value="runs" className="pt-4"><Runs runs={runs.filter((r) => r.trigger_kind !== "chat")} /></TabsContent>
+        <TabsContent value="chat" className="pt-4"><Chat chat={chat} /></TabsContent>
+        <TabsContent value="activity" className="pt-4 lg:hidden"><ActivityTimeline activity={activity} /></TabsContent>
       </Tabs>
+      <BotSettings bot={bot} open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 }
