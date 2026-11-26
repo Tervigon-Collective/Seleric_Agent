@@ -194,14 +194,31 @@ class _TimedModel(WrapperModel):
         self._record(call_started=t0, response=resp, model_settings=model_settings)
 
 
+@dataclass(frozen=True)
+class TurnPolicy:
+    """Per-caller limits for one turn. Chat uses the env defaults; a bot role sets its own."""
+
+    max_steps: int | None = None  # None = the env default (AGENT_MAX_STEPS), read at turn start
+    max_tool_calls: int | None = None
+    budget_s: float | None = None
+    local_tools: frozenset[str] | None = None  # allowlist of local tool names; None = all
+
+    def resolved(self) -> TurnPolicy:
+        return TurnPolicy(self.max_steps or MAX_STEPS, self.max_tool_calls or MAX_TOOL_CALLS,
+                          self.budget_s or TURN_BUDGET_S, self.local_tools)
+
+
 class _Budget:
-    def __init__(self, state: TurnState, *, is_cancelled: Callable[[], bool], started: float) -> None:
+    def __init__(self, state: TurnState, *, is_cancelled: Callable[[], bool], started: float,
+                 policy: TurnPolicy | None = None) -> None:
         self.state, self.is_cancelled, self.started = state, is_cancelled, started
+        self.policy = (policy or TurnPolicy()).resolved()
         self.forced = False
 
     def spent(self, usage: RunUsage) -> bool:
-        return (usage.requests >= MAX_STEPS - 1 or self.state.tool_calls >= MAX_TOOL_CALLS
-                or time.perf_counter() - self.started > TURN_BUDGET_S)
+        p = self.policy
+        return (usage.requests >= p.max_steps - 1 or self.state.tool_calls >= p.max_tool_calls
+                or time.perf_counter() - self.started > p.budget_s)
 
 
 def _instructions(
@@ -233,7 +250,10 @@ def _instructions(
     def bot_block(_: RunContext[SelericDeps]) -> str:
         return ("This turn is a bot run, not a chat message.\n" + bot_brief) if bot_brief else ""
 
-    return [system_prompt, bot_block, summary_block, memory_block, config_block, prior_block, budget_block]
+    def notes_block(ctx: RunContext[SelericDeps]) -> str:
+        return ctx.deps.scratchpad.render()
+
+    return [system_prompt, bot_block, summary_block, memory_block, config_block, prior_block, notes_block, budget_block]
 
 
 async def run_turn(
@@ -251,6 +271,7 @@ async def run_turn(
     thread_summary: str = "",
     workspace_notes: str = "",
     bot_brief: str = "",
+    policy: TurnPolicy | None = None,
     is_cancelled: Callable[[], bool] = lambda: False,
     snapshot_loader: Any = None,
     on_stream: Callable[[str, str], None] | None = None,
@@ -258,7 +279,8 @@ async def run_turn(
     begin_loop_effort()
     started = time.perf_counter()
     state = TurnState(today=datetime.now(deps.as_of.tzinfo or UTC).date(), prior_queries=list(prior_queries or []))
-    budget = _Budget(state, is_cancelled=is_cancelled, started=started)
+    budget = _Budget(state, is_cancelled=is_cancelled, started=started, policy=policy)
+    policy = budget.policy
     usage = RunUsage()
     mission_id = deps.mission_id
     stats: dict[str, Any] = {"revisions": 0, "degenerate_retries": 0}
@@ -277,7 +299,8 @@ async def run_turn(
         return [*(prior_payloads or []), *state.payloads, *([quoted] if quoted else [])]
 
     tools = [*build_mcp_tools(gateway, tool_defs, state),
-             *build_local_tools(state, snapshot_loader=snapshot_loader, is_cancelled=is_cancelled, figures=email_figures)]
+             *build_local_tools(state, snapshot_loader=snapshot_loader, is_cancelled=is_cancelled, figures=email_figures,
+                               only=policy.local_tools)]
     llm_calls: list[dict[str, Any]] = []
     agent: Agent[SelericDeps, str] = Agent(
         model=_TimedModel(model, llm_calls, turn_started=started, timing=timing),
@@ -300,7 +323,7 @@ async def run_turn(
     live = on_stream is not None and STREAM_ANSWER
     answer_stream = AnswerStream(on_stream, clock=time.perf_counter) if on_stream is not None else None
     handler = progress_handler(mission_id, answer_stream) if (answer_stream or has_progress_sink(mission_id)) else None
-    limits = UsageLimits(request_limit=MAX_STEPS + 6, tool_calls_limit=MAX_TOOL_CALLS + 8)
+    limits = UsageLimits(request_limit=policy.max_steps + 6, tool_calls_limit=policy.max_tool_calls + 8)
 
     async def run(prompt: str, messages: list[ModelMessage]) -> tuple[str, list[ModelMessage]]:
         streaming = live

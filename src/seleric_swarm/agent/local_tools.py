@@ -161,9 +161,16 @@ def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False, quotable
     return wrapper
 
 
+# Local tools that only read and analyse (no email). A bot role's default allowlist; test_local_tools keeps it in step.
+ANALYSIS_TOOLS = frozenset({
+    "diagnose_metric_change", "break_down_metric", "forecast_metrics", "explore_data",
+    "run_python", "show_chart", "show_table", "audit_entities", "business_snapshot", "escalate",
+})
+
+
 def build_local_tools(state: TurnState, *, snapshot_loader: Any = None, is_cancelled: Callable[[], bool] | None = None,
-                      figures: Callable[[], list[Any]] | None = None) -> list[Any]:
-    """Tools bound to this turn's state."""
+                      figures: Callable[[], list[Any]] | None = None, only: frozenset[str] | None = None) -> list[Any]:
+    """Tools bound to this turn's state. ``only`` keeps just the named tools (a bot role's allowlist)."""
 
     async def run_python(
         ctx: RunContext[SelericDeps], code: str, query_ids: list[str] | None = None, purpose: str = ""
@@ -321,5 +328,6 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None, is_cance
     ]
     own = [run_python, show_chart, show_table, audit_entities, business_snapshot, escalate]
     mail = build_email_tools(state, is_cancelled=is_cancelled or (lambda: False), figures=figures or (lambda: list(state.payloads)))
-    return [*(_tracked(state, fn, raises_effort=fn is diagnosis.diagnose_metric_change) for fn in [*helpers, *own]),
-            *(_tracked(state, fn, quotable=False) for fn in mail)]
+    keep = (lambda fn: True) if only is None else (lambda fn: fn.__name__ in only)
+    return [*(_tracked(state, fn, raises_effort=fn is diagnosis.diagnose_metric_change) for fn in [*helpers, *own] if keep(fn)),
+            *(_tracked(state, fn, quotable=False) for fn in mail if keep(fn))]

@@ -177,6 +177,25 @@ def tool_activity(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+BOT_TURN_BUDGET_S = float(os.getenv("BOTS_TURN_BUDGET_S", "480"))
+
+
+def policy(bot: dict[str, Any]) -> Any:
+    """The bot's own loop limits (the chat defaults are too small for a standing review) and no email tools."""
+    from seleric_swarm.agent.local_tools import ANALYSIS_TOOLS
+    from seleric_swarm.agent.loop import MAX_STEPS, TurnPolicy
+
+    calls = int(bot["limits"]["max_tool_calls"])
+    return TurnPolicy(max_steps=max(MAX_STEPS, calls // 2), max_tool_calls=calls, budget_s=BOT_TURN_BUDGET_S,
+                      local_tools=ANALYSIS_TOOLS)
+
+
+def thread_of(bot: dict[str, Any], run: dict[str, Any]) -> str:
+    """Chat keeps one thread for follow-ups; every other run gets its own, so an earlier run's figures never count as
+    checked evidence in this one."""
+    return f"bot-{bot['bot_id']}" if run["trigger_kind"] == "chat" else f"bot-{bot['bot_id']}-{run['run_id']}"
+
+
 async def execute(runtime: Any, run: dict[str, Any]) -> None:
     from seleric_swarm.agent.runner import run_v3_mission
 
@@ -195,8 +214,9 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
             store.add_activity(conn, run["run_id"], bot["bot_id"], kind="memory", **row)
     try:
         dispatched = await run_v3_mission(
-            runtime, query=question(run), mission_id=mission_id, thread_id=f"bot-{bot['bot_id']}",
+            runtime, query=question(run), mission_id=mission_id, thread_id=thread_of(bot, run),
             owner_user_id=f"bot:{bot['bot_id']}", bot_brief=brief(bot, run, history, recalled), extra_tools=tuple(bot["tools"]),
+            policy=policy(bot),
         )
         result = dispatched.get("result") or {}
         status = str(result.get("status") or "failed")
