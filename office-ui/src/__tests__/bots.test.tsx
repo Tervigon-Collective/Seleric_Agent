@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { botsApi, type Bot, type BotActivity, type BotRun } from "../api/bots";
-import { ActivityTimeline, BotsWorkspace, cronText, groupByRun, stepLabel, stepText, triggerText } from "../components/bots/BotsWorkspace";
+import { ActivityTimeline, BotsWorkspace, cronText, groupByRun, splitAnswer, stepLabel, stepText, triggerText } from "../components/bots/BotsWorkspace";
 import { BotReports } from "../components/notifications/NotificationCenter";
 import { useShellStore } from "../stores/shell";
 import { readRoute, writeRoute } from "../routing";
@@ -81,6 +81,11 @@ describe("activity timeline", () => {
       .toBe("When meta campaigns list changes: effective status · checked every 15 min");
     expect(triggerText({ ...bot.triggers![0], kind: "webhook", config: {} })).toBe("When another system calls its webhook");
     expect(cronText("30 7 * * 1", "UTC")).toBe("Schedule 30 7 * * 1 (UTC)");
+  });
+
+  it("splits the verdict off even when the fact-check note follows it", () => {
+    expect(splitAnswer("**Calm.**\n\nOUTCOME: no_action — all inside range\n\n⚠ Not verified: 5,000"))
+      .toEqual({ body: "**Calm.**\n\n\n⚠ Not verified: 5,000", reason: "All inside range" });
   });
 
   it("names memory and delivery steps in words", () => {

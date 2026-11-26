@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "cn";
 import { AppFrame } from "../AppFrame";
-import { ActivityIcon, BotIcon, PlusIcon, SettingsIcon, XIcon } from "../icons";
+import { ActivityIcon, BotIcon, ChevronDownIcon, PlusIcon, SettingsIcon, XIcon } from "../icons";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -66,8 +67,8 @@ function BotList() {
       <ul className="m-0 flex list-none flex-col gap-0.5 overflow-y-auto p-0" aria-label="Bots">
         {bots.map((b) => (
           <li key={b.bot_id}>
-            <button type="button" onClick={() => void select(b.bot_id)} aria-current={b.bot_id === selectedId || undefined}
-              className={cn("flex w-full flex-col rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent", b.bot_id === selectedId && "bg-accent")}>
+            <Button variant="ghost" onClick={() => void select(b.bot_id)} aria-current={b.bot_id === selectedId || undefined}
+              className={cn("h-auto w-full flex-col items-stretch justify-start gap-0 px-2 py-1.5 text-left font-normal whitespace-normal", b.bot_id === selectedId && "bg-accent")}>
               <span className="flex items-center gap-1.5 font-medium">
                 <span aria-hidden className={cn("size-1.5 rounded-full", b.enabled ? "bg-[var(--success)]" : "bg-muted-foreground/40")} />
                 {b.name}{!b.enabled && <span className="text-xs font-normal text-muted-foreground"> · paused</span>}
@@ -76,7 +77,7 @@ function BotList() {
               <span className="mt-0.5 text-xs text-muted-foreground">
                 {b.last_run ? <>Last: <span className="text-foreground/80">{verdictOf(b.last_run).label}</span>, {when(b.last_run.created_at)}</> : "Not run yet"}
               </span>
-            </button>
+            </Button>
           </li>
         ))}
         {!bots.length && <li className="px-2 text-sm text-muted-foreground">No bots yet.</li>}
@@ -194,8 +195,8 @@ function Triggers({ bot }: { bot: Bot }) {
           <label className="flex flex-col gap-1 text-xs">Timezone<Input value={tz} onChange={(e) => setTz(e.target.value)} className="w-40" /></label>
         </> : <>
           <label className="flex flex-col gap-1 text-xs">Detector starts with<Input value={prefix} onChange={(e) => setPrefix(e.target.value)} className="w-40 font-mono" /></label>
-          <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={critical} onChange={(e) => setCritical(e.target.checked)} /> critical</label>
-          <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={warning} onChange={(e) => setWarning(e.target.checked)} /> warning</label>
+          <label className="flex items-center gap-1.5 text-xs"><Checkbox checked={critical} onCheckedChange={(v) => setCritical(v === true)} /> critical</label>
+          <label className="flex items-center gap-1.5 text-xs"><Checkbox checked={warning} onCheckedChange={(v) => setWarning(v === true)} /> warning</label>
         </>}
         <Button size="sm" disabled={busy} onClick={add}>Add</Button>
       </fieldset>
@@ -324,7 +325,7 @@ function Tools({ bot }: { bot: Bot }) {
         {readTools.map((tool) => (
           <li key={tool}>
             <label className="flex items-center gap-2 text-sm font-mono">
-              <input type="checkbox" checked={bot.tools.includes(tool)} disabled={busy} onChange={(e) => toggle(tool, e.target.checked)} />{tool}
+              <Checkbox checked={bot.tools.includes(tool)} disabled={busy} onCheckedChange={(v) => toggle(tool, v === true)} />{tool}
             </label>
           </li>
         ))}
@@ -383,12 +384,14 @@ function Chat({ chat }: { chat: BotRun[] }) {
 /** Splits the closing "OUTCOME: x — reason" line off the answer so the verdict can lead the card. */
 export function splitAnswer(answer: string): { body: string; reason: string } {
   const lines = answer.trimEnd().split("\n");
-  const last = (lines.at(-1) ?? "").replaceAll("*", "").trim();
-  if (!last.toUpperCase().startsWith("OUTCOME:")) return { body: answer, reason: "" };
-  const rest = last.slice("OUTCOME:".length);
+  const clean = (l: string) => l.replaceAll("*", "").trim();
+  // the last OUTCOME line, not the last line: the fact-check note can follow it
+  const at = lines.map((l) => clean(l).toUpperCase().startsWith("OUTCOME:")).lastIndexOf(true);
+  if (at < 0) return { body: answer, reason: "" };
+  const rest = clean(lines[at]).slice("OUTCOME:".length);
   const dash = rest.indexOf("—");
   const reason = dash >= 0 ? rest.slice(dash + 1).trim() : "";
-  return { body: lines.slice(0, -1).join("\n").trim(), reason: reason.charAt(0).toUpperCase() + reason.slice(1) };
+  return { body: [...lines.slice(0, at), ...lines.slice(at + 1)].join("\n").trim(), reason: reason.charAt(0).toUpperCase() + reason.slice(1) };
 }
 
 /** The run's verdict in the operator's words (B17 outcomes); tone = band colour. */
@@ -413,7 +416,7 @@ export function verdictOf(r: Pick<BotRun, "outcome" | "status">) {
 
 function RunMeta({ r }: { r: BotRun }) {
   return (
-    <p className="m-0 text-xs text-muted-foreground">
+    <p title={r.reason} className="m-0 line-clamp-2 text-xs wrap-anywhere text-muted-foreground">
       <span className="font-medium text-foreground/80">Why it ran:</span> {r.reason || KIND_LABEL[r.trigger_kind]}
       {r.merged.length > 0 && <> (+ {r.merged.length} more {r.merged.length === 1 ? "trigger" : "triggers"} while it waited)</>}
       {r.instructions_version ? <> · instructions v{r.instructions_version}</> : null}
@@ -423,7 +426,7 @@ function RunMeta({ r }: { r: BotRun }) {
 }
 
 function RunBody({ r, body }: { r: BotRun; body: string }) {
-  if (r.answer) return <div className="max-w-[72ch] text-sm leading-relaxed"><SafeContent text={body} /></div>;
+  if (r.answer) return <div className="text-sm leading-relaxed [&_li]:max-w-[72ch] [&_p]:max-w-[72ch] [&_table]:tabular-nums [&_td]:align-top [&_td]:whitespace-normal [&_td]:[overflow-wrap:normal]"><SafeContent text={body} /></div>;
   if (r.error) return <p className="m-0 text-sm whitespace-pre-wrap text-destructive">{r.error}</p>;
   return live(r) ? <p className="m-0 text-sm text-muted-foreground">The bot is working; its answer appears here.</p> : null;
 }
@@ -433,7 +436,7 @@ function LatestRun({ r }: { r: BotRun }) {
   const { body, reason } = splitAnswer(r.answer ?? "");
   const v = verdictOf(r);
   return (
-    <section aria-label="Latest run" className="overflow-hidden rounded-xl border">
+    <section aria-label="Latest run" className="overflow-hidden rounded-lg border">
       <div className={cn("flex flex-wrap items-baseline gap-x-3 gap-y-1 px-5 py-3 max-sm:px-4", v.tone)}>
         <h2 className="m-0 text-lg font-semibold">{v.label}</h2>
         <span className="text-xs opacity-80">{KIND_LABEL[r.trigger_kind] ?? r.trigger_kind} · {when(r.created_at)}</span>
@@ -453,12 +456,13 @@ function EarlierRun({ r }: { r: BotRun }) {
   return (
     <li className="border-b last:border-b-0">
       <details className="group">
-        <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-0.5 px-1 py-2.5 text-sm hover:bg-accent/50 [&::-webkit-details-marker]:hidden">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-0.5 rounded-md px-1 py-2.5 text-sm outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
           <span aria-hidden className={cn("size-2 shrink-0 rounded-full", v.dot)} />
           <span className="shrink-0 font-medium sm:w-28">{v.label}</span>
           <span className="min-w-0 flex-1 truncate text-muted-foreground max-sm:order-last max-sm:line-clamp-2 max-sm:basis-full max-sm:pl-5 max-sm:whitespace-normal">{reason || r.reason}</span>
           <span className="shrink-0 text-xs text-muted-foreground max-sm:hidden">{KIND_LABEL[r.trigger_kind] ?? r.trigger_kind}</span>
-          <span className="shrink-0 text-right text-xs whitespace-nowrap text-muted-foreground max-sm:ml-auto sm:w-24">{when(r.created_at)}</span>
+          <span className="shrink-0 text-right text-xs whitespace-nowrap text-muted-foreground tabular-nums max-sm:ml-auto sm:w-24">{when(r.created_at)}</span>
+          <ChevronDownIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform duration-[var(--motion-fast)] group-open:rotate-180" />
         </summary>
         <div className="flex flex-col gap-3 pt-1 pb-4 pl-6">
           {reason && <p className="m-0 text-sm font-medium">{reason}</p>}
@@ -599,7 +603,7 @@ function BotDetail({ bot, onShowActivity }: { bot: Bot; onShowActivity?: () => v
     <div className="flex flex-col gap-5">
       <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
-          <h1 className="m-0 flex items-center gap-2 font-serif text-[26px] leading-tight font-semibold tracking-tight"><BotIcon aria-hidden />{bot.name}</h1>
+          <h1 className="m-0 flex items-center gap-2 text-2xl leading-tight font-semibold tracking-tight"><BotIcon aria-hidden />{bot.name}</h1>
           <p className="m-0 mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
             <span>{bot.role}</span>
             <span aria-hidden>·</span>
@@ -656,7 +660,7 @@ export function BotsWorkspace() {
         {bot && activityOpen && (
           <aside aria-label="Bot activity" className="w-[340px] shrink-0 overflow-y-auto border-l px-3 py-3 max-lg:hidden">
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="m-0 font-serif text-lg font-medium">Activity</h2>
+              <h2 className="m-0 text-base font-semibold">Activity</h2>
               <Button variant="ghost" size="icon-sm" aria-label="Hide activity" onClick={() => setActivityOpen(false)}><XIcon /></Button>
             </div>
             <ActivityTimeline activity={activity} />
