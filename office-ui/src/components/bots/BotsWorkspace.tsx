@@ -359,9 +359,9 @@ function Chat({ chat }: { chat: BotRun[] }) {
         {chat.map((r) => (
           <li key={r.run_id} className="flex flex-col gap-1">
             <div className="self-end rounded-lg bg-[var(--brand-soft)] px-3 py-2 text-sm">{r.query}</div>
-            <div className="rounded-lg border px-3 py-2 text-sm whitespace-pre-wrap">
+            <div className="rounded-lg border px-3 py-2 text-sm leading-relaxed">
               {r.status === "queued" || r.status === "running" ? <span className="text-muted-foreground">Working…</span>
-                : r.answer || r.error || <span className="text-muted-foreground">No answer.</span>}
+                : r.answer ? <SafeContent text={r.answer} /> : <span className="whitespace-pre-wrap">{r.error || "No answer."}</span>}
             </div>
           </li>
         ))}
@@ -376,27 +376,46 @@ function Chat({ chat }: { chat: BotRun[] }) {
   );
 }
 
+/** Splits the closing "OUTCOME: x — reason" line off the answer so the verdict can lead the card. */
+export function splitAnswer(answer: string): { body: string; reason: string } {
+  const lines = answer.trimEnd().split("\n");
+  const last = (lines.at(-1) ?? "").replaceAll("*", "").trim();
+  if (!last.toUpperCase().startsWith("OUTCOME:")) return { body: answer, reason: "" };
+  const rest = last.slice("OUTCOME:".length);
+  const dash = rest.indexOf("—");
+  return { body: lines.slice(0, -1).join("\n").trim(), reason: dash >= 0 ? rest.slice(dash + 1).trim() : "" };
+}
+
+const VERDICT_TONE: Record<string, string> = {
+  action_needed: "border-destructive/40 bg-[var(--danger-soft)]", unverified: "border-[var(--warning)]/50",
+  cleared: "border-[var(--success)]/40", no_action: "border-[var(--success)]/40",
+};
+
 function Runs({ runs }: { runs: BotRun[] }) {
   if (!runs.length) return <p className="text-sm text-muted-foreground">No runs yet.</p>;
   return (
-    <ol className="m-0 flex list-none flex-col gap-2 p-0">
-      {runs.map((r) => (
-        <li key={r.run_id} className="rounded-md border px-3 py-2 text-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{r.trigger_kind}</Badge>
-            <span className="font-medium">{STATUS_LABEL[r.status] ?? r.status}</span>
-            {r.outcome && <Badge variant={OUTCOME_BADGE[r.outcome] ?? "secondary"}>{r.outcome.replace("_", " ")}</Badge>}
-            <span className="ml-auto text-xs text-muted-foreground">{when(r.created_at)}{r.instructions_version ? ` · instructions v${r.instructions_version}` : ""}</span>
-          </div>
-          <p title={r.reason} className="m-0 mt-1 line-clamp-2 text-xs wrap-anywhere text-muted-foreground">{r.reason}</p>
-          {r.merged.length > 0 && <p className="m-0 line-clamp-2 text-xs wrap-anywhere text-muted-foreground">+ {r.merged.length} merged: {r.merged.map((m) => m.reason).join(" | ")}</p>}
-          {(r.answer || r.error) && (
-            <details className="mt-1"><summary className="cursor-pointer text-xs">Answer</summary>
-              <div className="mt-2 text-sm">{r.answer ? <SafeContent text={r.answer} /> : <span className="whitespace-pre-wrap">{r.error}</span>}</div>
-            </details>
-          )}
-        </li>
-      ))}
+    <ol className="m-0 flex list-none flex-col gap-3 p-0">
+      {runs.map((r, i) => {
+        const { body, reason } = splitAnswer(r.answer ?? "");
+        return (
+          <li key={r.run_id} className="rounded-lg border px-4 py-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              {r.outcome && <Badge variant={OUTCOME_BADGE[r.outcome] ?? "secondary"}>{r.outcome.replace("_", " ")}</Badge>}
+              <span className="font-medium">{STATUS_LABEL[r.status] ?? r.status}</span>
+              <Badge variant="outline">{r.trigger_kind}</Badge>
+              <span className="ml-auto text-xs text-muted-foreground">{when(r.created_at)}{r.instructions_version ? ` · instructions v${r.instructions_version}` : ""}</span>
+            </div>
+            {reason && <p className={cn("m-0 mt-2 rounded-md border px-3 py-2 font-medium", VERDICT_TONE[r.outcome ?? ""])}>{reason}</p>}
+            <p title={r.reason} className="m-0 mt-2 line-clamp-2 text-xs wrap-anywhere text-muted-foreground">Why it ran: {r.reason}</p>
+            {r.merged.length > 0 && <p className="m-0 line-clamp-2 text-xs wrap-anywhere text-muted-foreground">+ {r.merged.length} merged: {r.merged.map((m) => m.reason).join(" | ")}</p>}
+            {(r.answer || r.error) && (
+              <details className="mt-2" open={i === 0}><summary className="cursor-pointer text-xs font-medium">Full answer</summary>
+                <div className="mt-2 max-w-prose text-sm leading-relaxed">{r.answer ? <SafeContent text={body} /> : <span className="whitespace-pre-wrap">{r.error}</span>}</div>
+              </details>
+            )}
+          </li>
+        );
+      })}
     </ol>
   );
 }
