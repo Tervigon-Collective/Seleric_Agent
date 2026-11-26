@@ -456,7 +456,7 @@ function EarlierRun({ r }: { r: BotRun }) {
   return (
     <li className="border-b last:border-b-0">
       <details className="group">
-        <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-0.5 rounded-md px-1 py-2.5 text-sm outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-0.5 rounded-md px-1 py-2.5 pointer-coarse:py-3.5 text-sm outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
           <span aria-hidden className={cn("size-2 shrink-0 rounded-full", v.dot)} />
           <span className="shrink-0 font-medium sm:w-28">{v.label}</span>
           <span className="min-w-0 flex-1 truncate text-muted-foreground max-sm:order-last max-sm:line-clamp-2 max-sm:basis-full max-sm:pl-5 max-sm:whitespace-normal">{reason || r.reason}</span>
@@ -560,7 +560,7 @@ function BotSettings({ bot, open, onOpenChange }: { bot: Bot; open: boolean; onO
           <SheetDescription className="m-0">Changes apply from the bot's next run.</SheetDescription>
         </SheetHeader>
         <Tabs defaultValue="general" className="min-h-0 flex-1">
-          <TabsList className="mx-6 mt-4 max-w-[calc(100%-3rem)] max-sm:mx-4 max-sm:max-w-[calc(100%-2rem)] justify-start overflow-x-auto overflow-y-hidden [scrollbar-width:none]">
+          <TabsList className="mx-6 mt-4 max-w-[calc(100%-3rem)] justify-start overflow-x-auto overflow-y-hidden [scrollbar-width:none] max-sm:mx-4 max-sm:grid max-sm:h-auto max-sm:max-w-[calc(100%-2rem)] max-sm:grid-cols-3 max-sm:[&>button]:h-10">
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="triggers">When it runs</TabsTrigger>
             <TabsTrigger value="skills">Skills</TabsTrigger>
@@ -614,21 +614,21 @@ function BotDetail({ bot, onShowActivity }: { bot: Bot; onShowActivity?: () => v
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="mr-1 flex items-center gap-2 text-sm"><Switch checked={bot.enabled} onCheckedChange={(v) => void save({ enabled: v })} aria-label="Bot on" />{bot.enabled ? "On" : "Paused"}</label>
-          <Button disabled={busy || !bot.enabled || running} onClick={() => void runNow()}>{running ? "Running…" : "Run now"}</Button>
-          <Button variant="outline" onClick={() => setSettingsOpen(true)}><SettingsIcon /> Settings</Button>
-          {onShowActivity && <Button variant="ghost" className="max-lg:hidden" aria-label="Show activity" onClick={onShowActivity}><ActivityIcon /> Activity</Button>}
+          <label className="mr-1 flex items-center gap-2 text-sm pointer-coarse:min-h-11 pointer-coarse:px-1"><Switch checked={bot.enabled} onCheckedChange={(v) => void save({ enabled: v })} aria-label="Bot on" />{bot.enabled ? "On" : "Paused"}</label>
+          <Button className="pointer-coarse:h-11" disabled={busy || !bot.enabled || running} onClick={() => void runNow()}>{running ? "Running…" : "Run now"}</Button>
+          <Button variant="outline" className="pointer-coarse:h-11" onClick={() => setSettingsOpen(true)}><SettingsIcon /> Settings</Button>
+          {onShowActivity && <Button variant="ghost" className="max-xl:hidden" aria-label="Show activity" onClick={onShowActivity}><ActivityIcon /> Activity</Button>}
         </div>
       </header>
       <Tabs defaultValue="runs">
-        <TabsList>
-          <TabsTrigger value="runs">Reports</TabsTrigger>
-          <TabsTrigger value="chat">Chat</TabsTrigger>
-          <TabsTrigger value="activity" className="lg:hidden">Activity</TabsTrigger>
+        <TabsList className="pointer-coarse:h-11">
+          <TabsTrigger value="runs" className="pointer-coarse:px-4">Reports</TabsTrigger>
+          <TabsTrigger value="chat" className="pointer-coarse:px-4">Chat</TabsTrigger>
+          <TabsTrigger value="activity" className="pointer-coarse:px-4 xl:hidden">Activity</TabsTrigger>
         </TabsList>
         <TabsContent value="runs" className="pt-4"><Runs runs={runs.filter((r) => r.trigger_kind !== "chat")} /></TabsContent>
         <TabsContent value="chat" className="pt-4"><Chat chat={chat} /></TabsContent>
-        <TabsContent value="activity" className="pt-4 lg:hidden"><ActivityTimeline activity={activity} /></TabsContent>
+        <TabsContent value="activity" className="pt-4 xl:hidden"><ActivityTimeline activity={activity} /></TabsContent>
       </Tabs>
       <BotSettings bot={bot} open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
@@ -658,7 +658,7 @@ export function BotsWorkspace() {
           {bot ? <div className="mx-auto max-w-4xl pt-1"><BotDetail bot={bot} onShowActivity={activityOpen ? undefined : () => setActivityOpen(true)} /></div> : <p className="text-sm text-muted-foreground">{selectedId ? "Loading…" : "Create a bot from a template in the left panel."}</p>}
         </main>
         {bot && activityOpen && (
-          <aside aria-label="Bot activity" className="w-[340px] shrink-0 overflow-y-auto border-l px-3 py-3 max-lg:hidden">
+          <aside aria-label="Bot activity" className="w-[340px] shrink-0 overflow-y-auto border-l px-3 py-3 max-xl:hidden">
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="m-0 text-base font-semibold">Activity</h2>
               <Button variant="ghost" size="icon-sm" aria-label="Hide activity" onClick={() => setActivityOpen(false)}><XIcon /></Button>
