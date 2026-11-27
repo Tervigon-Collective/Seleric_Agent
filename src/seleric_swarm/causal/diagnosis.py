@@ -689,7 +689,10 @@ def _transform(series: Series, pool: set[date]) -> tuple[bool, float]:
     """Log scale for non-negative series (multiplicative noise; drops are bounded at
     -100% while rises are not), with a small offset so zeros stay finite."""
     vals = [float(series[d]) for d in pool]
-    if not vals or min(vals) < 0:
+    # A few negative days (a returns or refund booking larger than the day's sales) do not make a sales-like
+    # series signed: kept on the linear scale, a week-long outage (-75 %) looked milder than the recovery after
+    # it (+300 %), so the outage became the reference (live 2026-11-26). Those days are scored at zero instead.
+    if not vals or sum(v < 0 for v in vals) > P.DIAG_LOG_MAX_NEGATIVE_SHARE * len(vals):
         return False, 0.0
     med = _median([abs(v) for v in vals])
     return True, (0.01 * med if med > 0 else 1.0)
@@ -697,7 +700,8 @@ def _transform(series: Series, pool: set[date]) -> tuple[bool, float]:
 
 def _err(actual: float, ref: float, use_log: bool, offset: float) -> float | None:
     if use_log:
-        return math.log(actual + offset) - math.log(ref + offset) if ref + offset > 0 and actual + offset > 0 else None
+        # Negative values clamp to zero: on this scale they are as extreme as a zero day.
+        return math.log(max(actual, 0.0) + offset) - math.log(max(ref, 0.0) + offset) if offset > 0 else None
     return (actual - ref) / abs(ref) if abs(ref) > 1e-12 else None
 
 
@@ -1793,12 +1797,32 @@ def _chain_step(
     ]
 
 
+def _bridge_parts(inp: DiagnosisInput, history: list[date]) -> list[str]:
+    """Bridge candidates that can be parts of the outcome: not metrics computed from it, nor from a metric equal
+    to it on every history day (a twin under another id). Otherwise an input such as ad spend was "explained" by
+    rearranging a P&L line built on it (ad spend = gross sales − COGS − gross profit, live 2026-11-26)."""
+    y = inp.series.get(inp.outcome, {})
+    days = [d for d in history if _finite(y.get(d))]
+    if not days:
+        return list(inp.bridge_candidates)
+    tol = max(1.0, P.DIAG_BRIDGE_TOLERANCE * _median([abs(float(y[d])) for d in days]))
+
+    def twin(m: str) -> bool:
+        ser = inp.series.get(m, {})
+        return all(_finite(ser.get(d)) and abs(float(ser[d]) - float(y[d])) <= tol for d in days)
+
+    built_on = descendants(inp.outcome, inp.lineage)
+    for m in [c for c in inp.bridge_candidates if twin(c)]:
+        built_on |= descendants(m, inp.lineage)
+    return [c for c in inp.bridge_candidates if c not in built_on]
+
+
 def _bridge(
     inp: DiagnosisInput, window: EventWindow, history: list[date], prev_days: list[date], total: float,
     total_vs_previous: float | None,
 ) -> tuple[list[BridgeTerm], list[str], float | None, float | None]:
     """The exact additive bridge, every level, against the reference and the day(s) before."""
-    tree = discover_bridge_tree(inp.outcome, inp.bridge_candidates, inp.series, history)
+    tree = discover_bridge_tree(inp.outcome, _bridge_parts(inp, history), inp.series, history)
     if inp.outcome not in tree:
         return [], [], None, None
     terms: list[BridgeTerm] = []
@@ -1949,6 +1973,14 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
     if baseline:
         z, p_period = _period_shift_z(ys, event_days, baseline)
         rel_err = None
+        if p_period is None and profile is not None:
+            # Too few days per period for a rank test: size the change against normal day-to-day noise instead of
+            # calling it "within normal variation" (a -100 % spend day was, live 2026-11-26). The one-day noise
+            # scale is wider than a multi-day window's, so this errs towards "not unusual".
+            e = _err(y_ev, y_rf, profile.use_log, profile.offset * (n_ev if meta_y.additive else 1))
+            z = profile.z(e) if e is not None else 0.0
+        # shortcut: with no profile (under MIN_OBSERVATION_ROWS history days) a short window still reads
+        # "overlap a lot"; add an "untested" strength if that case shows up.
     else:
         assert profile is not None
         rel_err = _err(y_ev, y_rf, profile.use_log, profile.offset * (n_ev if meta_y.additive else 1))

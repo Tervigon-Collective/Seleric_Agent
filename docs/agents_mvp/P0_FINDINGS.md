@@ -34,9 +34,16 @@ Live `diagnose_metric_change` (legacy engine, live catalogue/MCP) was run on 3 r
 |---|---|---|---|
 | CTR halving 10-04..05 (Meta) | ✔ −49.8 % (CH 1.87 → 0.89/1.09) | ✔ impressions +231 % vs clicks +66 % | ✔ new AWARENESS ad took 52 % of impressions at 0.04 % CTR (the known AWARENESS-03OCT launch) |
 | Spend outage 09-15..16 (Meta) | ✔ −100 % | ✘ writes ad_spend through a P&L identity (`ad_spend = gross_sales − cogs − gross_profit`, or `−net_profit + contribution_margin`), giving "85 % of the spend change came from gross sales". Causally backwards. | ✔ "broad-based" vs usual; compare mode names the top campaign (15 %) |
-| Net sales drop 10-02 | ✘ vs "usual": **+73.8 %** against a usual of ₹25.6 k. The returns lump poisoned the reference, so the day was called a rise. ✔ vs 09-25 (compare mode): −51 % | identity correct but trivial (net_cogs + contribution) | ✔ compare mode: Meta channel 72 % of the change (CH: 58,746 → 25,030) |
+| Net sales drop 10-02 | ✘ vs "usual": **+73.8 %** against a usual of ₹25.6 k. Real cause, traced 11-27: the 09-14..22 outage became the reference (09-16..20) and the whole recovery 09-21..10-01 was flagged abnormal. Four negative booking days (returns lumps) forced the linear scale, where a −75 % outage looks milder than the +300 % recovery after it. ✔ vs 09-25 (compare mode): −51 % | identity correct but trivial (net_cogs + contribution) | ✔ compare mode: Meta channel 72 % of the change (CH: 58,746 → 25,030) |
 
 Also wrong: compare mode labels short windows "within normal day-to-day variation" even for −100 % spend. With 1–2 days per period the overlap test means nothing.
 
 Usable as-is: **localisation** (where) and **ratio levers** (CTR/CPC/CVR-style rate splits).
-Not usable as-is: the "exact bridge" for input metrics such as spend; event size vs "usual" for net-of-returns metrics; the "normal variation" label in short compare windows.
+Not usable as-is: the "exact bridge" for input metrics such as spend; event size vs "usual" after a multi-day outage on a series with a few negative days; the "normal variation" label in short compare windows.
+
+## Engine fixes (owner 2026-11-27: "fix the engine first")
+
+- (b) `_transform`: log scale for a mostly positive series (at most `DIAG_LOG_MAX_NEGATIVE_SHARE` = 20 % negative days); `_err` clamps negatives to zero on the log scale. On the real 10-02 series the reference moves from 09-15..20 (₹18.6 k) to 09-25..10-01 (₹77.6 k). A wider outlier seed was tried and was not needed.
+- (a) `_bridge_parts`: bridge candidates computed from the outcome, or from a data twin of it, are dropped (gross/net profit are built on `order_pnl_ad_spend`, the twin of `ad_spend`). Residual: `ssot_net_sales = ssot_net_cogs + ssot_contribution_before_ads` stays, because the SSOT catalogue metrics carry no `depends_on`. That is a catalogue gap (Core change) and is not fixed here.
+- (c) Compare mode with fewer than 3 days per period: the change is sized against the 1-day noise profile instead of reading 0 ("overlap a lot").
+- Tests: `tests/unit/test_diagnosis_live_20261126.py` (3; all fail on the old engine). Full unit suite 1222 pass; only `test_auto_chart` fails, as before this work.
