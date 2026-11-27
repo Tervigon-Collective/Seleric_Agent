@@ -215,12 +215,11 @@ describe("bots page", () => {
     expect(container.textContent).toContain("Dismissed");
   });
 
-  it("opens the report with the run's steps and asks about the decision", async () => {
+  it("asks about the decision, with no separate report button", async () => {
     mockBots();
     await act(async () => root.render(<BotsWorkspace />));
     await settle();
-    await act(async () => { button("Open report").click(); });
-    expect(document.body.querySelector('[aria-label="Bot activity"]')?.textContent).toContain("Campaign list changed");
+    expect(button("Open report")).toBeUndefined();
     await act(async () => { button("Ask about this").click(); });
     const box = document.body.querySelector('textarea[aria-label="Message the bot"]') as HTMLTextAreaElement;
     expect(box.value).toContain("About TH-149-SCRATCHLOUNGE-6OCT");

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { cn } from "cn";
 import { AppFrame } from "../AppFrame";
-import { AlertIcon, BotIcon, ChevronLeftIcon, FileTextIcon, MessageIcon, PlayIcon, PlusIcon, SettingsIcon, SlidersIcon, XIcon } from "../icons";
+import { AlertIcon, BotIcon, ChevronLeftIcon, MessageIcon, PlayIcon, PlusIcon, SettingsIcon, SlidersIcon, XIcon } from "../icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -376,17 +376,6 @@ export function verdictOf(r: Pick<BotRun, "outcome" | "status">) {
   return v ?? { ...NO_VERDICT, label: r.status === "running" || r.status === "queued" ? "Running…" : STATUS_LABEL[r.status] ?? r.status };
 }
 
-function RunMeta({ r }: { r: BotRun }) {
-  return (
-    <p title={r.reason} className="m-0 line-clamp-2 text-xs wrap-anywhere text-muted-foreground">
-      <span className="font-medium text-foreground/80">Why it ran:</span> {r.reason || KIND_LABEL[r.trigger_kind]}
-      {r.merged.length > 0 && <> (+ {r.merged.length} more {r.merged.length === 1 ? "trigger" : "triggers"} while it waited)</>}
-      {r.instructions_version ? <> · instructions v{r.instructions_version}</> : null}
-      {r.status === "partial" && <> · some figures could not be traced to a source</>}
-    </p>
-  );
-}
-
 function RunBody({ r, body }: { r: BotRun; body: string }) {
   if (r.answer) return <div className="text-sm leading-relaxed [&_li]:max-w-[72ch] [&_p]:max-w-[72ch] [&_table]:tabular-nums [&_td]:align-top [&_td]:whitespace-normal [&_td]:[overflow-wrap:normal]"><SafeContent text={body} /></div>;
   if (r.error) return <p className="m-0 text-sm whitespace-pre-wrap text-destructive">{r.error}</p>;
@@ -740,8 +729,8 @@ function AnswerCheckRow({ c }: { c: AnswerCheck }) {
   );
 }
 
-function Decision({ item, onReport, onAsk, onBack, backLabel = "All runs", children }: {
-  item: InboxItem; onReport: () => void; onAsk: () => void; onBack?: () => void; backLabel?: string; children?: ReactNode;
+function Decision({ item, onAsk, onBack, backLabel = "All runs", children }: {
+  item: InboxItem; onAsk: () => void; onBack?: () => void; backLabel?: string; children?: ReactNode;
 }) {
   const dismiss = useBotsStore((s) => s.dismiss);
   const busy = useBotsStore((s) => s.busy);
@@ -772,9 +761,8 @@ function Decision({ item, onReport, onAsk, onBack, backLabel = "All runs", child
           </p>)}
       {why && <p className="m-0 mt-3 max-w-[66ch] text-[15px] text-foreground/85">{why}</p>}
       {item.total > 1 && <p className="m-0 mt-1 text-xs text-muted-foreground tabular-nums">Change {item.index + 1} of {item.total} in this run</p>}
-      <div className="mt-4 flex flex-wrap gap-2 max-sm:grid max-sm:grid-cols-2 max-sm:[&>*:first-child]:col-span-2">
-        <Button className="pointer-coarse:h-11" onClick={onReport}><FileTextIcon />Open report</Button>
-        <Button variant="outline" className="pointer-coarse:h-11" onClick={onAsk}><MessageIcon />Ask about this</Button>
+      <div className="mt-4 flex flex-wrap gap-2 max-sm:grid max-sm:grid-cols-2">
+        <Button className="pointer-coarse:h-11" onClick={onAsk}><MessageIcon />Ask about this</Button>
         {run.outcome === "action_needed" && (run.dismissed_at
           ? <Button variant="ghost" className="pointer-coarse:h-11" disabled={busy} onClick={() => void dismiss(run.run_id, true)}>Bring back</Button>
           : <Button variant="ghost" className="pointer-coarse:h-11" disabled={busy} onClick={() => void dismiss(run.run_id)}><XIcon />{item.total > 1 ? `Dismiss all ${item.total}` : "Dismiss"}</Button>)}
@@ -876,34 +864,6 @@ function CampaignHistory({ item, className }: { item: InboxItem; className?: str
   );
 }
 
-/** "Open report": the bot's full answer, why it ran, and every step of that run. */
-function ReportSheet({ item, open, onOpenChange }: { item: InboxItem | null; open: boolean; onOpenChange: (v: boolean) => void }) {
-  const activity = useBotsStore((s) => s.activity);
-  if (!item) return null;
-  const r = item.run;
-  const { body, reason } = splitAnswer(r.answer ?? "");
-  const steps = activity.filter((a) => a.run_id === r.run_id);
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-2xl">
-        <SheetHeader className="border-b px-6 py-4 pr-12 max-sm:px-4">
-          <SheetTitle className="m-0 text-lg">{verdictOf(r).label} · {stamp(r.created_at)}</SheetTitle>
-          <SheetDescription className="m-0">{[r.bot_name, KIND_LABEL[r.trigger_kind]].filter(Boolean).join(" · ")}</SheetDescription>
-        </SheetHeader>
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pt-4 pb-8 max-sm:px-4">
-          {reason && <p className="m-0 text-sm font-medium">{reason}</p>}
-          <RunBody r={r} body={body} />
-          <RunMeta r={r} />
-          <section aria-label="Bot activity">
-            <h3 className="m-0 mb-2 text-sm font-bold">Steps</h3>
-            <ActivityTimeline activity={steps} />
-          </section>
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
 function AskSheet({ draft, open, onOpenChange }: { draft: string; open: boolean; onOpenChange: (v: boolean) => void }) {
   const chat = useBotsStore((s) => s.chat);
   const bot = useBotsStore((s) => s.bot);
@@ -940,7 +900,7 @@ export function BotsWorkspace() {
   const narrow = useIsMobile(768);
   const [tab, setTab] = useState("needs");
   const [sel, setSel] = useState<string | null>(urlRun);
-  const [sheet, setSheet] = useState<"report" | "ask" | "settings" | null>(null);
+  const [sheet, setSheet] = useState<"ask" | "settings" | null>(null);
 
   useEffect(() => {
     void loadList();
@@ -982,14 +942,13 @@ export function BotsWorkspace() {
           className={cn("min-h-0 overflow-y-auto bg-card md:border-r", narrow && item && "hidden")} />
         <main className={cn("@container/detail min-h-0 min-w-0 overflow-y-auto", narrow && !item && "hidden")}>
           {item
-            ? <Decision item={item} onReport={() => setSheet("report")} onAsk={() => setSheet("ask")} onBack={narrow ? back : undefined} backLabel={tab === "needs" ? "Needs you" : "All runs"}>
+            ? <Decision item={item} onAsk={() => setSheet("ask")} onBack={narrow ? back : undefined} backLabel={tab === "needs" ? "Needs you" : "All runs"}>
                 <CampaignHistory item={item} className="mt-8 border-t pt-6 min-[80rem]:hidden" />
               </Decision>
             : <p className="m-0 p-8 text-sm text-muted-foreground">{selectedId ? "No runs to show yet. Press Run now, or the bot reports on its next trigger." : "Create a bot from a template with the + button."}</p>}
         </main>
         {item && <aside aria-label="Campaign history" className="hidden min-h-0 overflow-y-auto border-l bg-card p-[18px] min-[80rem]:block"><CampaignHistory item={item} /></aside>}
       </div>
-      <ReportSheet item={item ?? null} open={sheet === "report"} onOpenChange={(v) => setSheet(v ? "report" : null)} />
       <AskSheet draft={sheet === "ask" ? draft : ""} open={sheet === "ask"} onOpenChange={(v) => setSheet(v ? "ask" : null)} />
       {bot && <BotSettings bot={bot} open={sheet === "settings"} onOpenChange={(v) => setSheet(v ? "settings" : null)} />}
     </AppFrame>
