@@ -124,6 +124,9 @@ function GateChips({ item }: { item: NotificationItem }) {
   );
 }
 
+/** Opening a chat reads and acts the same on every page (Bots too): "Ask Seleric", straight into a new chat. */
+const titleOf = (a: FindingAction) => (a.risk === "link" ? "Ask Seleric" : a.title);
+
 function primaryAction(item: NotificationItem): FindingAction | null {
   const id = item.recommended_action_id;
   if (id) {
@@ -177,6 +180,13 @@ export function FindingCard({ item, now, actionsEnabled }: { item: NotificationI
   const learning = item.gates?.learning === true || item.evidence.learning === true;
   const primary = !resolved ? primaryAction(item) : null;
   const moreActions = primary ? item.actions.filter((a) => a.id !== primary.id) : item.actions;
+  const primaryLabel = primary && (primary.risk === "link" ? titleOf(primary) : item.recommended_summary || primary.title);
+  // A link changes nothing, so it skips the confirm step: the preview only fetches the chat prompt.
+  const run = async (id: string) => {
+    await startAction(item, id);
+    const p = useNotificationsStore.getState().flow?.preview;
+    if (p?.kind === "link") await openInAgent(p.prompt);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -221,8 +231,8 @@ export function FindingCard({ item, now, actionsEnabled }: { item: NotificationI
         {primary && (
           <Button size="sm" variant={primary.risk === "link" ? "outline" : "default"} className="h-7 text-xs"
             disabled={primary.risk !== "link" && !actionsEnabled}
-            title={primary.risk !== "link" && !actionsEnabled ? "One-click actions are switched off" : (item.recommended_summary || primary.title)}
-            onClick={() => void startAction(item, primary.id)}>{item.recommended_summary || primary.title}</Button>
+            title={primary.risk !== "link" && !actionsEnabled ? "One-click actions are switched off" : primaryLabel ?? ""}
+            onClick={() => void run(primary.id)}>{primaryLabel}</Button>
         )}
         {!resolved && moreActions.length > 0 && (
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setMore((v) => !v)} aria-expanded={more}>
@@ -242,7 +252,7 @@ export function FindingCard({ item, now, actionsEnabled }: { item: NotificationI
           {moreActions.map((a) => (
             <Button key={a.id} size="sm" variant="outline" className="h-7 text-xs"
               disabled={a.risk !== "link" && !actionsEnabled}
-              onClick={() => void startAction(item, a.id)}>{a.title}</Button>
+              onClick={() => void run(a.id)}>{titleOf(a)}</Button>
           ))}
         </div>
       )}
@@ -304,7 +314,7 @@ function fmtChange(v: unknown): string {
   return v == null || v === "" ? "–" : String(v);
 }
 
-async function openInAgent(prompt: string) {
+export async function openInAgent(prompt: string) {
   useNotificationsStore.getState().closeAction();
   useShellStore.getState().setWorkspace("conversation");
   await useConversationStore.getState().createThread();
@@ -336,7 +346,7 @@ export function ActionDialog() {
     <Dialog open onOpenChange={(o) => { if (!o) closeAction(); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{action?.title ?? flow.actionId}</DialogTitle>
+          <DialogTitle>{action ? titleOf(action) : flow.actionId}</DialogTitle>
           <DialogDescription>{flow.item.path.join(" › ") || "Account"}</DialogDescription>
         </DialogHeader>
         {flow.busy === "previewing" && <p className="text-sm text-muted-foreground">Checking with Seleric MCP…</p>}
@@ -383,12 +393,18 @@ export function ActionDialog() {
 
 export function BotReports({ reports, now }: { reports: BotReport[]; now: string }) {
   if (!reports.length) return <p className="text-sm text-muted-foreground">No bot reports in the last 48 hours.</p>;
-  const open = (botId: string) => { useShellStore.getState().setWorkspace("bots"); void useBotsStore.getState().select(botId); };
+  const open = (r: BotReport) => {
+    const url = new URL(location.href);
+    url.searchParams.set("run", r.run_id); // read by the Bots page on mount: it opens this run, on its bot's screen
+    history.replaceState(history.state, "", url);
+    useShellStore.getState().setWorkspace("bots");
+    void useBotsStore.getState().select(r.bot_id);
+  };
   return (
     <ol className="m-0 flex list-none flex-col gap-2 p-0">
       {reports.map((r) => (
         <li key={`${r.run_id}-${r.at}`}>
-          <button type="button" onClick={() => open(r.bot_id)} className="flex w-full gap-2 rounded-md px-1 py-1 text-left text-xs hover:bg-accent">
+          <button type="button" onClick={() => open(r)} className="flex w-full gap-2 rounded-md px-1 py-1 text-left text-xs hover:bg-accent">
             <span aria-hidden="true" className={cn("mt-1 size-1.5 shrink-0 rounded-full", r.outcome === "action_needed" ? "bg-destructive" : "bg-muted-foreground/50")} />
             <span className="min-w-0 flex-1"><span className="font-medium">{r.bot_name}</span> · {r.reason}<br /><span className="text-muted-foreground">{r.summary}</span></span>
             <span className="shrink-0 text-muted-foreground tabular-nums">{since(r.at, now)}</span>

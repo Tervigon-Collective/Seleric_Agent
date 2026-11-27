@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { cn } from "cn";
 import { AppFrame } from "../AppFrame";
-import { AlertIcon, BotIcon, ChevronLeftIcon, MessageIcon, PlayIcon, PlusIcon, SettingsIcon, SlidersIcon, XIcon } from "../icons";
+import { AlertIcon, BotIcon, ChevronLeftIcon, MessageIcon, PlayIcon, PlusIcon, SettingsIcon, XIcon } from "../icons";
+import { ThreadSidebar } from "../ThreadSidebar";
+import { openInAgent } from "../notifications/NotificationCenter";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -441,6 +443,11 @@ export function ActivityTimeline({ activity }: { activity: BotActivity[] }) {
 }
 
 /** Everything that configures the bot, kept out of the way of its reports (owner 2026-11-26). */
+function BotChat() {
+  const chat = useBotsStore((s) => s.chat);
+  return <Chat chat={chat} />;
+}
+
 function BotSettings({ bot, open, onOpenChange }: { bot: Bot; open: boolean; onOpenChange: (v: boolean) => void }) {
   const busy = useBotsStore((s) => s.busy);
   const remove = useBotsStore((s) => s.remove);
@@ -458,6 +465,7 @@ function BotSettings({ bot, open, onOpenChange }: { bot: Bot; open: boolean; onO
             <TabsTrigger value="skills">Skills</TabsTrigger>
             <TabsTrigger value="memory">Memory</TabsTrigger>
             <TabsTrigger value="tools">Tools &amp; email</TabsTrigger>
+            <TabsTrigger value="chat">Chat</TabsTrigger>
           </TabsList>
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-8 max-sm:px-4">
             <TabsContent value="general" className="flex flex-col gap-8">
@@ -475,6 +483,7 @@ function BotSettings({ bot, open, onOpenChange }: { bot: Bot; open: boolean; onO
             <TabsContent value="skills"><Skills bot={bot} /></TabsContent>
             <TabsContent value="memory"><Memory bot={bot} /></TabsContent>
             <TabsContent value="tools"><Tools bot={bot} /></TabsContent>
+            <TabsContent value="chat"><BotChat /></TabsContent>
           </div>
         </Tabs>
       </SheetContent>
@@ -572,67 +581,64 @@ function ItemRow({ item, selected, onOpen, big = false }: { item: InboxItem; sel
 
 const GroupHead = ({ children }: { children: ReactNode }) => <h2 className="m-0 px-4 pt-3 pb-1.5 text-xs font-semibold text-muted-foreground">{children}</h2>;
 
-/** Which bot the buttons act on, whether it is on, its settings, and a new bot from a template. */
-function BotBar({ onSettings, onSwitch }: { onSettings: () => void; onSwitch: (id: string) => void }) {
+
+/** Same shape as the Monitoring header: title and subtitle on the left, the page's buttons on the right. */
+function PageHead({ onSettings, onSwitch }: { onSettings: () => void; onSwitch: (id: string) => void }) {
   const bots = useBotsStore((s) => s.bots);
   const bot = useBotsStore((s) => s.bot);
   const save = useBotsStore((s) => s.save);
   const templates = useBotsStore((s) => s.templates);
   const create = useBotsStore((s) => s.create);
+  const runNow = useBotsStore((s) => s.runNow);
   const busy = useBotsStore((s) => s.busy);
+  const running = useBotRuns().some(live);
   return (
-    <div className="flex items-center gap-2 px-4 pb-3 text-sm">
-      {bots.length > 1
-        ? <NativeSelect aria-label="Bot" value={bot?.bot_id ?? ""} onChange={(e) => onSwitch(e.target.value)} className="min-w-0 flex-1">
-            {bots.map((b) => <NativeSelectOption key={b.bot_id} value={b.bot_id}>{b.name}</NativeSelectOption>)}
-          </NativeSelect>
-        : <span className="flex min-w-0 flex-1 items-center gap-2 truncate font-semibold"><BotIcon aria-hidden />{bot?.name ?? "No bot yet"}</span>}
-      {bot && (
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground pointer-coarse:min-h-11">
-          <Switch checked={bot.enabled} onCheckedChange={(v) => void save({ enabled: v })} aria-label="Bot on" />{bot.enabled ? "On" : "Paused"}
-        </label>
-      )}
-      {bot && <Button variant="ghost" size="icon-sm" className="pointer-coarse:size-11" aria-label="Bot settings" onClick={onSettings}><SettingsIcon /></Button>}
-      {templates.length > 0 && (
-        <DropdownMenu>
-          <DropdownMenuTrigger aria-label="New bot" disabled={busy} className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "pointer-coarse:size-11")}><PlusIcon /></DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>New bot from a template</DropdownMenuLabel>
-            {templates.map((t) => <DropdownMenuItem key={t.template} onSelect={() => void create(t.template)}>{t.name}</DropdownMenuItem>)}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-    </div>
+    <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 pb-3">
+      <div className="min-w-0">
+        <h2 className="m-0 font-serif text-2xl leading-tight font-normal tracking-tight">Bots</h2>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+          {bots.length > 1
+            ? <NativeSelect aria-label="Bot" size="sm" value={bot?.bot_id ?? ""} onChange={(e) => onSwitch(e.target.value)}>
+                {bots.map((b) => <NativeSelectOption key={b.bot_id} value={b.bot_id}>{b.name}</NativeSelectOption>)}
+              </NativeSelect>
+            : <span className="flex items-center gap-1.5"><BotIcon aria-hidden />{bot?.name ?? "No bot yet"}</span>}
+          {bot && (
+            <label className="flex items-center gap-1.5 pointer-coarse:min-h-11">
+              <Switch checked={bot.enabled} onCheckedChange={(v) => void save({ enabled: v })} aria-label="Bot on" />{bot.enabled ? "On" : "Paused"}
+            </label>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {bot && <Button className="bg-brand text-[var(--on-accent)] hover:bg-[var(--brand-hover)] pointer-coarse:h-11" disabled={busy || !bot.enabled || running} onClick={() => void runNow()}>
+          <PlayIcon />{running ? "Running…" : "Run now"}
+        </Button>}
+        {bot && <Button variant="outline" className="pointer-coarse:h-11" aria-label="Bot settings" onClick={onSettings}><SettingsIcon />Settings</Button>}
+        {templates.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger disabled={busy} className={cn(buttonVariants({ variant: "outline" }), "pointer-coarse:h-11")}><PlusIcon />New bot</DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>New bot from a template</DropdownMenuLabel>
+              {templates.map((t) => <DropdownMenuItem key={t.template} onSelect={() => void create(t.template)}>{t.name}</DropdownMenuItem>)}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+    </header>
   );
 }
 
-function InboxList({ tab, onTab, current, onOpen, onSettings, onSwitch, className }: {
-  tab: string; onTab: (t: string) => void; current: string | null; onOpen: (key: string) => void; onSettings: () => void;
-  onSwitch: (id: string) => void; className?: string;
+/** The list pane: one TabsContent per page tab (the tab bar sits in the page header row, as on Monitoring). */
+function InboxList({ onTab, current, onOpen, className }: {
+  onTab: (t: string) => void; current: string | null; onOpen: (key: string) => void; className?: string;
 }) {
   const inbox = useBotRuns();
   const days = useBotsStore((s) => s.inboxDays);
   const loadInbox = useBotsStore((s) => s.loadInbox);
-  const bot = useBotsStore((s) => s.bot);
-  const runNow = useBotsStore((s) => s.runNow);
-  const busy = useBotsStore((s) => s.busy);
   const g = useMemo(() => inboxGroups(inbox), [inbox]);
-  const running = inbox.some(live);
   return (
     <section aria-label="Bot runs" className={className}>
-      <div className="flex items-center gap-2 px-4 pt-4 pb-2.5">
-        <h1 className="m-0 text-xl font-extrabold tracking-tight">Bots</h1>
-        <Button className="ml-auto pointer-coarse:h-11" disabled={busy || !bot?.enabled || running} onClick={() => void runNow()}>
-          <PlayIcon />{running ? "Running…" : "Run now"}
-        </Button>
-      </div>
-      <BotBar onSettings={onSettings} onSwitch={onSwitch} />
-      <Tabs value={tab} onValueChange={onTab}>
-        <TabsList className="mx-4 grid tabular-nums w-[calc(100%-2rem)] grid-cols-2 pointer-coarse:h-12">
-          <TabsTrigger value="needs">Needs you · {g.decide.length}</TabsTrigger>
-          <TabsTrigger value="all">All runs · {inbox.length}</TabsTrigger>
-        </TabsList>
-        <TabsContent value="needs" className="pb-6">
+        <TabsContent value="needs" className="pt-1 pb-6">
           <GroupHead>Needs your decision</GroupHead>
           <ul className="m-0 flex list-none flex-col gap-0.5 px-2 p-0">
             {g.decide.map((i) => <ItemRow key={i.key} item={i} big selected={i.key === current} onOpen={() => onOpen(i.key)} />)}
@@ -679,7 +685,6 @@ function InboxList({ tab, onTab, current, onOpen, onSettings, onSwitch, classNam
           {!inbox.length && <p className="m-0 px-4 py-2 text-sm text-muted-foreground">No runs {days === 1 ? "today" : `in the last ${days} days`} yet.</p>}
           {days === 1 && <Button variant="ghost" size="sm" className="mx-2 mt-2 text-muted-foreground pointer-coarse:h-11" onClick={() => void loadInbox(7)}>Show the last 7 days</Button>}
         </TabsContent>
-      </Tabs>
     </section>
   );
 }
@@ -762,7 +767,7 @@ function Decision({ item, onAsk, onBack, backLabel = "All runs", children }: {
       {why && <p className="m-0 mt-3 max-w-[66ch] text-[15px] text-foreground/85">{why}</p>}
       {item.total > 1 && <p className="m-0 mt-1 text-xs text-muted-foreground tabular-nums">Change {item.index + 1} of {item.total} in this run</p>}
       <div className="mt-4 flex flex-wrap gap-2 max-sm:grid max-sm:grid-cols-2">
-        <Button className="pointer-coarse:h-11" onClick={onAsk}><MessageIcon />Ask about this</Button>
+        <Button variant="outline" className="pointer-coarse:h-11" onClick={onAsk}><MessageIcon />Ask Seleric</Button>
         {run.outcome === "action_needed" && (run.dismissed_at
           ? <Button variant="ghost" className="pointer-coarse:h-11" disabled={busy} onClick={() => void dismiss(run.run_id, true)}>Bring back</Button>
           : <Button variant="ghost" className="pointer-coarse:h-11" disabled={busy} onClick={() => void dismiss(run.run_id)}><XIcon />{item.total > 1 ? `Dismiss all ${item.total}` : "Dismiss"}</Button>)}
@@ -864,20 +869,12 @@ function CampaignHistory({ item, className }: { item: InboxItem; className?: str
   );
 }
 
-function AskSheet({ draft, open, onOpenChange }: { draft: string; open: boolean; onOpenChange: (v: boolean) => void }) {
-  const chat = useBotsStore((s) => s.chat);
-  const bot = useBotsStore((s) => s.bot);
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-xl">
-        <SheetHeader className="border-b px-6 py-4 pr-12 max-sm:px-4">
-          <SheetTitle className="m-0 text-lg">Ask {bot?.name ?? "the bot"}</SheetTitle>
-          <SheetDescription className="m-0">It answers with its own instructions and tools.</SheetDescription>
-        </SheetHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-8 max-sm:px-4"><Chat chat={chat} draft={draft} /></div>
-      </SheetContent>
-    </Sheet>
-  );
+
+/** What "Ask Seleric" sends: the decision in words, so the new chat starts with it (as Monitoring's alerts do). */
+export function askPrompt({ run, proposal }: InboxItem): string {
+  const change = proposal && [proposal.field, proposal.current != null && `now ${inr(proposal.current)}`, proposal.proposed != null && `proposed ${inr(proposal.proposed)}`].filter(Boolean).join(", ");
+  const what = proposal ? `${proposal.entity}${change ? ` (${change})` : ""}${proposal.reason ? `: ${proposal.reason}` : ""}` : runLine(run);
+  return `The ${run.bot_name ?? "bot"} bot flagged this at ${stamp(run.created_at)}: ${what}. Check it against live data and tell me what to do.`;
 }
 
 const urlRun = () => new URL(location.href).searchParams.get("run");
@@ -900,7 +897,7 @@ export function BotsWorkspace() {
   const narrow = useIsMobile(768);
   const [tab, setTab] = useState("needs");
   const [sel, setSel] = useState<string | null>(urlRun);
-  const [sheet, setSheet] = useState<"ask" | "settings" | null>(null);
+  const [settings, setSettings] = useState(false);
 
   useEffect(() => {
     void loadList();
@@ -926,31 +923,33 @@ export function BotsWorkspace() {
   const open = (key: string) => { setSel(key); writeUrlRun(key, narrow); };
   const back = () => { if (history.state?.botsRun) history.back(); else { setSel(null); writeUrlRun(null, false); } };
   const badge = decide.length;
-  const draft = item ? `About ${item.proposal?.entity ?? runLine(item.run)} (${KIND_LABEL[item.run.trigger_kind] ?? item.run.trigger_kind}, ${stamp(item.run.created_at)}): ` : "";
 
+  const detailOnly = narrow && !!item;
   return (
-    <AppFrame workspace="bots" rail sidebarLabel="Navigation" toggleLabel="Open navigation"
-      header={<>
-        <span className="text-[17px] font-extrabold">Bots</span>
-        {badge > 0 && <span className="rounded-full bg-[var(--signal)] px-1.5 tabular-nums text-[11.5px] leading-[18px] font-bold text-[var(--on-accent)]" aria-label={`${badge} need your decision`}>{badge}</span>}
-        <span className="flex-1" />
-        {bot && <Button variant="ghost" size="icon" className="pointer-coarse:size-11" aria-label="Bot settings" onClick={() => setSheet("settings")}><SlidersIcon /></Button>}
-      </>}>
+    <AppFrame workspace="bots" sidebarLabel="Bots navigation" toggleLabel="Toggle navigation" sidebarBody={<ThreadSidebar />}>
       {error && <p role="alert" className="m-0 border-b bg-[var(--danger-soft)] px-4 py-2 text-sm text-destructive">{error}</p>}
-      <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(280px,320px)_minmax(0,1fr)] min-[80rem]:grid-cols-[300px_minmax(0,1fr)_280px] min-[96rem]:grid-cols-[340px_minmax(0,1fr)_340px]">
-        <InboxList tab={tab} onTab={setTab} current={item?.key ?? null} onOpen={open} onSettings={() => setSheet("settings")} onSwitch={switchBot}
-          className={cn("min-h-0 overflow-y-auto bg-card md:border-r", narrow && item && "hidden")} />
-        <main className={cn("@container/detail min-h-0 min-w-0 overflow-y-auto", narrow && !item && "hidden")}>
-          {item
-            ? <Decision item={item} onAsk={() => setSheet("ask")} onBack={narrow ? back : undefined} backLabel={tab === "needs" ? "Needs you" : "All runs"}>
-                <CampaignHistory item={item} className="mt-8 border-t pt-6 min-[80rem]:hidden" />
-              </Decision>
-            : <p className="m-0 p-8 text-sm text-muted-foreground">{selectedId ? "No runs to show yet. Press Run now, or the bot reports on its next trigger." : "Create a bot from a template with the + button."}</p>}
-        </main>
-        {item && <aside aria-label="Campaign history" className="hidden min-h-0 overflow-y-auto border-l bg-card p-[18px] min-[80rem]:block"><CampaignHistory item={item} /></aside>}
-      </div>
-      <AskSheet draft={sheet === "ask" ? draft : ""} open={sheet === "ask"} onOpenChange={(v) => setSheet(v ? "ask" : null)} />
-      {bot && <BotSettings bot={bot} open={sheet === "settings"} onOpenChange={(v) => setSheet(v ? "settings" : null)} />}
+      <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
+        <div className={cn("px-4 max-md:px-3", detailOnly && "hidden")}>
+          <PageHead onSettings={() => setSettings(true)} onSwitch={switchBot} />
+          <TabsList variant="line" className="h-auto w-full justify-start gap-1 rounded-none border-b p-0" aria-label="Bot runs">
+            <TabsTrigger value="needs" className="flex-none rounded-none px-3 py-2 data-active:border-b-brand pointer-coarse:py-3">Needs you <span className="tabular-nums text-muted-foreground">{badge}</span></TabsTrigger>
+            <TabsTrigger value="all" className="flex-none rounded-none px-3 py-2 data-active:border-b-brand pointer-coarse:py-3">All runs <span className="tabular-nums text-muted-foreground">{mine.length}</span></TabsTrigger>
+          </TabsList>
+        </div>
+        <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(280px,320px)_minmax(0,1fr)] min-[80rem]:grid-cols-[300px_minmax(0,1fr)_280px] min-[96rem]:grid-cols-[340px_minmax(0,1fr)_340px]">
+          <InboxList onTab={setTab} current={item?.key ?? null} onOpen={open}
+            className={cn("min-h-0 overflow-y-auto md:border-r", detailOnly && "hidden")} />
+          <main className={cn("@container/detail min-h-0 min-w-0 overflow-y-auto", narrow && !item && "hidden")}>
+            {item
+              ? <Decision item={item} onAsk={() => void openInAgent(askPrompt(item))} onBack={narrow ? back : undefined} backLabel={tab === "needs" ? "Needs you" : "All runs"}>
+                  <CampaignHistory item={item} className="mt-8 border-t pt-6 min-[80rem]:hidden" />
+                </Decision>
+              : <p className="m-0 p-8 text-sm text-muted-foreground">{selectedId ? "No runs to show yet. Press Run now, or the bot reports on its next trigger." : "Create a bot from a template with New bot."}</p>}
+          </main>
+          {item && <aside aria-label="Campaign history" className="hidden min-h-0 overflow-y-auto border-l p-[18px] min-[80rem]:block"><CampaignHistory item={item} /></aside>}
+        </div>
+      </Tabs>
+      {bot && <BotSettings bot={bot} open={settings} onOpenChange={setSettings} />}
     </AppFrame>
   );
 }

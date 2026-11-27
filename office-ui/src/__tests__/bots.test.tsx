@@ -5,6 +5,7 @@ import { botsApi, type Bot, type BotActivity, type BotRun } from "../api/bots";
 import { ActivityTimeline, BotsWorkspace, bandScale, cronText, groupByRun, historyFor, inboxGroups, itemsOf, splitAnswer, stepLabel, stepText, triggerText } from "../components/bots/BotsWorkspace";
 import { BotReports } from "../components/notifications/NotificationCenter";
 import { useShellStore } from "../stores/shell";
+import { useConversationStore } from "../stores/conversation";
 import { readRoute, writeRoute } from "../routing";
 import { useBotsStore } from "../stores/bots";
 
@@ -173,7 +174,7 @@ describe("bots page", () => {
     await act(async () => root.render(<BotsWorkspace />));
     await settle();
     const text = container.textContent ?? "";
-    expect(text).toContain("Needs you · 2");
+    expect(text).toContain("Needs you 2");
     expect(text).toContain("TH-149-SCRATCHLOUNGE-6OCT");
     expect(text).toContain("₹3,000");
     expect(text).toContain("proposed daily budget");
@@ -215,14 +216,18 @@ describe("bots page", () => {
     expect(container.textContent).toContain("Dismissed");
   });
 
-  it("asks about the decision, with no separate report button", async () => {
+  it("Ask Seleric opens a new chat about the decision, as Monitoring does", async () => {
     mockBots();
+    const createThread = vi.spyOn(useConversationStore.getState(), "createThread").mockResolvedValue(undefined as never);
+    const submit = vi.spyOn(useConversationStore.getState(), "submit").mockResolvedValue(undefined as never);
     await act(async () => root.render(<BotsWorkspace />));
     await settle();
     expect(button("Open report")).toBeUndefined();
-    await act(async () => { button("Ask about this").click(); });
-    const box = document.body.querySelector('textarea[aria-label="Message the bot"]') as HTMLTextAreaElement;
-    expect(box.value).toContain("About TH-149-SCRATCHLOUNGE-6OCT");
+    await act(async () => { button("Ask Seleric").click(); });
+    await settle();
+    expect(createThread).toHaveBeenCalled();
+    expect(submit.mock.calls[0][0]).toContain("TH-149-SCRATCHLOUNGE-6OCT");
+    expect(useShellStore.getState().workspace).toBe("conversation");
   });
 
   it("opens the bot named in the URL, deletes it after confirming, then opens its neighbour", async () => {
@@ -243,7 +248,7 @@ describe("bots page", () => {
     await settle();
     expect(useBotsStore.getState().selectedId).toBe("bot_2");
 
-    await act(async () => { (container.querySelector('[aria-label="Bot settings"]') as HTMLButtonElement).click(); });
+    await act(async () => { button("Bot settings").click(); });
     await act(async () => { button("Delete bot").click(); });
     expect(remove).toHaveBeenCalledWith("bot_2");
     expect(useBotsStore.getState().bots.map((b) => b.bot_id)).toEqual(["bot_1", "bot_3"]);

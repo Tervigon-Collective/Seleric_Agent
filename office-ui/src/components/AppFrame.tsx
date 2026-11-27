@@ -89,7 +89,7 @@ const railBadge = (n: number, tone: "signal" | "warning" = "signal") => (
     tone === "signal" ? "bg-[var(--signal)] text-[var(--on-accent)]" : "bg-[var(--warning-soft)] text-[var(--warning)]")}>{n}</span>
 );
 
-export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, header, children, className, rail = false }: {
+export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, header, children, className }: {
   workspace: Workspace;
   /** aria-label of the sidebar landmark. */
   sidebarLabel: string;
@@ -99,12 +99,10 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
   header?: ReactNode;
   children: ReactNode;
   className?: string;
-  /** Desktop shows the icon rail only, with no top bar (pages that bring their own list pane, like Bots). */
-  rail?: boolean;
 }) {
   const sidebarOpen = useShellStore((s) => s.sidebarOpen);
   const toggleSidebar = useShellStore((s) => s.toggleSidebar);
-  const userCollapsed = useShellStore((s) => s.sidebarCollapsed);
+  const collapsed = useShellStore((s) => s.sidebarCollapsed);
   const toggleCollapsed = useShellStore((s) => s.toggleSidebarCollapsed);
   const setWorkspace = useShellStore((s) => s.setWorkspace);
   const openOps = useShellStore((s) => s.openOps);
@@ -119,7 +117,6 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
   const monitorDown = useNotificationsStore((s) => s.feed?.tenants.some((t) => t.status === "down" || t.status === "stale") ?? false);
   useEffect(() => useNotificationsStore.getState().startPolling(), []);
   const monBadge = alerts + unseen;
-  const collapsed = rail || userCollapsed;
   // Bots: runs today that still need a person's decision (the Bots page polls the same list).
   // one per proposed change, as the Bots page lists them
   const botsBadge = useBotsStore((s) => s.inbox.reduce((n, r) => n + (r.outcome === "action_needed" && !r.dismissed_at ? Math.max(1, r.report?.proposals?.length ?? 0) : 0), 0));
@@ -158,7 +155,7 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
               <span aria-hidden="true" className="grid size-6 place-items-center rounded-[7px] bg-foreground text-[13px] font-semibold text-background">S</span>
               <strong className={cn("font-serif text-xl font-medium tracking-tight", RAIL_HIDE)}>Seleric</strong>
             </Button>
-            <Button variant="ghost" size="icon-sm" className={cn("hidden lg:inline-flex", rail && "lg:hidden")} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} aria-controls="app-sidebar" title={`${collapsed ? "Expand" : "Collapse"} sidebar (Ctrl+\\)`} onClick={toggleCollapsed}><SidebarToggleIcon collapsed={collapsed} /></Button>
+            <Button variant="ghost" size="icon-sm" className="hidden lg:inline-flex" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} aria-controls="app-sidebar" title={`${collapsed ? "Expand" : "Collapse"} sidebar (Ctrl+\\)`} onClick={toggleCollapsed}><SidebarToggleIcon collapsed={collapsed} /></Button>
             <Button variant="ghost" size="icon-sm" className="lg:hidden" aria-label="Close navigation" onClick={toggleSidebar}><XIcon /></Button>
           </div>
           <NavItem icon={<PlusIcon />} label="New chat" current={workspace === "conversation" && !selectedThreadId} onClick={go(() => { setWorkspace("conversation"); void createThread(); })} />
@@ -180,7 +177,7 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
         </aside>
       </ResponsivePanel>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className={cn("z-30 flex h-12 shrink-0", rail && sidebarOpen && "lg:hidden", "items-center gap-1.5 overflow-x-clip px-3 max-md:px-2")}>
+        <header className="z-30 flex h-12 shrink-0 items-center gap-1.5 overflow-x-clip px-3 max-md:px-2">
           {/* Hidden on desktop while the sidebar is open (its own toggle collapses it); it shows below desktop width, and whenever the sidebar has been closed, so it can always be reopened. */}
           <Button variant="ghost" size="icon" className={cn("pointer-coarse:size-11", sidebarOpen && "lg:hidden")} aria-label={toggleLabel} aria-expanded={sidebarOpen} onClick={toggleSidebar} title={toggleLabel}><MenuIcon /></Button>
           {header}

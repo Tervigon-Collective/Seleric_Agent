@@ -84,9 +84,10 @@ describe("notification center", () => {
     act(() => root.render(<FindingCard item={item()} now={NOW} actionsEnabled={false} />));
     expect(container.textContent).toContain("returning ₹0.43 per rupee");
     expect(container.textContent).toContain("About ₹3,400 at stake · 97% sure");
-    const buttons = [...container.querySelectorAll("button")];
-    expect(buttons.find((b) => b.textContent === "Lower budget")?.disabled).toBe(true);
-    expect(buttons.find((b) => b.textContent === "Open in Marketing Agent")?.disabled).toBe(false);
+    const find = (t: string) => [...container.querySelectorAll("button")].find((b) => b.textContent === t);
+    expect(find("Lower budget")?.disabled).toBe(true);
+    act(() => find("More")!.click()); // the chat action sits under More when a write action leads
+    expect(find("Ask Seleric")?.disabled).toBe(false);
   });
 
   it("previews a change, then approves exactly that request", async () => {

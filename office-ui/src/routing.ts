@@ -33,7 +33,7 @@ export function writeRoute(route: Partial<AppRoute>, replace = false): void {
     if (route.workspace === "ops") url.searchParams.set("ops", route.opsPage ?? "dashboard");
     else url.searchParams.delete("ops");
     if (route.workspace === "bots") url.searchParams.set("bots", "1");
-    else { url.searchParams.delete("bots"); url.searchParams.delete("bot"); }
+    else { url.searchParams.delete("bots"); url.searchParams.delete("bot"); url.searchParams.delete("run"); }
   }
   if ("threadId" in route) {
     if (route.threadId) url.searchParams.set("thread", route.threadId);
