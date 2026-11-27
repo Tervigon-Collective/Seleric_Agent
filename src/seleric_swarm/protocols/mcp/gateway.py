@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 
 from seleric_swarm.paths import repo_root
+from seleric_swarm.protocols.mcp.servers.seleric_remote import ADS_READ_TOOLS
 from seleric_swarm.protocols.mcp.servers.seleric_remote import TOOLS as SELERIC_TOOLS
 from seleric_swarm.protocols.mcp.servers.seleric_remote import build_seleric_servers
 
@@ -43,7 +44,7 @@ def _build_allowlist() -> tuple[dict[str, set[str]], dict[str, str]]:
     registry-driven per-agent lookup.
     """
 
-    allowlist = {"v3_agent": set(SELERIC_CAPABILITIES)}
+    allowlist = {"v3_agent": set(SELERIC_CAPABILITIES) | {f"seleric.{t}" for t in ADS_READ_TOOLS}}
     return allowlist, {}
 
 

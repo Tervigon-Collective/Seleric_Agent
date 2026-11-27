@@ -120,6 +120,8 @@ services:
       # Chronos-2 forecasting service (chronos/docker-compose.yml, same network).
       CHRONOS_BASE_URL: ${CHRONOS_BASE_URL:-http://seleric_agent-chronos-1:8112}
       SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
+      # Notifications: Approve runs the previewed Meta change through Seleric MCP (its own policy still applies).
+      ADS_ACTIONS_ENABLED: ${ADS_ACTIONS_ENABLED:-false}
       API_KEY: ${API_KEY:-}
       # POST /v1/voice/token (the browser's room join) is served by this service.
       VOICE_ENABLED: ${VOICE_ENABLED:-false}
@@ -249,6 +251,23 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    restart: unless-stopped
+
+  # D-244 Bots worker: schedules bot triggers (cron, monitoring signals) and runs queued bot runs on the agent
+  # runner. Same image/env/volumes/networks as recovery; BOTS_ENABLED=false is the global bots kill switch.
+  bots-cron:
+    extends:
+      service: recovery
+    command: python -m seleric_swarm.services.bots.worker
+    stop_grace_period: 30s
+    environment:
+      RUN_WORKER_ID: bots-worker
+      BOTS_ENABLED: ${BOTS_ENABLED:-true}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      disable: true  # the image check curls the API on :8000; this worker serves nothing (same as monitoring-cron)
     restart: unless-stopped
 
   # Voice agent worker (docs/features/voice-agent/). Opt-in:
@@ -413,6 +432,46 @@ services:
         condition: service_healthy
     healthcheck:
       disable: true  # the image's check probes the API port; this container serves nothing
+    restart: unless-stopped
+
+  # Live ads monitor (services/live_monitor): every 5 minutes, all active Meta campaigns / ad sets / ads through Seleric
+  # MCP; findings land in monitor.findings and the Notifications panel. One long-lived process (caches survive ticks;
+  # an advisory lock keeps it single). Shares domain_health with the API: the configuration saved in Seleric Agent
+  # lives there.
+  live-monitor-cron:
+    build:
+      context: .
+      target: runtime
+    image: seleric_agent-live-monitor-cron:latest
+    command: python -m seleric_swarm.services.live_monitor.runner --loop
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SELERIC_DOMAIN_HEALTH_DIR: ${SELERIC_DOMAIN_HEALTH_DIR:-/app/.data/domain_health_snapshots}
+      LLM_PROVIDER: ${LLM_PROVIDER:-azure_openai_compatible}
+      PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_AUTH_STYLE: ${AZURE_AUTH_STYLE:-openai_compatible}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-05-01-preview}
+      AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
+      AZURE_OPENAI_MODEL: ${AZURE_OPENAI_MODEL:-}
+      AZURE_OPENAI_HELPER_MODEL: ${AZURE_OPENAI_HELPER_MODEL:-}
+      SELERIC_MCP_URL: ${COMPOSE_SELERIC_MCP_URL:-${SELERIC_MCP_URL:-}}
+      SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
+      API_KEY: ${API_KEY:-}
+    networks:
+      - default
+      - seleric-mcp_default
+    volumes:
+      - domain_health:/app/.data/domain_health_snapshots
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      disable: true  # serves nothing; liveness is the heartbeat in monitor.live_state and the pushgateway series
     restart: unless-stopped
 
 volumes:

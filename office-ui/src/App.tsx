@@ -21,6 +21,7 @@ import { readRoute, writeRoute } from "./routing";
 
 // Rarely-used surfaces load on demand: the canvas/ops workspaces on navigation, the dialogs on first open.
 const OfficeWorkspace = lazy(() => import("./components/OfficeWorkspace").then((m) => ({ default: m.OfficeWorkspace })));
+const BotsWorkspace = lazy(() => import("./components/bots/BotsWorkspace").then((m) => ({ default: m.BotsWorkspace })));
 const OpsWorkspace = lazy(() => import("./components/ops/OpsWorkspace").then((m) => ({ default: m.OpsWorkspace })));
 const CommandSearch = lazy(() => import("./components/CommandSearch").then((m) => ({ default: m.CommandSearch })));
 const ModelSettings = lazy(() => import("./components/ModelSettings").then((m) => ({ default: m.ModelSettings })));
@@ -208,6 +209,15 @@ export default function App() {
     return (
       <>
         <Suspense fallback={workspaceFallback}><OpsWorkspace dark={dark} /></Suspense>
+        {dialogs}
+      </>
+    );
+  }
+
+  if (workspace === "bots") {
+    return (
+      <>
+        <Suspense fallback={workspaceFallback}><BotsWorkspace /></Suspense>
         {dialogs}
       </>
     );

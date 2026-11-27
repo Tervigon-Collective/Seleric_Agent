@@ -19,7 +19,7 @@ const settings: Settings = {
 let container: HTMLDivElement;
 let root: Root;
 const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
-const button = (text: string) => [...document.querySelectorAll("button")].find((b) => b.textContent === text)!;
+const button = (text: string) => [...document.querySelectorAll("button")].find((b) => (b.textContent || "").includes(text))!;
 
 beforeEach(() => {
   container = document.createElement("div");
@@ -45,6 +45,27 @@ describe("Settings → Models", () => {
     await flush();
     expect(save).toHaveBeenCalledWith({ version: 3, main: [{ connection: "azure", model: "" }, { connection: "azure", model: "" }], helper: [] });
     expect(document.body.textContent).toContain("Saved");
+  });
+
+  it("offers ChatGPT sign-in and Claude Code instead of an API key", async () => {
+    vi.spyOn(modelSettingsApi, "get").mockResolvedValue({
+      ...settings,
+      providers: [
+        { id: "chatgpt", name: "ChatGPT subscription", base_url: "https://api.openai.com/v1", auth: "oauth" },
+        { id: "claude-code", name: "Claude subscription", base_url: "", auth: "cli" },
+        { id: "openai", name: "OpenAI", base_url: "https://api.openai.com/v1", auth: "key" },
+      ],
+    });
+    await act(async () => root.render(<ModelSettings open onClose={() => {}} />));
+    await flush();
+    await act(async () => button("Add provider").click());
+    expect(document.body.textContent).toContain("Sign in with ChatGPT");
+    expect(document.querySelector('input[aria-label="API key"]')).toBeNull();
+    const select = document.querySelector<HTMLSelectElement>('select[aria-label="Provider"]')!;
+    await act(async () => { select.value = "claude-code"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(document.body.textContent).toContain("Use Claude Code");
+    await act(async () => { select.value = "openai"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(document.querySelector('input[aria-label="API key"]')).not.toBeNull();
   });
 
   it("asks for a server URL only for a compatible server and never shows the typed key back", async () => {

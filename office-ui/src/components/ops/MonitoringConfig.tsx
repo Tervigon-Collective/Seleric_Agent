@@ -12,7 +12,6 @@ import { useMemo, useState } from "react";
 import type { AlertRule, DomainView, MetricView } from "../../api/monitoring";
 import { isDirty, useMonitoringStore, type DraftMetric } from "../../stores/monitoring";
 import { thresholdUnit } from "./format";
-
 const POLARITY: { value: string; label: string }[] = [
   { value: "", label: "Use the catalogue" },
   { value: "up", label: "Up is bad" },
@@ -196,6 +195,7 @@ export function MonitoringConfig() {
       <p className="max-w-prose text-sm text-muted-foreground">
         Pick what each domain watches and when to raise an alert. Changes apply to the dashboard and to the business snapshot that
         answers “how is the business doing”. Metrics are read from the live catalogue, up to {state.max_metrics_per_domain} per domain.
+        Live ads brands, rules and thresholds are under Monitoring → Live ads.
       </p>
       {state.domains.map((d) => <DomainSection key={d.id} domain={d} />)}
     </div>

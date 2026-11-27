@@ -83,12 +83,80 @@ async def disconnect(connection_id: str) -> dict[str, Any]:
     return {"ok": True}
 
 
+def browser_origin(request: Request) -> str:
+    """The address the operator's browser used, so ChatGPT can send them back here."""
+    origin = (request.headers.get("origin") or "").strip()
+    if origin.startswith(("http://", "https://")):
+        return origin
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme).split(",")[0].strip()
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip()
+    return f"{proto}://{host}" if host else ""
+
+
+@router.post("/subscriptions/chatgpt")
+async def start_chatgpt(request: Request) -> dict[str, Any]:
+    from seleric_swarm.llm.chatgpt_plan import begin_login
+
+    try:
+        return await asyncio.to_thread(begin_login, browser_origin(request))
+    except store.ModelsError as exc:
+        raise _bad(exc) from None
+
+
+@router.get("/subscriptions/chatgpt/{login_id}")
+async def chatgpt_status(login_id: str) -> dict[str, Any]:
+    from seleric_swarm.llm.chatgpt_plan import login_status
+
+    try:
+        return login_status(login_id)
+    except store.ModelsError as exc:
+        raise _bad(exc) from None
+
+
+@router.post("/subscriptions/chatgpt/{login_id}/complete")
+async def complete_chatgpt(login_id: str, request: Request) -> dict[str, Any]:
+    """The browser tab at 127.0.0.1 cannot reach this server, so the operator pastes its address."""
+    from seleric_swarm.llm.chatgpt_plan import complete_from_address
+
+    body = await request.json()
+    try:
+        return await asyncio.to_thread(complete_from_address, login_id, str(body.get("url") or ""))
+    except store.ModelsError as exc:
+        raise _bad(exc) from None
+
+
+@router.post("/subscriptions/claude-code")
+async def connect_claude() -> dict[str, Any]:
+    from seleric_swarm.llm.claude_code import MODEL_ALIASES, status
+
+    try:
+        plan = await asyncio.to_thread(status)
+        row = await asyncio.to_thread(store.add_cli_connection, "claude-code", hint=plan["plan"])
+    except store.ModelsError as exc:
+        raise _bad(exc) from None
+    return {
+        "connection": {"id": row["id"], "provider": "claude-code", "label": row["label"], "key_hint": row["key_hint"]},
+        "models": list(MODEL_ALIASES),
+    }
+
+
 @router.get("/connections/{connection_id}/models")
 async def models(connection_id: str, request: Request) -> dict[str, Any]:
     settings = _settings(request)
     conn = store.connections(settings).get(connection_id)
     if conn is None:
         raise HTTPException(status_code=404, detail="Unknown connection")
+    if conn.provider == "claude-code":
+        from seleric_swarm.llm.claude_code import MODEL_ALIASES
+
+        return {"models": list(MODEL_ALIASES)}
+    if conn.provider == "chatgpt":
+        from seleric_swarm.llm.chatgpt_plan import access_token, list_models
+
+        try:
+            return {"models": await asyncio.to_thread(list_models, access_token(conn.id))}
+        except store.ModelsError as exc:
+            raise _bad(exc) from None
     if conn.builtin and conn.base_url is None:  # Azure deployments are named in the server config, not listable
         return {"models": sorted({m for c, m in settings.loop_chain() + settings.helper_chain() if c == "azure"})}
     try:
@@ -100,17 +168,35 @@ async def models(connection_id: str, request: Request) -> dict[str, Any]:
 async def _calls_tools(settings: Settings, row: dict[str, Any]) -> None:
     """The agent works through tool calls: a model that lists fine but cannot call a tool would fail every mission."""
     from pydantic_ai import Agent
-    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
     from pydantic_ai.providers.openai import OpenAIProvider
 
     from seleric_swarm.llm.adapters.azure_openai_compatible import AzureOpenAICompatibleAdapter
 
     conn = store.connections(settings)[row["connection"]]
-    adapter = AzureOpenAICompatibleAdapter(
-        settings.model_copy(update={"llm_timeout_s": 45.0}), base_url=conn.base_url, api_key=conn.api_key
-    )
     tuning = {"openai_reasoning_effort": row["thinking"]} if row.get("thinking") else None  # test what the loop sends
-    agent = Agent(OpenAIChatModel(row["model"], provider=OpenAIProvider(openai_client=adapter.async_client)), model_settings=tuning)
+    if conn.provider == "claude-code":
+        from seleric_swarm.llm.claude_code import ClaudeCodeModel
+
+        model = ClaudeCodeModel(row["model"])
+    elif conn.provider == "chatgpt":
+        from openai import AsyncOpenAI
+
+        from seleric_swarm.llm.chatgpt_plan import RESOURCE, access_token
+
+        client = AsyncOpenAI(api_key=access_token(conn.id), base_url=RESOURCE)
+        model = OpenAIResponsesModel(
+            row["model"],
+            provider=OpenAIProvider(openai_client=client),
+            profile={"openai_responses_requires_streaming": True, "openai_responses_requires_store_false": True},
+            settings=tuning,
+        )
+    else:
+        adapter = AzureOpenAICompatibleAdapter(
+            settings.model_copy(update={"llm_timeout_s": 45.0}), base_url=conn.base_url, api_key=conn.api_key
+        )
+        model = OpenAIChatModel(row["model"], provider=OpenAIProvider(openai_client=adapter.async_client))
+    agent = Agent(model, model_settings=tuning)
     called: list[str] = []
 
     @agent.tool_plain

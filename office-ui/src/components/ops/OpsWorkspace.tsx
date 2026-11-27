@@ -74,13 +74,13 @@ export function OpsWorkspace(_props: { dark?: boolean } = {}) {
     >
       <main className="min-h-0 flex-1 overflow-y-auto scroll-smooth">
         <div className="w-full px-4 pt-0 pb-10 max-md:px-3 page-enter" key={page}>
-          {page === "dashboard" ? <OpsDashboard /> : <>
+          {page === "monitoring" ? <>
             <header className="mb-4 flex max-w-6xl flex-wrap items-end justify-between gap-3">
               <h2 className="m-0 font-serif text-[34px] leading-tight font-normal tracking-tight max-md:text-3xl">Choose what to monitor</h2>
               <Button variant="outline" onClick={() => openOps("dashboard")}>Back to Monitoring</Button>
             </header>
             <div className="max-w-6xl"><MonitoringConfig /></div>
-          </>}
+          </> : <OpsDashboard />}
         </div>
       </main>
       {askOpen && (

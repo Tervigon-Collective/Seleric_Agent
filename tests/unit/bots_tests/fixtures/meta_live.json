@@ -1,0 +1,375 @@
+{
+ "insights_hourly": {
+  "success": true,
+  "platform": "meta",
+  "operation": "insights.live",
+  "data": [
+   {
+    "spend": "864.00908",
+    "impressions": "1952",
+    "clicks": "33",
+    "date_start": "2026-11-21",
+    "date_stop": "2026-11-21",
+    "hourly_stats_aggregated_by_advertiser_time_zone": "00:00:00 - 00:59:59"
+   },
+   {
+    "spend": "537.756021",
+    "impressions": "1300",
+    "clicks": "21",
+    "date_start": "2026-11-21",
+    "date_stop": "2026-11-21",
+    "hourly_stats_aggregated_by_advertiser_time_zone": "01:00:00 - 01:59:59"
+   },
+   {
+    "spend": "579.989656",
+    "impressions": "1115",
+    "clicks": "20",
+    "date_start": "2026-11-21",
+    "date_stop": "2026-11-21",
+    "hourly_stats_aggregated_by_advertiser_time_zone": "02:00:00 - 02:59:59"
+   }
+  ],
+  "paging": {
+   "after": null,
+   "has_next": false
+  },
+  "source": "meta_graph_insights_api (live, not certified)",
+  "as_of": "2026-11-21T11:11:33Z",
+  "operation_id": "op_e415bbfef1ba4684"
+ },
+ "insights_campaign": {
+  "success": true,
+  "platform": "meta",
+  "operation": "insights.live",
+  "data": [
+   {
+    "campaign_id": "120251126348760783",
+    "campaign_name": "TH-474-SOFASEATCOVER-26OCT",
+    "spend": "4092.11",
+    "impressions": "2855",
+    "clicks": "166",
+    "actions": [
+     {
+      "action_type": "offsite_complete_registration_add_meta_leads",
+      "value": "2"
+     },
+     {
+      "action_type": "web_in_store_purchase",
+      "value": "5"
+     },
+     {
+      "action_type": "omni_purchase",
+      "value": "5"
+     },
+     {
+      "action_type": "link_click",
+      "value": "52"
+     },
+     {
+      "action_type": "omni_complete_registration",
+      "value": "2"
+     },
+     {
+      "action_type": "initiate_checkout",
+      "value": "3"
+     },
+     {
+      "action_type": "offsite_purchase_add_20_s_calls",
+      "value": "5"
+     },
+     {
+      "action_type": "add_to_cart",
+      "value": "1"
+     },
+     {
+      "action_type": "offsite_conversion.fb_pixel_purchase",
+      "value": "5"
+     },
+     {
+      "action_type": "offsite_conversion.fb_pixel_initiate_checkout",
+      "value": "3"
+     },
+     {
+      "action_type": "offsite_initiate_checkout_add_20_s_calls",
+      "value": "3"
+     },
+     {
+      "action_type": "offsite_conversion.fb_pixel_complete_registration",
+      "value": "2"
+     },
+     {
+      "action_type": "offsite_conversion.fb_pixel_add_to_cart",
+      "value": "1"
+     },
+     {
+      "action_type": "post_reaction",
+      "value": "125"
+     },
+     {
+      "action_type": "offsite_conversion.fb_pixel_add_payment_info",
+      "value": "2"
+     },
+     {
+      "action_type": "offsite_content_view_add_20_s_calls",
+      "value": "80"
+     },
+     {
+      "action_type": "offsite_complete_registration_add_20_s_calls",
+      "value": "2"
+     },
+     {
+      "action_type": "landing_page_view",
+      "value": "54"
+     },
+     {
+      "action_type": "omni_landing_page_view",
+      "value": "54"
+     },
+     {
+      "action_type": "onsite_conversion.post_unlike",
+      "value": "1"
+     },
+     {
+      "action_type": "post_engagement",
+      "value": "868"
+     },
+     {
+      "action_type": "post_interaction_gross",
+      "value": "129"
+     },
+     {
+      "action_type": "onsite_web_app_purchase",
+      "value": "5"
+     },
+     {
+      "action_type": "page_engagement",
+      "value": "868"
+     },
+     {
+      "action_type": "purchase",
+      "value": "5"
+     },
+     {
+      "action_type": "onsite_web_view_content",
+      "value": "80"
+     },
+     {
+      "action_type": "complete_registration",
+      "value": "2"
+     },
+     {
+      "action_type": "onsite_web_add_to_cart",
+      "value": "1"
+     },
+     {
+      "action_type": "post_interaction_net",
+      "value": "128"
+     },
+     {
+      "action_type": "onsite_web_app_view_content",
+      "value": "80"
+     },
+     {
+      "action_type": "post",
+      "value": "4"
+     },
+     {
+      "action_type": "view_content",
+      "value": "80"
+     },
+     {
+      "action_type": "web_app_in_store_purchase",
+      "value": "5"
+     },
+     {
+      "action_type": "onsite_web_app_add_to_cart",
+      "value": "1"
+     },
+     {
+      "action_type": "onsite_conversion.post_net_like",
+      "value": "124"
+     },
+     {
+      "action_type": "onsite_web_initiate_checkout",
+      "value": "3"
+     },
+     {
+      "action_type": "omni_initiated_checkout",
+      "value": "3"
+     },
+     {
+      "action_type": "offsite_content_view_add_meta_leads",
+      "value": "80"
+     },
+     {
+      "action_type": "onsite_web_purchase",
+      "value": "5"
+     },
+     {
+      "action_type": "add_payment_info",
+      "value": "2"
+     },
+     {
+      "action_type": "offsite_add_to_cart_add_20_s_calls",
+      "value": "1"
+     },
+     {
+      "action_type": "video_view",
+      "value": "687"
+     },
+     {
+      "action_type": "omni_add_to_cart",
+      "value": "1"
+     },
+     {
+      "action_type": "omni_view_content",
+      "value": "80"
+     },
+     {
+      "action_type": "offsite_conversion.fb_pixel_view_content",
+      "value": "80"
+     }
+    ],
+    "date_start": "2026-11-20",
+    "date_stop": "2026-11-20"
+   },
+   {
+    "campaign_id": "120251257012400783",
+    "campaign_name": "TH-284-CRABDASH TOY-3NOV",
+    "spend": "0",
+    "impressions": "0",
+    "clicks": "0",
+    "actions": [
+     {
+      "action_type": "offsite_content_view_add_20_s_calls",
+      "value": "1"
+     },
+     {
+      "action_type": "onsite_web_view_content",
+      "value": "1"
+     },
+     {
+      "action_type": "onsite_web_app_view_content",
+      "value": "1"
+     },
+     {
+      "action_type": "view_content",
+      "value": "1"
+     },
+     {
+      "action_type": "offsite_content_view_add_meta_leads",
+      "value": "1"
+     },
+     {
+      "action_type": "omni_view_content",
+      "value": "1"
+     },
+     {
+      "action_type": "offsite_conversion.fb_pixel_view_content",
+      "value": "1"
+     }
+    ],
+    "date_start": "2026-11-20",
+    "date_stop": "2026-11-20"
+   },
+   {
+    "campaign_id": "120251272337350783",
+    "campaign_name": "DOG JACKET CTL-04NOV",
+    "spend": "0",
+    "impressions": "0",
+    "clicks": "0",
+    "actions": [
+     {
+      "action_type": "offsite_content_view_add_20_s_calls",
+      "value": "1"
+     },
+     {
+      "action_type": "onsite_web_view_content",
+      "value": "1"
+     },
+     {
+      "action_type": "onsite_web_app_view_content",
+      "value": "1"
+     },
+     {
+      "action_type": "view_content",
+      "value": "1"
+     },
+     {
+      "action_type": "offsite_content_view_add_meta_leads",
+      "value": "1"
+     },
+     {
+      "action_type": "omni_view_content",
+      "value": "1"
+     },
+     {
+      "action_type": "offsite_conversion.fb_pixel_view_content",
+      "value": "1"
+     }
+    ],
+    "date_start": "2026-11-20",
+    "date_stop": "2026-11-20"
+   }
+  ],
+  "paging": {
+   "after": null,
+   "has_next": false
+  },
+  "source": "meta_graph_insights_api (live, not certified)",
+  "as_of": "2026-11-21T11:11:36Z",
+  "operation_id": "op_fd79ec83e25144e5"
+ },
+ "campaigns_list": {
+  "success": true,
+  "platform": "meta",
+  "operation": "campaigns.list",
+  "data": [
+   {
+    "id": "120251552611080783",
+    "name": "TH-501-PENTAGONBED-21NOV",
+    "status": "ACTIVE",
+    "objective": "OUTCOME_SALES",
+    "buying_type": "AUCTION",
+    "daily_budget": "260000",
+    "bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+    "special_ad_categories": [],
+    "created_time": "2026-11-21T11:45:21+0530",
+    "updated_time": "2026-11-21T11:45:21+0530",
+    "effective_status": "ACTIVE",
+    "start_time": "2026-11-21T11:45:22+0530",
+    "adlabels": [
+     {
+      "name": "TH-501-PENTAGONBED",
+      "id": "120251212030710783"
+     }
+    ]
+   },
+   {
+    "id": "120251552559260783",
+    "name": "DOG JACKET CTL-21NOV",
+    "status": "ACTIVE",
+    "objective": "OUTCOME_SALES",
+    "buying_type": "AUCTION",
+    "daily_budget": "300000",
+    "bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+    "special_ad_categories": [],
+    "created_time": "2026-11-21T11:38:33+0530",
+    "updated_time": "2026-11-21T11:38:33+0530",
+    "effective_status": "ACTIVE",
+    "start_time": "2026-11-21T11:38:34+0530",
+    "adlabels": [
+     {
+      "name": "DOG JACKET CTL",
+      "id": "120251215627790783"
+     }
+    ]
+   }
+  ],
+  "paging": {
+   "after": "QVFIVENneE8zc0FXMkp3a2hOVkJ0UVlwVXdlSENPcE1odVc3QW10SmM5aDJhV0NlSzJCVHM2TTdRbjQybEotendTaFIZD",
+   "has_next": true
+  },
+  "operation_id": "op_52055f93ab184aa2"
+ }
+}

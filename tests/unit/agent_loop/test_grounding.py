@@ -289,3 +289,13 @@ def test_a_figure_the_model_calculated_in_the_text_is_a_problem_but_a_run_python
     computed = {"helper_figures": [{"drop": 26476.72}]}
     ok = grounding("Sales fell to ₹8,468 from ₹34,945, a drop of ₹26,477.", [data, computed])
     assert not ok["derived"] and not problems(ok), (ok, problems(ok))
+
+
+def test_a_percent_range_dash_is_not_a_minus_sign():
+    from seleric_swarm.agent.grounding import answer_numbers
+
+    for text in ("CTR 1.72% (p10–p90 1.44%–1.81%)", "range 1.44%-1.81%"):
+        upper = answer_numbers(text)[-1]
+        assert upper["value"] == 1.81 and upper["sign"] == ""
+    assert answer_numbers("CTR fell -1.81%")[0]["value"] == -1.81  # a real sign stays
+    assert answer_numbers("down (−3.1%)")[0]["sign"] == "-"

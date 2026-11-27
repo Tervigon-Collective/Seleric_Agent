@@ -1,7 +1,7 @@
 import { api, type HttpClient } from "./http";
 
-export interface ModelProvider { id: string; name: string; base_url: string }
-export interface ModelConnection { id: string; provider: string; label: string; base_url: string; builtin: boolean; key_hint: string }
+export interface ModelProvider { id: string; name: string; base_url: string; auth?: "key" | "oauth" | "cli" }
+export interface ModelConnection { id: string; provider: string; label: string; base_url: string; builtin: boolean; key_hint: string; auth?: string }
 export interface ModelChoice { connection: string; model: string; thinking?: string }
 export interface ModelSettings {
   version: number;
@@ -34,6 +34,21 @@ export class ModelSettingsApi {
   }
   saveRoles(body: { version: number; main: ModelChoice[]; helper: ModelChoice[] }): Promise<ModelSettings> {
     return this.http.request("/v1/model-settings/roles", { method: "PUT", body: JSON.stringify(body) });
+  }
+  startChatGPT(): Promise<{ login_id: string; url: string }> {
+    return this.http.request("/v1/model-settings/subscriptions/chatgpt", { method: "POST" });
+  }
+  chatgptStatus(loginId: string): Promise<{ status: string; error?: string; connection?: ModelConnection; models?: string[] }> {
+    return this.http.request(`/v1/model-settings/subscriptions/chatgpt/${enc(loginId)}`);
+  }
+  completeChatGPT(loginId: string, url: string): Promise<{ status: string; error?: string; connection?: ModelConnection; models?: string[] }> {
+    return this.http.request(`/v1/model-settings/subscriptions/chatgpt/${enc(loginId)}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    });
+  }
+  connectClaude(): Promise<{ connection: ModelConnection; models: string[] }> {
+    return this.http.request("/v1/model-settings/subscriptions/claude-code", { method: "POST" });
   }
 }
 

@@ -187,7 +187,7 @@ def answer_numbers(text: str, *, small: bool = False) -> list[dict[str, Any]]:
         k = start
         while k > 0 and text[k - 1] in "₹$ ":  # a sign sits before the currency mark: -₹24,562
             k -= 1
-        negative = k > 0 and text[k - 1] in "-−" and (k < 2 or not text[k - 2].isalnum())
+        negative = k > 0 and text[k - 1] in "-−" and (k < 2 or not _range_end(text[k - 2]))
         shown = text[start:i]
         if unit and unit != _PERCENT:
             shown = text[start:i + len(unit) + (1 if text[i:i + 1] == " " else 0)]
@@ -198,13 +198,19 @@ def answer_numbers(text: str, *, small: bool = False) -> list[dict[str, Any]]:
     return out
 
 
+def _range_end(ch: str) -> bool:
+    """A dash right after this is a range or a joiner (10-20, 1.44%–1.81%, Q3-…), not a minus sign (live 2026-11-23:
+    "p10–p90 1.44%–1.81%" read as -1.81% and flagged a sign mismatch)."""
+    return ch.isalnum() or ch == "%"
+
+
 def _written_sign(text: str, start: int) -> str:
     """'-' or '+' when the sign is written directly against the figure (-22.7%, +₹4,200, (−3.1%)), else ''.
     A hyphen followed by a space is a list bullet or a dash, not a sign."""
     k = start
     while k > 0 and text[k - 1] in "₹$":
         k -= 1
-    if k > 0 and text[k - 1] in _HYPHENS + "+" and (k < 2 or not text[k - 2].isalnum()):
+    if k > 0 and text[k - 1] in _HYPHENS + "+" and (k < 2 or not _range_end(text[k - 2])):
         return "+" if text[k - 1] == "+" else "-"
     return ""
 

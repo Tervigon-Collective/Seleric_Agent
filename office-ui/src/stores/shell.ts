@@ -1,8 +1,8 @@
 import { create } from "zustand";
 
 export type DetailTab = "Causal" | "Debug" | "Memory";
-export type Workspace = "conversation" | "office" | "ops";
-export type OpsPage = "dashboard" | "monitoring";
+export type Workspace = "conversation" | "office" | "ops" | "bots";
+export type OpsPage = "dashboard" | "monitoring" | "notifications" | "live";
 
 const DETAIL_TABS: readonly DetailTab[] = ["Debug", "Causal", "Memory"];
 const DETAILS_OPEN_KEY = "seleric.detailsOpen";
@@ -58,12 +58,19 @@ function persistDetails(detailsOpen: boolean, detailTab: DetailTab) {
 
 function initialWorkspace(): Workspace {
   const params = new URLSearchParams(location.search);
+  // Legacy ?notifications=1 opens Monitoring on the Notifications tab.
+  if (params.get("notifications") === "1") return "ops";
   if (params.get("office") === "1") return "office";
+  if (params.has("bots")) return "bots";
   return params.has("ops") ? "ops" : "conversation";
 }
 
 function initialOpsPage(): OpsPage {
-  return new URLSearchParams(location.search).get("ops") === "monitoring" ? "monitoring" : "dashboard";
+  const params = new URLSearchParams(location.search);
+  if (params.get("notifications") === "1") return "notifications";
+  const ops = params.get("ops");
+  if (ops === "monitoring" || ops === "notifications" || ops === "live") return ops;
+  return "dashboard";
 }
 
 interface ShellState {

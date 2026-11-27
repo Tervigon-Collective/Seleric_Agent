@@ -1,13 +1,14 @@
 /** The app's icon names, backed by lucide (shadcn's icon library). Same names and props as before. */
 import {
-  ActivityIcon as Activity, ArchiveIcon as Archive, ArrowDownIcon as ArrowDown, ArrowRightIcon as ArrowRight,
+  ActivityIcon as Activity, BotIcon as Bot, ArchiveIcon as Archive, ArrowDownIcon as ArrowDown, ArrowRightIcon as ArrowRight,
   BookTextIcon as BookText, CheckIcon as Check, ChevronDownIcon as ChevronDown, CopyIcon as Copy, DownloadIcon as Download,
   EllipsisIcon as Ellipsis, ImageIcon as Image, LinkIcon as Link, Maximize2Icon as Maximize, MenuIcon as Menu,
   MicIcon as Mic, MicOffIcon as MicOff, Minimize2Icon as Minimize, MoonIcon as Moon, PanelRightIcon as PanelRight,
   PaperclipIcon as Paperclip, PencilIcon as Pencil, PlusIcon as Plus, RotateCcwIcon as RotateCcw, SearchIcon as Search,
   SendHorizontalIcon as SendHorizontal, SlidersHorizontalIcon as SlidersHorizontal, SparklesIcon as Sparkles,
   SquareIcon as Square, SunIcon as Sun, ThumbsDownIcon as ThumbsDown, ThumbsUpIcon as ThumbsUp, XIcon as X,
-  BellRingIcon as BellRing, SettingsIcon as Settings,
+  BellIcon as Bell, BellRingIcon as BellRing, SettingsIcon as Settings, PlayIcon as Play, FileTextIcon as FileText,
+  MessageCircleIcon as MessageCircle, TriangleAlertIcon as TriangleAlert, ChevronLeftIcon as ChevronLeft,
   type LucideIcon,
 } from "lucide-react";
 
@@ -21,6 +22,8 @@ const wrap = (Icon: LucideIcon) => ({ size, className, ariaHidden = true }: Icon
   <Icon size={size} className={className} aria-hidden={ariaHidden} focusable="false" />;
 
 export const MenuIcon = wrap(Menu);
+export const BotIcon = wrap(Bot);
+export const BellIcon = wrap(Bell);
 export const BellRingIcon = wrap(BellRing);
 export const SettingsIcon = wrap(Settings);
 export const MoreIcon = wrap(Ellipsis);
@@ -54,3 +57,8 @@ export const ThumbUpIcon = wrap(ThumbsUp);
 export const ThumbDownIcon = wrap(ThumbsDown);
 export const LinkIcon = wrap(Link);
 export const PromptsIcon = wrap(BookText);
+export const PlayIcon = wrap(Play);
+export const FileTextIcon = wrap(FileText);
+export const MessageIcon = wrap(MessageCircle);
+export const AlertIcon = wrap(TriangleAlert);
+export const ChevronLeftIcon = wrap(ChevronLeft);

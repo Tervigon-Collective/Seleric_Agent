@@ -167,6 +167,13 @@ class Settings(BaseSettings):
     azure_client_id: str = ""
     azure_client_secret: str = ""
     email_sender: str = ""
+
+    # D-244 bots memory (Hindsight Cloud, B13). No key = bots run without memory.
+    hindsight_api_url: str = "https://api.hindsight.vectorize.io"
+    hindsight_api_key: str = ""
+    # Bank ids are "<prefix>-platform", "<prefix>-b<brand>-shared", "<prefix>-b<brand>-bot-<id>"; a preview sets its
+    # own prefix so it never writes into the live banks.
+    hindsight_bank_prefix: str = "seleric"
     email_contacts_path: str = "config/email_contacts.yaml"
     email_allowed_domains: str = "seleric.ai"  # comma list: explicit addresses elsewhere need an entry in the contacts file
     seleric_mcp_token: str = ""

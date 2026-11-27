@@ -212,6 +212,7 @@ def _instructions(
     *,
     thread_summary: str = "",
     workspace_notes: str = "",
+    bot_brief: str = "",
 ) -> list[Any]:
     def memory_block(_: RunContext[SelericDeps]) -> str:
         return ("What the user asked you to remember:\n- " + "\n- ".join(memories)) if memories else ""
@@ -229,7 +230,10 @@ def _instructions(
     def budget_block(_: RunContext[SelericDeps]) -> str:
         return BUDGET_NOTICE if budget.forced else ""
 
-    return [system_prompt, summary_block, memory_block, config_block, prior_block, budget_block]
+    def bot_block(_: RunContext[SelericDeps]) -> str:
+        return ("This turn is a bot run, not a chat message.\n" + bot_brief) if bot_brief else ""
+
+    return [system_prompt, bot_block, summary_block, memory_block, config_block, prior_block, budget_block]
 
 
 async def run_turn(
@@ -246,6 +250,7 @@ async def run_turn(
     prior_payloads: list[Any] | None = None,
     thread_summary: str = "",
     workspace_notes: str = "",
+    bot_brief: str = "",
     is_cancelled: Callable[[], bool] = lambda: False,
     snapshot_loader: Any = None,
     on_stream: Callable[[str, str], None] | None = None,
@@ -285,6 +290,7 @@ async def run_turn(
             budget,
             thread_summary=thread_summary,
             workspace_notes=workspace_notes,
+            bot_brief=bot_brief,
         ),
         name="seleric_agent",
         tools=tools,

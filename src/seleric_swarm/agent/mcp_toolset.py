@@ -29,7 +29,10 @@ from pydantic_ai.tools import Tool
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import SelericDeps
+from seleric_swarm.agent.live_rows import as_query_result, same_hours, same_hours_args
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+from seleric_swarm.protocols.mcp.servers.seleric_remote import ADS_READ_TOOLS
+from seleric_swarm.services.bots import eda
 from seleric_swarm.services.mcp_query import relabel_undated, with_date_axis
 
 _log = logging.getLogger("seleric.agent.mcp_toolset")
@@ -507,9 +510,13 @@ class TurnState:
     today: date | None = None  # the mission calendar's today (its timezone); None falls back to IST
 
 
-def tool_defs(raw_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Allowlisted tool definitions, sorted by name and cleaned once, so the prompt prefix stays byte-stable."""
-    keep = {t["name"]: t for t in raw_tools if t.get("name") in ALLOW}
+def tool_defs(raw_tools: list[dict[str, Any]], extra: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+    """Allowlisted tool definitions, sorted by name and cleaned once, so the prompt prefix stays byte-stable.
+    ``extra``: a bot's additional read-only tools (checked against services/bots/store.READ_TOOLS when saved)."""
+    allowed = {*ALLOW, *extra}
+    keep = {t["name"]: t for t in raw_tools if t.get("name") in allowed}
+    if eda.TOOL in extra:  # computed here from other MCP calls, so it is not in the server's list
+        keep[eda.TOOL] = {"name": eda.TOOL, "description": eda.DESCRIPTION, "inputSchema": eda.SCHEMA}
     return [{"name": n, "description": _desc(keep[n].get("description") or ""),
              "schema": _clean_schema(keep[n].get("inputSchema") or {"type": "object"})} for n in sorted(keep)]
 
@@ -569,6 +576,19 @@ async def _take_dataset(ctx: RunContext[SelericDeps], gateway: Any, state: TurnS
     return seen
 
 
+async def _eda(gateway: Any, args: dict[str, Any], today: date | None) -> tuple[Any, bool]:
+    """The bot's EDA pack (services/bots/eda.py), from the same MCP calls the bot could make itself."""
+    day = today or ist_today()
+
+    async def call(name: str, a: dict[str, Any]) -> tuple[Any, bool]:
+        return await _execute(gateway, name, a, day)  # raw: the pack reads Meta's actions lists itself
+    try:
+        return await eda.run(call, int(args["brand_id"]), str(args["account_id"]), day), False
+    except Exception as exc:  # a bug in the pack must not end the run: the bot falls back to its own reads
+        _log.warning("bot_eda_failed", exc_info=True)
+        return {"error": f"bot_eda failed: {type(exc).__name__}: {exc}"}, True
+
+
 def _takes_date_axis(definition: dict[str, Any] | None, args: dict[str, Any]) -> bool:
     """The tool's published schema has a ``date_axis`` and this call builds or queries (not a dataset get / delete)."""
     props = ((definition or {}).get("schema") or {}).get("properties") or {}
@@ -595,10 +615,21 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
             dup = key in state.seen
             if not dup:
                 state.tool_calls += 1  # a repeat of a call already made costs nothing: it is served from the turn's cache
-                state.seen[key] = asyncio.ensure_future(_execute(gateway, name, args, state.today))
+                state.seen[key] = asyncio.ensure_future(
+                    _eda(gateway, args, state.today) if name == eda.TOOL else _execute(gateway, name, args, state.today))
             else:
                 state.duplicates += 1
             payload, is_err = await state.seen[key]
+            live = name in ADS_READ_TOOLS  # bot-only live ad reads: reshape so run_python/grounding can read the rows
+            if live and not is_err:
+                payload = as_query_result(name, args, payload, state.today or ist_today())
+                extra = same_hours_args(name, args, payload, state.today or ist_today())
+                if extra is not None and not dup:
+                    hourly, failed = await _execute(gateway, name, extra, state.today)
+                    compared = None if failed else same_hours(as_query_result(name, extra, hourly, state.today or ist_today()),
+                                                              state.today or ist_today())
+                    if compared is not None:
+                        payload["same_hours"] = compared
             ms = int((time.perf_counter() - started) * 1000)
             state.tool_ms += ms
             if not dup:
@@ -614,16 +645,18 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
                     state.payloads.append(payload)
                     qid = payload.get("query_id") if isinstance(payload, dict) else None
                     state.evidence.append({"tool": name, "args": args, "query_id": qid})
-                    if name in QUERY_TOOLS and isinstance(payload, dict):
+                    if (name in QUERY_TOOLS or live or name == eda.TOOL) and isinstance(payload, dict):
                         by_query = write_query_evidence(payload, args, ctx.deps)
+                        if isinstance(payload.get("same_hours"), dict):
+                            by_query |= write_query_evidence(payload["same_hours"], args, ctx.deps)
                         for ids in by_query.values():
                             state.evidence_ids.extend(i for i in ids if i not in state.evidence_ids)
                         state.by_query.update(by_query)
-            body = compact(payload)
+            body = compact(eda.for_model(payload) if name == eda.TOOL and not is_err else payload)
             state.steps.append({"kind": "tool_call", "tool": name, "args": args, "duplicate": dup})
             state.steps.append({"kind": "tool_return", "tool": name, "ok": not is_err, "ms": ms, "chars": len(body),
                                 "query_id": payload.get("query_id") if isinstance(payload, dict) else None,
-                                "result": body[:2000]})
+                                "result": body[:2000], **({"bands": eda.bands(payload)} if name == eda.TOOL and not is_err else {})})
             return body
 
         return call

@@ -1,59 +1,59 @@
 @layer legacy {
 /* ===========================================================================
-   Seleric — Apple HIG-aligned design system
-   Semantic iOS system colors: base vs elevated layering, vibrancy-ready
-   materials, SF typography. Light = systemBackground family, Dark = true
-   black OLED base (#000000) with elevated #1C1C1E / #2C2C2E.
-   Ref: Apple HIG Dark Mode, Color, Materials.
+   Seleric — fe-dashboard light / Violet Bloom dark, Inter.
+   Tokens only; DESIGN.md has the rules.
    =========================================================================== */
 
 :root {
   color-scheme: light;
-  /* fe-dashboard theme (Dashboard/fe-dashboard globals.css, .light): #F4F4F2 canvas, #FCFCFA cards, slate text and borders,
-     purple primary, pink accent. Text and status shades are one step darker than the originals where those fail WCAG AA. */
+  /* fe-dashboard light: purple brand, red only for what needs a person.
+     Cool grey canvas, white cards, Inter throughout. */
   --bg: #f4f4f2;
   --panel: #fcfcfa;
   --sidebar: #ffffff;
   --surface-2: #f1f5f9;
   --hover: #e9eef4;
-  --active: #ece3f7; /* current nav item: primary at ~10% */
-  --panel-2: #ffffff; /* legacy alias: sidebar / secondary surface */
+  --active: #ece3f7;
+  --panel-2: #ffffff;
   --line: #e2e8f0;
   --line-strong: #cbd5e1;
   --text: #020817;
   --text-dim: #475569;
   --text-faint: #5b6b80;
-  --brand: #7f33cc; /* primary: hsl(270 60% 50%) */
+  --brand: #7f33cc;
   --brand-hover: #6b27b0;
   --brand-text: #7f33cc;
   --brand-soft: #ece3f7;
-  --accent-pink: #eb4799; /* fe-dashboard accent: hsl(330 80% 60%) */
+  --brand-soft-line: #d6c2ee;
+  --signal: #dc2626;
+  --signal-soft: #fee2e2;
+  --accent-pink: #eb4799;
   --success: #15803d;
   --success-soft: #dcfce7;
+  --success-line: #86efac;
   --warning: #b45309;
   --warning-soft: #fef3c7;
   --danger: #b91c1c;
   --danger-soft: #fee2e2;
 
-  --st-neutral: #8a8d94; /* systemGray */
-  --st-working: #3b82f6; /* systemBlue */
-  --st-thinking: #7f33cc; /* primary */
-  --st-waiting: #f59e0b; /* systemOrange */
-  --st-failed: #ef4444; /* systemRed */
-  --st-done: #22c55e; /* systemGreen */
-  --st-collab: #9333ea; /* systemCyan */
+  --st-neutral: #8a8d94;
+  --st-working: #3b82f6;
+  --st-thinking: #7f33cc;
+  --st-waiting: #f59e0b;
+  --st-failed: #ef4444;
+  --st-done: #22c55e;
+  --st-collab: #9333ea;
 
-  --radius-xs: 4px;  /* kbd, inline code */
-  --radius-sm: 4px;  /* chips, small tags */
-  --radius-md: 6px;  /* buttons, inputs */
-  --radius: 8px;     /* cards, panels (fe-dashboard --radius: 0.5rem) */
-  --radius-lg: 8px;  /* menus, modals */
+  --radius-xs: 4px;
+  --radius-sm: 4px;
+  --radius-md: 7px;  /* buttons, inputs */
+  --radius: 10px;    /* cards, panels */
+  --radius-lg: 10px;
   --radius-xl: 22px; /* composer, voice dock */
-  --on-accent: #ffffff; /* text on accent / danger fills */
+  --on-accent: #ffffff;
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
   --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.14);
 
-  /* SF-first stack per HIG Typography; Inter kept as web fallback. */
   --serif: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif; /* fe-dashboard uses Inter only, so headings share the sans face */
   --font: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
@@ -61,18 +61,16 @@
   --motion-fast: 120ms;
   --motion: 180ms;
 
-  /* iOS materials (light): translucent nav/tab bars over content. */
   --material-header: rgba(255, 255, 255, 0.72);
   --material-elevated: rgba(255, 255, 255, 0.84);
   --material-backdrop: saturate(180%) blur(20px);
   --zi-blue: #7f33cc;
-  --zi-violet: #7f33cc; /* focus ring: the primary */
+  --zi-violet: #7f33cc;
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
-  /* Dark theme: shadcnthemer "Violet Bloom (tweakcn)" (.dark), oklch converted to hex. --brand is the theme primary one step
-     darker so white text on it passes AA; --brand-text is the lighter violet used for links and icons on the dark surfaces. */
+  /* The same line at night: deep navy ground, cobalt primary (navy would vanish on it), scarlet kept for the line. */
   --bg: #1a1b1e;
   --panel: #222327;
   --sidebar: #161618;
@@ -89,9 +87,13 @@
   --brand-hover: #8858fa;
   --brand-text: #b39fff;
   --brand-soft: #2e264e;
+  --brand-soft-line: #4b3f80;
+  --signal: #f87171;
+  --signal-soft: #472020;
   --accent-pink: #f472b6;
   --success: #4ade80;
   --success-soft: #193521;
+  --success-line: #2f6b45;
   --warning: #fbbf24;
   --warning-soft: #3a2e12;
   --danger: #f87171;
@@ -99,22 +101,21 @@
 
   --st-neutral: #8f8d85;
   --st-working: #5993f4;
-  --st-thinking: #c084fc; /* systemPurple dark */
+  --st-thinking: #c084fc;
   --st-waiting: #fbbf24;
   --st-failed: #f87171;
   --st-done: #4ade80;
-  --st-collab: #c084fc; /* systemCyan dark */
+  --st-collab: #c084fc;
 
   --shadow: none;
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
 
-  /* iOS dark materials: translucent + vibrant, blur over content. */
   --material-header: rgba(21, 24, 26, 0.72);
   --material-elevated: rgba(2, 8, 23, 0.72);
   --material-backdrop: saturate(180%) blur(20px);
   --on-accent: #ffffff;
   --zi-blue: #8c5cff;
-  --zi-violet: #8c5cff; /* focus ring: theme --ring is the primary */
+  --zi-violet: #8c5cff;
 }
 
 * { box-sizing: border-box; }
@@ -152,7 +153,7 @@ body {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  font-feature-settings: "cv11", "ss03";
+  font-feature-settings: normal;
 }
 
 button, input, textarea, select { font: inherit; color: inherit; }
@@ -160,7 +161,7 @@ button { color: inherit; }
 
 /* Visible keyboard focus everywhere */
 :focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--zi-violet);
   outline-offset: 2px;
 }
 
