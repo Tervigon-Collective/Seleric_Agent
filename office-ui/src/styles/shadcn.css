@@ -60,8 +60,8 @@
   --card-foreground: var(--text);
   --popover: var(--panel);
   --popover-foreground: var(--text);
-  --primary: var(--brand);
-  --primary-foreground: var(--on-accent);
+  --primary: var(--text);
+  --primary-foreground: var(--bg);
   --secondary: var(--surface-2);
   --secondary-foreground: var(--text);
   --muted: var(--surface-2);

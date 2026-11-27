@@ -1,48 +1,48 @@
 @layer legacy {
 /* ===========================================================================
-   Seleric — metro look (D-253): navy, scarlet line, cobalt focus, Overpass.
+   Seleric — fe-dashboard light / Violet Bloom dark, Inter.
    Tokens only; DESIGN.md has the rules.
    =========================================================================== */
 
 :root {
   color-scheme: light;
-  /* D-253 metro look: navy ink, a scarlet line that marks what needs a person, cobalt for focus and links.
-     Cool grey canvas, white cards, Overpass throughout. */
-  --bg: #f6f7f9;
-  --panel: #ffffff;
-  --sidebar: #eef0f4;
-  --surface-2: #eef0f4;
-  --hover: #e3e6ec;
-  --active: #ffffff; /* current nav item: a white card on the grey sidebar */
+  /* fe-dashboard light: purple brand, red only for what needs a person.
+     Cool grey canvas, white cards, Inter throughout. */
+  --bg: #f4f4f2;
+  --panel: #fcfcfa;
+  --sidebar: #ffffff;
+  --surface-2: #f1f5f9;
+  --hover: #e9eef4;
+  --active: #ece3f7;
   --panel-2: #ffffff;
-  --line: #e1e5ec;
-  --line-strong: #c5cbd8;
-  --text: #0e1430;
-  --text-dim: #566079;
-  --text-faint: #646d86;
-  --brand: #0b1230; /* navy: primary buttons, timeline stops */
-  --brand-hover: #1b2550;
-  --brand-text: #1e5bff; /* cobalt: links, focus */
-  --brand-soft: #f1f4ff; /* selected row */
-  --brand-soft-line: #c9d6ff;
-  --signal: #e21d2d; /* scarlet: the metro line, badges, a value out of range */
-  --signal-soft: #fdecee;
-  --accent-pink: var(--signal);
-  --success: #16753a;
-  --success-soft: #e7f6ec;
-  --success-line: #a9d9b8;
-  --warning: #6b5200;
-  --warning-soft: #fff6da;
-  --danger: #b3121f;
-  --danger-soft: #fdecee;
+  --line: #e2e8f0;
+  --line-strong: #cbd5e1;
+  --text: #020817;
+  --text-dim: #475569;
+  --text-faint: #5b6b80;
+  --brand: #7f33cc;
+  --brand-hover: #6b27b0;
+  --brand-text: #7f33cc;
+  --brand-soft: #ece3f7;
+  --brand-soft-line: #d6c2ee;
+  --signal: #dc2626;
+  --signal-soft: #fee2e2;
+  --accent-pink: #eb4799;
+  --success: #15803d;
+  --success-soft: #dcfce7;
+  --success-line: #86efac;
+  --warning: #b45309;
+  --warning-soft: #fef3c7;
+  --danger: #b91c1c;
+  --danger-soft: #fee2e2;
 
-  --st-neutral: #8a93a8;
-  --st-working: #1e5bff;
-  --st-thinking: #0b1230;
-  --st-waiting: #d48a00;
-  --st-failed: #e21d2d;
-  --st-done: #1f9d49;
-  --st-collab: #1b2550;
+  --st-neutral: #8a8d94;
+  --st-working: #3b82f6;
+  --st-thinking: #7f33cc;
+  --st-waiting: #f59e0b;
+  --st-failed: #ef4444;
+  --st-done: #22c55e;
+  --st-collab: #9333ea;
 
   --radius-xs: 4px;
   --radius-sm: 4px;
@@ -51,71 +51,71 @@
   --radius-lg: 10px;
   --radius-xl: 22px; /* composer, voice dock */
   --on-accent: #ffffff;
-  --shadow: 0 1px 2px rgba(14, 20, 48, 0.08);
-  --shadow-lg: 0 12px 32px rgba(14, 20, 48, 0.16);
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.14);
 
-  --serif: "Overpass Variable", "Overpass", ui-sans-serif, system-ui, sans-serif; /* one face: headings share it */
-  --font: "Overpass Variable", "Overpass", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif; /* fe-dashboard uses Inter only, so headings share the sans face */
+  --font: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   --motion-fast: 120ms;
   --motion: 180ms;
 
-  --material-header: rgba(255, 255, 255, 0.8);
-  --material-elevated: rgba(255, 255, 255, 0.88);
+  --material-header: rgba(255, 255, 255, 0.72);
+  --material-elevated: rgba(255, 255, 255, 0.84);
   --material-backdrop: saturate(180%) blur(20px);
-  --zi-blue: #1e5bff;
-  --zi-violet: #1e5bff; /* focus ring */
+  --zi-blue: #7f33cc;
+  --zi-violet: #7f33cc;
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
   /* The same line at night: deep navy ground, cobalt primary (navy would vanish on it), scarlet kept for the line. */
-  --bg: #0a0f24;
-  --panel: #111833;
-  --sidebar: #0d1329;
-  --surface-2: #18203d;
-  --hover: #1d2647;
-  --active: #1f2a52;
-  --panel-2: #0d1329;
-  --line: #26304f;
-  --line-strong: #3a4566;
-  --text: #e8ebf3;
-  --text-dim: #a3abc2;
-  --text-faint: #8f98b2;
-  --brand: #2f5bea;
-  --brand-hover: #4069f0;
-  --brand-text: #8fb0ff;
-  --brand-soft: #1b2a5c;
-  --brand-soft-line: #33489a;
-  --signal: #ff4d5a;
-  --signal-soft: #3a1620;
-  --accent-pink: var(--signal);
-  --success: #5fd68a;
-  --success-soft: #12301f;
-  --success-line: #2a6b43;
-  --warning: #f5c451;
-  --warning-soft: #33290f;
-  --danger: #ff6b75;
-  --danger-soft: #3d1a1f;
+  --bg: #1a1b1e;
+  --panel: #222327;
+  --sidebar: #161618;
+  --surface-2: #2a2c33;
+  --hover: #2e3038;
+  --active: #312c54;
+  --panel-2: #161618;
+  --line: #33353a;
+  --line-strong: #45484d;
+  --text: #f0f0f0;
+  --text-dim: #a0a0a0;
+  --text-faint: #8f8f8f;
+  --brand: #7a46e9;
+  --brand-hover: #8858fa;
+  --brand-text: #b39fff;
+  --brand-soft: #2e264e;
+  --brand-soft-line: #4b3f80;
+  --signal: #f87171;
+  --signal-soft: #472020;
+  --accent-pink: #f472b6;
+  --success: #4ade80;
+  --success-soft: #193521;
+  --success-line: #2f6b45;
+  --warning: #fbbf24;
+  --warning-soft: #3a2e12;
+  --danger: #f87171;
+  --danger-soft: #472020;
 
-  --st-neutral: #8f98b2;
-  --st-working: #8fb0ff;
-  --st-thinking: #8fb0ff;
-  --st-waiting: #f5c451;
-  --st-failed: #ff6b75;
-  --st-done: #5fd68a;
-  --st-collab: #a3abc2;
+  --st-neutral: #8f8d85;
+  --st-working: #5993f4;
+  --st-thinking: #c084fc;
+  --st-waiting: #fbbf24;
+  --st-failed: #f87171;
+  --st-done: #4ade80;
+  --st-collab: #c084fc;
 
   --shadow: none;
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
 
-  --material-header: rgba(13, 19, 41, 0.78);
-  --material-elevated: rgba(17, 24, 51, 0.8);
+  --material-header: rgba(21, 24, 26, 0.72);
+  --material-elevated: rgba(2, 8, 23, 0.72);
   --material-backdrop: saturate(180%) blur(20px);
   --on-accent: #ffffff;
-  --zi-blue: #8fb0ff;
-  --zi-violet: #8fb0ff;
+  --zi-blue: #8c5cff;
+  --zi-violet: #8c5cff;
 }
 
 * { box-sizing: border-box; }
@@ -128,7 +128,7 @@ html {
   overscroll-behavior-y: none;
 }
 ::selection { background: var(--brand-soft); }
-[data-theme="dark"] ::selection { background: rgba(47, 91, 234, 0.45); }
+[data-theme="dark"] ::selection { background: rgba(140, 92, 255, 0.4); }
 
 /* Thin iOS-style scrollbars in both appearances — fixes the stark white
    scrollbar gutter seen in dark-mode screenshots on desktop Chrome. */

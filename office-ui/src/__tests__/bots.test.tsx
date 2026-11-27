@@ -187,6 +187,21 @@ describe("bots page", () => {
     expect(start).toHaveBeenCalledWith("bot_1", "manual", "");
   });
 
+  it("shows one bot per screen and switching bot shows only that bot's runs", async () => {
+    const other: Bot = { ...bot, bot_id: "bot_2", name: "Marketing 2" };
+    const theirs: BotRun = { ...calm, run_id: "run_o", bot_id: "bot_2", bot_name: "Marketing 2", outcome: "no_action" };
+    mockBots([bot, other], [action, calm, theirs]);
+    await act(async () => root.render(<BotsWorkspace />));
+    await settle();
+    expect(container.textContent).toContain("1 run, nothing to do");
+    const pick = container.querySelector<HTMLSelectElement>('select[aria-label="Bot"]')!;
+    await act(async () => { pick.value = "bot_2"; pick.dispatchEvent(new Event("change", { bubbles: true })); });
+    await settle();
+    expect(useBotsStore.getState().selectedId).toBe("bot_2");
+    expect(container.textContent).toContain("Nothing needs you right now.");
+    expect(container.textContent).not.toContain("TH-149-SCRATCHLOUNGE-6OCT");
+  });
+
   it("dismisses a decision and brings it back", async () => {
     const inbox = mockBots();
     const dismiss = vi.spyOn(botsApi, "dismiss").mockResolvedValue({ run_id: "run_b", dismissed_at: "2026-11-21T10:00:00Z" });

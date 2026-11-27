@@ -523,6 +523,13 @@ export const itemsOf = (runs: BotRun[]): InboxItem[] => runs.flatMap((run) => {
 });
 
 /** Needs your decision = action-needed runs nobody dismissed; dismissed ones are earlier flags; the rest are calm. */
+/** One screen per bot: the inbox narrowed to the open bot's runs. */
+function useBotRuns(): BotRun[] {
+  const inbox = useBotsStore((s) => s.inbox);
+  const id = useBotsStore((s) => s.selectedId);
+  return useMemo(() => inbox.filter((r) => r.bot_id === id), [inbox, id]);
+}
+
 export function inboxGroups(runs: BotRun[]) {
   const action = runs.filter((r) => r.outcome === "action_needed");
   return {
@@ -544,14 +551,10 @@ function Pill({ tone, children }: { tone: string; children: ReactNode }) {
   return <span className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold whitespace-nowrap", tone)}>{children}</span>;
 }
 
-/** A stop on the metro line: a ring, scarlet when it needs a person, dashed when it is only proposed. */
-function Stop({ size = "md", tone = "navy", dashed = false }: { size?: "sm" | "md" | "lg"; tone?: "navy" | "signal" | "muted"; dashed?: boolean }) {
-  return (
-    <span aria-hidden className={cn("block shrink-0 rounded-full bg-card",
-      size === "lg" ? "size-[18px] border-4" : size === "sm" ? "size-2.5 border-[2.5px]" : "size-3.5 border-[3px]",
-      dashed && "border-dashed",
-      tone === "signal" ? "border-[var(--signal)]" : tone === "muted" ? "border-muted-foreground/60" : "border-[var(--brand)] dark:border-foreground")} />
-  );
+/** Status dot: red when it needs a person, brand when the run said something, grey otherwise. */
+function Dot({ tone = "brand" }: { tone?: "brand" | "signal" | "muted" }) {
+  return <span aria-hidden className={cn("mt-1.5 block size-2 shrink-0 rounded-full",
+    tone === "signal" ? "bg-[var(--signal)]" : tone === "muted" ? "bg-muted-foreground/50" : "bg-[var(--brand)]")} />;
 }
 
 function ItemRow({ item, selected, onOpen, big = false }: { item: InboxItem; selected: boolean; onOpen: () => void; big?: boolean }) {
@@ -560,9 +563,9 @@ function ItemRow({ item, selected, onOpen, big = false }: { item: InboxItem; sel
   return (
     <li>
       <Button variant="ghost" onClick={onOpen} aria-current={selected || undefined}
-        className={cn("grid h-auto w-full grid-cols-[18px_minmax(0,1fr)_auto] items-start gap-2.5 rounded-lg border border-transparent px-3 py-2.5 text-left font-normal whitespace-normal pointer-coarse:py-3.5",
+        className={cn("grid h-auto w-full grid-cols-[8px_minmax(0,1fr)_auto] items-start gap-2.5 rounded-lg border border-transparent px-3 py-2.5 text-left font-normal whitespace-normal pointer-coarse:py-3.5",
           selected && "border-[var(--brand-soft-line)] bg-[var(--brand-soft)] hover:bg-[var(--brand-soft)]")}>
-        <span className="pt-0.5"><Stop size={big ? "lg" : "md"} /></span>
+        <Dot tone={big ? "signal" : "muted"} />
         <span className="min-w-0">
           <span className="block truncate text-[13.5px] font-bold">{proposal?.entity || KIND_LABEL[run.trigger_kind] || run.trigger_kind}</span>
           <span className="line-clamp-2 text-xs text-muted-foreground tabular-nums">{stamp(run.created_at)} · {sub}</span>
@@ -581,10 +584,9 @@ function ItemRow({ item, selected, onOpen, big = false }: { item: InboxItem; sel
 const GroupHead = ({ children }: { children: ReactNode }) => <h2 className="m-0 px-4 pt-3 pb-1.5 text-xs font-semibold text-muted-foreground">{children}</h2>;
 
 /** Which bot the buttons act on, whether it is on, its settings, and a new bot from a template. */
-function BotBar({ onSettings }: { onSettings: () => void }) {
+function BotBar({ onSettings, onSwitch }: { onSettings: () => void; onSwitch: (id: string) => void }) {
   const bots = useBotsStore((s) => s.bots);
   const bot = useBotsStore((s) => s.bot);
-  const select = useBotsStore((s) => s.select);
   const save = useBotsStore((s) => s.save);
   const templates = useBotsStore((s) => s.templates);
   const create = useBotsStore((s) => s.create);
@@ -592,7 +594,7 @@ function BotBar({ onSettings }: { onSettings: () => void }) {
   return (
     <div className="flex items-center gap-2 px-4 pb-3 text-sm">
       {bots.length > 1
-        ? <NativeSelect aria-label="Bot" value={bot?.bot_id ?? ""} onChange={(e) => void select(e.target.value)} className="min-w-0 flex-1">
+        ? <NativeSelect aria-label="Bot" value={bot?.bot_id ?? ""} onChange={(e) => onSwitch(e.target.value)} className="min-w-0 flex-1">
             {bots.map((b) => <NativeSelectOption key={b.bot_id} value={b.bot_id}>{b.name}</NativeSelectOption>)}
           </NativeSelect>
         : <span className="flex min-w-0 flex-1 items-center gap-2 truncate font-semibold"><BotIcon aria-hidden />{bot?.name ?? "No bot yet"}</span>}
@@ -615,17 +617,18 @@ function BotBar({ onSettings }: { onSettings: () => void }) {
   );
 }
 
-function InboxList({ tab, onTab, current, onOpen, onSettings, className }: {
-  tab: string; onTab: (t: string) => void; current: string | null; onOpen: (key: string) => void; onSettings: () => void; className?: string;
+function InboxList({ tab, onTab, current, onOpen, onSettings, onSwitch, className }: {
+  tab: string; onTab: (t: string) => void; current: string | null; onOpen: (key: string) => void; onSettings: () => void;
+  onSwitch: (id: string) => void; className?: string;
 }) {
-  const inbox = useBotsStore((s) => s.inbox);
+  const inbox = useBotRuns();
   const days = useBotsStore((s) => s.inboxDays);
   const loadInbox = useBotsStore((s) => s.loadInbox);
   const bot = useBotsStore((s) => s.bot);
   const runNow = useBotsStore((s) => s.runNow);
   const busy = useBotsStore((s) => s.busy);
   const g = useMemo(() => inboxGroups(inbox), [inbox]);
-  const running = inbox.some((r) => r.bot_id === bot?.bot_id && live(r));
+  const running = inbox.some(live);
   return (
     <section aria-label="Bot runs" className={className}>
       <div className="flex items-center gap-2 px-4 pt-4 pb-2.5">
@@ -634,7 +637,7 @@ function InboxList({ tab, onTab, current, onOpen, onSettings, className }: {
           <PlayIcon />{running ? "Running…" : "Run now"}
         </Button>
       </div>
-      <BotBar onSettings={onSettings} />
+      <BotBar onSettings={onSettings} onSwitch={onSwitch} />
       <Tabs value={tab} onValueChange={onTab}>
         <TabsList className="mx-4 grid tabular-nums w-[calc(100%-2rem)] grid-cols-2 pointer-coarse:h-12">
           <TabsTrigger value="needs">Needs you · {g.decide.length}</TabsTrigger>
@@ -655,8 +658,8 @@ function InboxList({ tab, onTab, current, onOpen, onSettings, className }: {
           {g.calm.length > 0 && <>
             <GroupHead>Calm runs</GroupHead>
             <Button variant="ghost" onClick={() => onTab("all")}
-              className="mx-2 grid h-auto w-[calc(100%-1rem)] grid-cols-[18px_minmax(0,1fr)] items-start gap-2.5 rounded-lg px-3 py-2.5 text-left font-normal whitespace-normal">
-              <span className="pt-1 pl-0.5"><Stop size="sm" tone="muted" /></span>
+              className="mx-2 grid h-auto w-[calc(100%-1rem)] grid-cols-[8px_minmax(0,1fr)] items-start gap-2.5 rounded-lg px-3 py-2.5 text-left font-normal whitespace-normal">
+              <Dot tone="muted" />
               <span><span className="block text-[13.5px] font-bold">{g.calm.length} {g.calm.length === 1 ? "run" : "runs"}, nothing to do</span>
                 <span className="text-xs text-muted-foreground">Alerts cleared on re-check, or all in order</span></span>
             </Button>
@@ -670,13 +673,13 @@ function InboxList({ tab, onTab, current, onOpen, onSettings, className }: {
               return (
                 <li key={r.run_id}>
                   <Button variant="ghost" onClick={() => onOpen(key)} aria-current={key === current || undefined}
-                    className={cn("grid h-auto w-full grid-cols-[18px_minmax(0,1fr)] items-start gap-2.5 rounded-lg border border-transparent px-3 py-2.5 text-left font-normal whitespace-normal pointer-coarse:py-3.5",
+                    className={cn("grid h-auto w-full grid-cols-[8px_minmax(0,1fr)] items-start gap-2.5 rounded-lg border border-transparent px-3 py-2.5 text-left font-normal whitespace-normal pointer-coarse:py-3.5",
                       key === current && "border-[var(--brand-soft-line)] bg-[var(--brand-soft)] hover:bg-[var(--brand-soft)]")}>
-                    <span className="pt-0.5"><Stop tone={r.outcome === "action_needed" ? "signal" : r.outcome ? "navy" : "muted"} /></span>
+                    <Dot tone={r.outcome === "action_needed" ? "signal" : r.outcome ? "brand" : "muted"} />
                     <span className="min-w-0">
                       <span className="flex items-baseline gap-2 text-[13.5px] font-bold"><span className="truncate">{v.label}</span>
                         <span className="ml-auto shrink-0 text-xs font-normal text-muted-foreground tabular-nums">{stamp(r.created_at)}</span></span>
-                      <span className="block truncate text-xs text-muted-foreground">{[r.bot_name, KIND_LABEL[r.trigger_kind]].filter(Boolean).join(" · ")}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{KIND_LABEL[r.trigger_kind] ?? r.trigger_kind}</span>
                       <span className="line-clamp-2 text-xs text-muted-foreground">{runLine(r)}</span>
                     </span>
                   </Button>
@@ -750,11 +753,11 @@ function Decision({ item, onReport, onAsk, onBack, backLabel = "All runs", child
   const checks = [...(run.report?.eda_checks ?? [])];
   const unverified = r?.unverified ?? [];
   return (
-    <article className="mx-auto flex w-full max-w-[760px] flex-col px-7 pt-5 pb-8 max-md:px-4">
+    <article className="mx-auto flex w-full max-w-[1240px] flex-col px-7 pt-5 pb-8 max-md:px-4 min-[96rem]:px-10">
       {onBack && <Button variant="ghost" className="-ml-2 mb-2 self-start pointer-coarse:h-11" onClick={onBack}><ChevronLeftIcon />{backLabel}</Button>}
       <p className="m-0 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-muted-foreground tabular-nums">
         <Pill tone={v.tone}>{run.outcome === "action_needed" && <AlertIcon className="size-3.5" />}{v.label}</Pill>
-        <span>{[run.bot_name, KIND_LABEL[run.trigger_kind], stamp(run.created_at), proposal?.field].filter(Boolean).join(" · ")}</span>
+        <span>{[KIND_LABEL[run.trigger_kind], stamp(run.created_at), proposal?.field].filter(Boolean).join(" · ")}</span>
       </p>
       <h2 className="m-0 mt-1.5 text-2xl leading-tight font-extrabold tracking-tight wrap-anywhere">{proposal?.entity || KIND_LABEL[run.trigger_kind] || v.label}</h2>
       {proposal && (proposal.proposed != null
@@ -780,7 +783,7 @@ function Decision({ item, onReport, onAsk, onBack, backLabel = "All runs", child
         {(checks.length > 0 || (r.checks?.length ?? 0) > 0) && (
           <section aria-label="Checks" className="mt-7">
             <h3 className="m-0 mb-1 text-sm font-bold">Checks at {stamp(run.finished_at ?? run.created_at)}</h3>
-            <div className="grid grid-cols-2 gap-x-6 max-sm:grid-cols-1">
+            <div className="grid grid-cols-1 gap-x-6 @xl/detail:grid-cols-2 @4xl/detail:grid-cols-3 @4xl/detail:gap-x-8">
               {checks.map((c) => <EdaCheckRow key={c.metric} c={c} />)}
               {(r.checks ?? []).map((c) => <AnswerCheckRow key={c.label} c={c} />)}
             </div>
@@ -793,13 +796,13 @@ function Decision({ item, onReport, onAsk, onBack, backLabel = "All runs", child
               <TableHeader><TableRow className="hover:bg-transparent">
                 <TableHead className="h-auto py-[7px] pl-0 text-xs font-semibold text-muted-foreground">Campaign</TableHead>
                 <TableHead className="h-auto py-[7px] text-right text-xs font-semibold text-muted-foreground">Today</TableHead>
-                <TableHead className="h-auto py-[7px] text-xs font-semibold text-muted-foreground max-sm:hidden">Note</TableHead>
+                <TableHead className="h-auto py-[7px] text-xs font-semibold text-muted-foreground @max-xl/detail:hidden">Note</TableHead>
               </TableRow></TableHeader>
               <TableBody>{r.movers!.map((m) => (
                 <TableRow key={m.entity} className="border-b hover:bg-transparent">
                   <TableCell className="py-[7px] pl-0 whitespace-normal break-words">{m.entity}</TableCell>
                   <TableCell className="py-[7px] text-right whitespace-normal">{m.figure}</TableCell>
-                  <TableCell className="py-[7px] whitespace-normal text-muted-foreground max-sm:hidden">{m.note}</TableCell>
+                  <TableCell className="py-[7px] whitespace-normal text-muted-foreground @max-xl/detail:hidden">{m.note}</TableCell>
                 </TableRow>
               ))}</TableBody>
             </Table>
@@ -817,7 +820,7 @@ function Decision({ item, onReport, onAsk, onBack, backLabel = "All runs", child
   );
 }
 
-interface Event { key: string; time: string; title: string; note: string; tone?: "navy" | "signal"; big?: boolean; dashed?: boolean }
+interface Event { key: string; time: string; title: string; note: string; tone?: "brand" | "signal"; big?: boolean }
 
 /** The selected campaign through today's runs (every bot), or, with no campaign, the bot's day. Matched by name as the
  * answers write it. shortcut: name match, not Meta id; upgrade when the report carries entity ids. */
@@ -828,14 +831,14 @@ export function historyFor(item: InboxItem, runs: BotRun[]): { title: string; su
       title: "Today on this bot", sub: item.run.bot_name ?? "",
       events: runs.filter((r) => r.bot_id === item.run.bot_id).map((r) => ({
         key: r.run_id, time: `${stamp(r.created_at)} · ${KIND_LABEL[r.trigger_kind] ?? r.trigger_kind}`, title: verdictOf(r).label, note: runLine(r),
-        tone: r.outcome === "action_needed" ? "signal" : "navy", big: r.run_id === item.run.run_id,
+        tone: r.outcome === "action_needed" ? "signal" : "brand", big: r.run_id === item.run.run_id,
       })),
     };
   }
   const events: Event[] = [];
   const p = item.proposal!;
   events.push({ key: "proposed", time: "Proposed", title: p.proposed != null ? `${inr(p.proposed)}${p.field ? ` ${p.field}` : ""}` : reviewOf(p),
-    note: p.condition ? capital(p.condition) : p.current != null ? `Now ${inr(p.current)}` : "", tone: "signal", big: true, dashed: true });
+    note: p.condition ? capital(p.condition) : p.current != null ? `Now ${inr(p.current)}` : "", tone: "signal", big: true });
   for (const r of runs) {
     const time = `${stamp(r.created_at)} · ${KIND_LABEL[r.trigger_kind] ?? r.trigger_kind}`;
     (r.report?.proposals ?? []).forEach((q, i) => {
@@ -846,23 +849,25 @@ export function historyFor(item: InboxItem, runs: BotRun[]): { title: string; su
     (r.report?.movers ?? []).filter((m) => same(m.entity, entity)).forEach((m, i) =>
       events.push({ key: `${r.run_id}:m${i}`, time, title: m.figure || "Moved", note: m.note, big: r.run_id === item.run.run_id }));
   }
-  return { title: "This campaign today", sub: `What the bots saw on ${entity}`, events };
+  return { title: "This campaign today", sub: `What this bot saw on ${entity}`, events };
 }
 
 function CampaignHistory({ item, className }: { item: InboxItem; className?: string }) {
-  const inbox = useBotsStore((s) => s.inbox);
+  const inbox = useBotRuns();
   const h = useMemo(() => historyFor(item, inbox), [item, inbox]);
   return (
     <section aria-label={h.title} className={className}>
       <h3 className="m-0 text-sm font-bold">{h.title}</h3>
       {h.sub && <p className="m-0 mb-3.5 text-[12.5px] text-muted-foreground wrap-anywhere">{h.sub}</p>}
-      <ol className="relative m-0 list-none p-0 pl-[30px] tabular-nums before:absolute before:top-2 before:bottom-2 before:left-[9px] before:w-1 before:rounded-full before:bg-[var(--signal)]">
+      <ol className="m-0 list-none divide-y p-0 tabular-nums">
         {h.events.map((e) => (
-          <li key={e.key} className="relative pb-[18px] last:pb-0">
-            <span className={cn("absolute top-[3px]", e.big ? "-left-[29px]" : "-left-[27px]")}><Stop size={e.big ? "lg" : "md"} tone={e.tone} dashed={e.dashed} /></span>
-            <span className="block text-xs text-muted-foreground">{e.time}</span>
-            <b className="block text-sm wrap-anywhere">{e.title}</b>
-            {e.note && <small className="block text-[12.5px] text-muted-foreground">{e.note}</small>}
+          <li key={e.key} className={cn("grid grid-cols-[8px_minmax(0,1fr)] gap-2.5 py-2.5", e.big && "font-semibold")}>
+            <Dot tone={e.tone === "signal" ? "signal" : "brand"} />
+            <span className="min-w-0">
+              <span className="block text-xs font-normal text-muted-foreground">{e.time}</span>
+              <b className="block text-sm wrap-anywhere">{e.title}</b>
+              {e.note && <small className="block text-[12.5px] font-normal text-muted-foreground">{e.note}</small>}
+            </span>
           </li>
         ))}
       </ol>
@@ -946,15 +951,17 @@ export function BotsWorkspace() {
     return () => { window.clearInterval(id); window.removeEventListener("popstate", pop); };
   }, [loadList, loadInbox, refresh]);
 
-  const items = useMemo(() => itemsOf(inbox), [inbox]);
-  const decide = useMemo(() => inboxGroups(inbox).decide, [inbox]);
+  const mine = useBotRuns();
+  const items = useMemo(() => itemsOf(mine), [mine]);
+  const decide = useMemo(() => inboxGroups(mine).decide, [mine]);
   // Phones open the list first; wider screens show the first decision (else the newest run) straight away.
   const item = items.find((i) => i.key === sel) ?? items.find((i) => sel && i.run.run_id === sel.split(":")[0])
     ?? (narrow ? undefined : (tab === "needs" ? decide[0] : undefined) ?? items[0]);
 
-  // Settings, Ask and the report's steps act on the bot whose run is open.
-  const owner = item?.run.bot_id;
-  useEffect(() => { if (owner && owner !== useBotsStore.getState().selectedId) void select(owner); }, [owner, select]);
+  // A link to another bot's run (?run=) opens that bot's screen.
+  const linked = sel ? inbox.find((r) => r.run_id === sel.split(":")[0])?.bot_id : undefined;
+  useEffect(() => { if (linked && linked !== useBotsStore.getState().selectedId) void select(linked); }, [linked, select]);
+  const switchBot = (id: string) => { setSel(null); writeUrlRun(null, false); void select(id); };
 
   const open = (key: string) => { setSel(key); writeUrlRun(key, narrow); };
   const back = () => { if (history.state?.botsRun) history.back(); else { setSel(null); writeUrlRun(null, false); } };
@@ -970,15 +977,15 @@ export function BotsWorkspace() {
         {bot && <Button variant="ghost" size="icon" className="pointer-coarse:size-11" aria-label="Bot settings" onClick={() => setSheet("settings")}><SlidersIcon /></Button>}
       </>}>
       {error && <p role="alert" className="m-0 border-b bg-[var(--danger-soft)] px-4 py-2 text-sm text-destructive">{error}</p>}
-      <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(280px,320px)_minmax(0,1fr)] min-[80rem]:grid-cols-[300px_minmax(0,1fr)_280px]">
-        <InboxList tab={tab} onTab={setTab} current={item?.key ?? null} onOpen={open} onSettings={() => setSheet("settings")}
+      <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(280px,320px)_minmax(0,1fr)] min-[80rem]:grid-cols-[300px_minmax(0,1fr)_280px] min-[96rem]:grid-cols-[340px_minmax(0,1fr)_340px]">
+        <InboxList tab={tab} onTab={setTab} current={item?.key ?? null} onOpen={open} onSettings={() => setSheet("settings")} onSwitch={switchBot}
           className={cn("min-h-0 overflow-y-auto bg-card md:border-r", narrow && item && "hidden")} />
-        <main className={cn("min-h-0 min-w-0 overflow-y-auto", narrow && !item && "hidden")}>
+        <main className={cn("@container/detail min-h-0 min-w-0 overflow-y-auto", narrow && !item && "hidden")}>
           {item
             ? <Decision item={item} onReport={() => setSheet("report")} onAsk={() => setSheet("ask")} onBack={narrow ? back : undefined} backLabel={tab === "needs" ? "Needs you" : "All runs"}>
                 <CampaignHistory item={item} className="mt-8 border-t pt-6 min-[80rem]:hidden" />
               </Decision>
-            : <p className="m-0 p-8 text-sm text-muted-foreground">{selectedId || inbox.length ? "No runs to show yet. Press Run now, or the bot reports on its next trigger." : "Create a bot from a template with the + button."}</p>}
+            : <p className="m-0 p-8 text-sm text-muted-foreground">{selectedId ? "No runs to show yet. Press Run now, or the bot reports on its next trigger." : "Create a bot from a template with the + button."}</p>}
         </main>
         {item && <aside aria-label="Campaign history" className="hidden min-h-0 overflow-y-auto border-l bg-card p-[18px] min-[80rem]:block"><CampaignHistory item={item} /></aside>}
       </div>

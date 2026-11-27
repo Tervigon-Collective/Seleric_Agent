@@ -155,8 +155,8 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
         <aside aria-label={sidebarLabel} id="app-sidebar" data-slot="app-sidebar" data-collapsed={collapsed} className="group/sb flex h-full min-h-0 w-full flex-col gap-1 border-r bg-sidebar px-2 pt-2 pb-2 animate-in fade-in-0 slide-in-from-left-2 duration-200 lg:w-[272px] lg:shrink-0 lg:transition-[width] lg:duration-200 lg:ease-out lg:data-[collapsed=true]:w-16">
           <div className="flex items-center justify-between px-1 pb-1 lg:group-data-[collapsed=true]/sb:flex-col lg:group-data-[collapsed=true]/sb:gap-1.5">
             <Button variant="ghost" className="h-8 gap-2 px-1.5" onClick={go(() => setWorkspace("conversation"))} aria-label="Seleric home">
-              <span aria-hidden="true" className="size-4 rounded-full border-[3.5px] border-[var(--brand)] shadow-[6px_0_0_-3px_var(--signal)] dark:border-[var(--text)]" />
-              <strong className={cn("text-lg font-extrabold tracking-tight", RAIL_HIDE)}>Seleric</strong>
+              <span aria-hidden="true" className="grid size-6 place-items-center rounded-[7px] bg-foreground text-[13px] font-semibold text-background">S</span>
+              <strong className={cn("font-serif text-xl font-medium tracking-tight", RAIL_HIDE)}>Seleric</strong>
             </Button>
             <Button variant="ghost" size="icon-sm" className={cn("hidden lg:inline-flex", rail && "lg:hidden")} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} aria-controls="app-sidebar" title={`${collapsed ? "Expand" : "Collapse"} sidebar (Ctrl+\\)`} onClick={toggleCollapsed}><SidebarToggleIcon collapsed={collapsed} /></Button>
             <Button variant="ghost" size="icon-sm" className="lg:hidden" aria-label="Close navigation" onClick={toggleSidebar}><XIcon /></Button>
