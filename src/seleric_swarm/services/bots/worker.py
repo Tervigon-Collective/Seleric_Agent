@@ -19,7 +19,7 @@ from uuid import uuid4
 
 from sqlalchemy import text
 
-from seleric_swarm.services.bots import delivery, eda, hindsight, schedule, store
+from seleric_swarm.services.bots import delivery, eda, hindsight, report, schedule, store
 
 _log = logging.getLogger("seleric.bots")
 
@@ -217,6 +217,7 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
         outcome, why = code_verdict
         answer = with_outcome(answer, outcome, why)
     calls = tool_activity(steps)
+    run_report = await report.build(runtime, run, answer, steps)
     memory_rows = await _retain(mem, bot, run, outcome, why)
     with engine.begin() as conn:
         for row in calls:
@@ -237,7 +238,8 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
                                summary="The run did not read its EDA (B27): its verdict rests on its own reads only.")
         previous = store.previous_auto_outcome(conn, bot["bot_id"], run["run_id"])
         store.finish_run(conn, run["run_id"], status=status, outcome=outcome, answer=answer, error=error,
-                         mission_id=mission_id, instructions_version=bot["instructions_version"], tool_calls=len(calls))
+                         mission_id=mission_id, instructions_version=bot["instructions_version"], tool_calls=len(calls),
+                         report=run_report)
     try:
         sent = await delivery.deliver(bot, run, outcome, why, answer, previous)
     except Exception:

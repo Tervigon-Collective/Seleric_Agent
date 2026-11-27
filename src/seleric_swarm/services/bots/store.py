@@ -340,11 +340,13 @@ def claim_run(conn: Connection) -> dict[str, Any] | None:
 
 
 def finish_run(conn: Connection, run_id: str, *, status: str, outcome: str | None, answer: str, error: str | None,
-               mission_id: str | None, instructions_version: int | None, tool_calls: int) -> None:
+               mission_id: str | None, instructions_version: int | None, tool_calls: int,
+               report: dict[str, Any] | None = None) -> None:
     conn.execute(text("""UPDATE bots.runs SET status = :s, outcome = :o, answer = :a, error = :e, mission_id = :m,
-                         instructions_version = :iv, tool_calls = :tc, finished_at = NOW() WHERE run_id = :r"""),
+                         instructions_version = :iv, tool_calls = :tc, report = CAST(:rep AS jsonb), finished_at = NOW()
+                         WHERE run_id = :r"""),
                  {"s": status, "o": outcome, "a": answer, "e": error, "m": mission_id, "iv": instructions_version,
-                  "tc": tool_calls, "r": run_id})
+                  "tc": tool_calls, "rep": None if report is None else _j(report), "r": run_id})
 
 
 def previous_auto_outcome(conn: Connection, bot_id: str, run_id: str) -> str | None:
@@ -366,6 +368,25 @@ def list_runs(conn: Connection, bot_id: str, *, kind: str | None = None, limit: 
     return [dict(r) for r in conn.execute(text(
         f"SELECT * FROM bots.runs WHERE {where} ORDER BY created_at DESC LIMIT :n"),
         {"b": bot_id, "k": kind, "n": limit}).mappings()]
+
+
+def inbox(conn: Connection, *, days: int = 1, tz: str = "Asia/Kolkata", limit: int = 200) -> list[dict[str, Any]]:
+    """D-253: every bot's non-chat runs since local midnight ``days - 1`` days ago, newest first, with the bot's name."""
+    return [dict(r) for r in conn.execute(text("""
+        SELECT r.*, b.name AS bot_name FROM bots.runs r JOIN bots.bots b ON b.bot_id = r.bot_id
+        WHERE r.trigger_kind <> 'chat'
+          AND r.created_at >= (date_trunc('day', NOW() AT TIME ZONE :tz) - make_interval(days => :d - 1)) AT TIME ZONE :tz
+        ORDER BY r.created_at DESC LIMIT :n"""), {"tz": tz, "d": days, "n": limit}).mappings()]
+
+
+def dismiss_run(conn: Connection, run_id: str, *, actor: str, undo: bool = False) -> dict[str, Any]:
+    row = conn.execute(text("""UPDATE bots.runs SET dismissed_at = CASE WHEN :u THEN NULL ELSE NOW() END,
+                                dismissed_by = CASE WHEN :u THEN NULL ELSE :a END
+                                WHERE run_id = :r RETURNING run_id, dismissed_at, dismissed_by"""),
+                       {"u": undo, "a": actor, "r": run_id}).mappings().first()
+    if row is None:
+        raise KeyError(run_id)
+    return dict(row)
 
 
 def list_activity(conn: Connection, bot_id: str, *, limit: int = 200) -> list[dict[str, Any]]:

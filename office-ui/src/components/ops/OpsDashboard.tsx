@@ -108,7 +108,7 @@ function PageHeader({ domains }: { domains: DomainView[] }) {
         {live.length > 0 && <p className="m-0 text-sm text-muted-foreground">Data to {days.length === 1 ? days[0] : `${days[0]} – ${days[days.length - 1]}`} · oldest check {ago(oldest)}</p>}
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button className="bg-brand text-[var(--on-accent)] hover:bg-brand-hover" aria-expanded={askOpen} onClick={() => setAskOpen(!askOpen)}>Ask Seleric</Button>
+        <Button className="bg-brand text-[var(--on-accent)] hover:bg-[var(--brand-hover)]" aria-expanded={askOpen} onClick={() => setAskOpen(!askOpen)}>Ask Seleric</Button>
         <Button variant="outline" onClick={() => openOps("monitoring")}>Choose metrics</Button>
         <Button variant="outline" disabled={refreshing} onClick={() => domains.filter((d) => d.enabled).forEach((d) => void refresh(d.id))}>{refreshing ? "Refreshing…" : "Refresh"}</Button>
       </div>

@@ -11,6 +11,8 @@
 ``DELETE /v1/bots/{id}/triggers/{tid}``
 ``POST   /v1/bots/{id}/runs``                     run now (manual) or ask it something (chat)
 ``GET    /v1/bots/{id}/runs``                     recent runs (``?kind=chat`` for the conversation)
+``GET    /v1/bots/inbox?days=1``                  every bot's non-chat runs since local midnight (D-253 inbox)
+``POST   /v1/bots/runs/{run_id}/dismiss``         a person dismisses a run from "Needs you" (``{"undo": true}`` brings it back)
 ``GET    /v1/bots/{id}/activity``                 the right-sidebar timeline
 ``PUT    /v1/bots/{id}/skills``                   create (no skill_id) or replace a skill; ``DELETE .../skills/{sid}``
 ``GET    /v1/bots/{id}/memory?bank=bot|shared``  what Hindsight holds (``q``, ``offset``); ``POST`` adds a note
@@ -100,6 +102,25 @@ def get_templates(_: Principal = Depends(request_principal)) -> dict[str, Any]:
 def list_bots(_: Principal = Depends(request_principal)) -> dict[str, Any]:
     with store.engine().begin() as conn:
         return {"bots": store.list_bots(conn)}
+
+
+@router.get("/inbox")
+def get_inbox(days: int = 1, _: Principal = Depends(request_principal)) -> dict[str, Any]:
+    with store.engine().begin() as conn:
+        return {"runs": store.inbox(conn, days=min(max(days, 1), 14))}
+
+
+class Dismiss(BaseModel):
+    undo: bool = False
+
+
+@router.post("/runs/{run_id}/dismiss")
+def dismiss_run(run_id: str, body: Dismiss, who: Principal = Depends(request_principal)) -> dict[str, Any]:
+    try:
+        with store.engine().begin() as conn:
+            return store.dismiss_run(conn, run_id, actor=who.user_id, undo=body.undo)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="run not found") from exc
 
 
 @router.post("", status_code=201)

@@ -422,9 +422,9 @@ BANDED = {("live.meta.spend_pacing", "account"): "ad_spend"}
 
 
 def bands(pack: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """where_today_sits by metric: today so far with its p10 / p90 (what ``settle`` reads)."""
+    """where_today_sits by metric: today so far with its p10 / p50 / p90 (what ``settle`` and the inbox report read)."""
     part = next((p for p in pack.get("parts") or [] if p["query_id"].startswith("eda_where_today_sits")), {})
-    return {r["metric"]: {k: r.get(k) for k in ("today_so_far", "p10", "p90")} for r in part.get("rows") or []}
+    return {r["metric"]: {k: r.get(k) for k in ("today_so_far", "p10", "p50", "p90")} for r in part.get("rows") or []}
 
 
 def settle(trigger: dict[str, Any], bands_now: dict[str, dict[str, Any]]) -> tuple[str, str] | None:

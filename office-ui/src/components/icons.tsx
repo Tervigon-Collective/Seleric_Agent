@@ -7,7 +7,8 @@ import {
   PaperclipIcon as Paperclip, PencilIcon as Pencil, PlusIcon as Plus, RotateCcwIcon as RotateCcw, SearchIcon as Search,
   SendHorizontalIcon as SendHorizontal, SlidersHorizontalIcon as SlidersHorizontal, SparklesIcon as Sparkles,
   SquareIcon as Square, SunIcon as Sun, ThumbsDownIcon as ThumbsDown, ThumbsUpIcon as ThumbsUp, XIcon as X,
-  BellIcon as Bell, BellRingIcon as BellRing, SettingsIcon as Settings,
+  BellIcon as Bell, BellRingIcon as BellRing, SettingsIcon as Settings, PlayIcon as Play, FileTextIcon as FileText,
+  MessageCircleIcon as MessageCircle, TriangleAlertIcon as TriangleAlert, ChevronLeftIcon as ChevronLeft,
   type LucideIcon,
 } from "lucide-react";
 
@@ -56,3 +57,8 @@ export const ThumbUpIcon = wrap(ThumbsUp);
 export const ThumbDownIcon = wrap(ThumbsDown);
 export const LinkIcon = wrap(Link);
 export const PromptsIcon = wrap(BookText);
+export const PlayIcon = wrap(Play);
+export const FileTextIcon = wrap(FileText);
+export const MessageIcon = wrap(MessageCircle);
+export const AlertIcon = wrap(TriangleAlert);
+export const ChevronLeftIcon = wrap(ChevronLeft);

@@ -1,0 +1,624 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-27T08:12:49+00:00",
+  "title": "Design System: Seleric office-ui",
+  "extensions": {
+    "colorMeta": {
+      "navy-ink": {
+        "role": "primary",
+        "displayName": "Navy Ink",
+        "canonical": "#0b1230",
+        "tonalRamp": [
+          "#161c37",
+          "#222f65",
+          "#2b3f96",
+          "#2f4dcc",
+          "#6278d4",
+          "#94a2dc",
+          "#c3cae7",
+          "#edeff7"
+        ]
+      },
+      "navy-hover": {
+        "role": "primary",
+        "displayName": "Navy Hover",
+        "canonical": "#1b2550",
+        "tonalRamp": [
+          "#191e33",
+          "#29335e",
+          "#36468b",
+          "#4057bc",
+          "#6e7fc8",
+          "#9ca6d4",
+          "#c7cce4",
+          "#eef0f6"
+        ]
+      },
+      "text-ink": {
+        "role": "primary",
+        "displayName": "Text Ink",
+        "canonical": "#0e1430",
+        "tonalRamp": [
+          "#181d35",
+          "#263161",
+          "#314290",
+          "#3951c2",
+          "#697bcc",
+          "#99a4d7",
+          "#c5cbe5",
+          "#eef0f6"
+        ]
+      },
+      "text-dim": {
+        "role": "neutral",
+        "displayName": "Text Dim",
+        "canonical": "#566079",
+        "tonalRamp": [
+          "#22242b",
+          "#3a404c",
+          "#525a6f",
+          "#697593",
+          "#8c94aa",
+          "#aeb4c2",
+          "#d0d3da",
+          "#f1f2f4"
+        ]
+      },
+      "text-faint": {
+        "role": "neutral",
+        "displayName": "Text Faint",
+        "canonical": "#646d86",
+        "tonalRamp": [
+          "#22242a",
+          "#3c404b",
+          "#545b6d",
+          "#6c7590",
+          "#8e95a8",
+          "#b0b4c0",
+          "#d1d3d9",
+          "#f1f2f3"
+        ]
+      },
+      "scarlet-signal": {
+        "role": "secondary",
+        "displayName": "Scarlet Signal",
+        "canonical": "#e21d2d",
+        "tonalRamp": [
+          "#3a1215",
+          "#6c1a21",
+          "#a31e29",
+          "#de1d2d",
+          "#e15560",
+          "#e48c93",
+          "#ecbfc2",
+          "#f8eced"
+        ]
+      },
+      "scarlet-soft": {
+        "role": "secondary",
+        "displayName": "Scarlet Soft",
+        "canonical": "#fdecee",
+        "tonalRamp": [
+          "#3b1116",
+          "#6e1823",
+          "#a61b2b",
+          "#e31930",
+          "#e45263",
+          "#e68a95",
+          "#edbdc3",
+          "#f8ecee"
+        ]
+      },
+      "scarlet-ink": {
+        "role": "secondary",
+        "displayName": "Scarlet Ink",
+        "canonical": "#b3121f",
+        "tonalRamp": [
+          "#3c1114",
+          "#6f181f",
+          "#a71a26",
+          "#e41828",
+          "#e5515d",
+          "#e68991",
+          "#edbdc1",
+          "#f8eced"
+        ]
+      },
+      "cobalt-link": {
+        "role": "secondary",
+        "displayName": "Cobalt Link",
+        "canonical": "#1e5bff",
+        "tonalRamp": [
+          "#0c1a40",
+          "#0e2b78",
+          "#0b39b7",
+          "#0145fb",
+          "#4071f5",
+          "#7f9ef1",
+          "#b8c8f2",
+          "#ebeffa"
+        ]
+      },
+      "selected-wash": {
+        "role": "neutral",
+        "displayName": "Selected Wash",
+        "canonical": "#f1f4ff",
+        "tonalRamp": [
+          "#0c1740",
+          "#0e2578",
+          "#0b2fb7",
+          "#0136fb",
+          "#4067f5",
+          "#7f97f1",
+          "#b8c4f2",
+          "#ebeefa"
+        ]
+      },
+      "selected-line": {
+        "role": "neutral",
+        "displayName": "Selected Line",
+        "canonical": "#c9d6ff",
+        "tonalRamp": [
+          "#0c1940",
+          "#0e2878",
+          "#0b34b7",
+          "#013dfb",
+          "#406cf5",
+          "#7f9af1",
+          "#b8c6f2",
+          "#ebeefa"
+        ]
+      },
+      "range-green": {
+        "role": "tertiary",
+        "displayName": "Range Green",
+        "canonical": "#16753a",
+        "tonalRamp": [
+          "#143822",
+          "#1f683b",
+          "#269b52",
+          "#28d369",
+          "#5dd98c",
+          "#91dfaf",
+          "#c1e9d0",
+          "#edf7f1"
+        ]
+      },
+      "range-green-soft": {
+        "role": "tertiary",
+        "displayName": "Range Green Soft",
+        "canonical": "#e7f6ec",
+        "tonalRamp": [
+          "#1a3222",
+          "#2b5c3b",
+          "#398854",
+          "#45b66b",
+          "#72c48d",
+          "#9ed2af",
+          "#c8e2d1",
+          "#eff6f1"
+        ]
+      },
+      "range-green-line": {
+        "role": "tertiary",
+        "displayName": "Range Green Line",
+        "canonical": "#a9d9b8",
+        "tonalRamp": [
+          "#1c3022",
+          "#2f583c",
+          "#3f8254",
+          "#4dae6c",
+          "#78be8e",
+          "#a2ceb0",
+          "#cae0d1",
+          "#eff5f1"
+        ]
+      },
+      "amber-ink": {
+        "role": "tertiary",
+        "displayName": "Amber Ink",
+        "canonical": "#6b5200",
+        "tonalRamp": [
+          "#40340c",
+          "#78600e",
+          "#b78e0b",
+          "#fbc001",
+          "#f5cb40",
+          "#f1d67f",
+          "#f2e5b8",
+          "#faf6eb"
+        ]
+      },
+      "amber-soft": {
+        "role": "tertiary",
+        "displayName": "Amber Soft",
+        "canonical": "#fff6da",
+        "tonalRamp": [
+          "#40340c",
+          "#785f0e",
+          "#b78d0b",
+          "#fbbe01",
+          "#f5c940",
+          "#f1d57f",
+          "#f2e4b8",
+          "#faf6eb"
+        ]
+      },
+      "cool-paper": {
+        "role": "neutral",
+        "displayName": "Cool Paper",
+        "canonical": "#f6f7f9",
+        "tonalRamp": [
+          "#21252b",
+          "#39404e",
+          "#4f5b72",
+          "#657597",
+          "#8995ad",
+          "#adb4c3",
+          "#cfd3db",
+          "#f1f2f4"
+        ]
+      },
+      "card-white": {
+        "role": "neutral",
+        "displayName": "Card White",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
+        ]
+      },
+      "rail-grey": {
+        "role": "neutral",
+        "displayName": "Rail Grey",
+        "canonical": "#eef0f4",
+        "tonalRamp": [
+          "#21242c",
+          "#38404f",
+          "#4e5a73",
+          "#637598",
+          "#8794ae",
+          "#acb4c4",
+          "#cfd3db",
+          "#f1f2f4"
+        ]
+      },
+      "hover-grey": {
+        "role": "neutral",
+        "displayName": "Hover Grey",
+        "canonical": "#e3e6ec",
+        "tonalRamp": [
+          "#21252b",
+          "#39404e",
+          "#505b71",
+          "#667696",
+          "#8995ac",
+          "#adb4c3",
+          "#d0d3db",
+          "#f1f2f4"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#e1e5ec",
+        "tonalRamp": [
+          "#20252c",
+          "#37404f",
+          "#4d5b74",
+          "#62769a",
+          "#8795af",
+          "#abb4c5",
+          "#cfd3dc",
+          "#f1f2f4"
+        ]
+      },
+      "hairline-strong": {
+        "role": "neutral",
+        "displayName": "Hairline Strong",
+        "canonical": "#c5cbd8",
+        "tonalRamp": [
+          "#21242b",
+          "#39404e",
+          "#505a71",
+          "#657596",
+          "#8994ad",
+          "#adb4c3",
+          "#cfd3db",
+          "#f1f2f4"
+        ]
+      },
+      "night-ground": {
+        "role": "neutral",
+        "displayName": "Night Ground",
+        "canonical": "#0a0f24",
+        "tonalRamp": [
+          "#171d35",
+          "#253161",
+          "#304391",
+          "#3752c4",
+          "#687bce",
+          "#98a4d8",
+          "#c5cbe6",
+          "#eef0f7"
+        ]
+      },
+      "night-card": {
+        "role": "neutral",
+        "displayName": "Night Card",
+        "canonical": "#111833",
+        "tonalRamp": [
+          "#191f33",
+          "#29345e",
+          "#36478c",
+          "#3f59bc",
+          "#6e80c8",
+          "#9ca7d4",
+          "#c6cde4",
+          "#eef0f6"
+        ]
+      },
+      "night-primary": {
+        "role": "primary",
+        "displayName": "Night Primary",
+        "canonical": "#2f5bea",
+        "tonalRamp": [
+          "#111b3c",
+          "#182c6f",
+          "#1a3ba7",
+          "#1848e4",
+          "#5174e5",
+          "#8a9fe6",
+          "#bdc8ed",
+          "#eceff8"
+        ]
+      },
+      "night-signal": {
+        "role": "secondary",
+        "displayName": "Night Signal",
+        "canonical": "#ff4d5a",
+        "tonalRamp": [
+          "#400c10",
+          "#780e16",
+          "#b70b17",
+          "#fb0113",
+          "#f5404e",
+          "#f17f87",
+          "#f2b8bc",
+          "#faebec"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "proposed-value": {
+        "displayName": "Proposed value",
+        "purpose": "New value of a proposed change; 34px under 640px."
+      },
+      "review-value": {
+        "displayName": "Review value",
+        "purpose": "'Review {field}' when no number is proposed."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Entity name on a decision."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "List-pane page title."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "A check's current value."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Prose and UI default."
+      },
+      "row-title": {
+        "displayName": "Row title",
+        "purpose": "Inbox row entity."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Group heads, table headers, meta; sentence case."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Code and raw payloads only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "resting-lift",
+        "value": "0 1px 2px rgba(14, 20, 48, 0.08)",
+        "purpose": "Current nav item, composer; none in dark."
+      },
+      {
+        "name": "floating",
+        "value": "0 12px 32px rgba(14, 20, 48, 0.16)",
+        "purpose": "Sheets, menus, dialogs; dark 0 12px 32px rgba(0,0,0,0.55)."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.2, 0.7, 0.2, 1)",
+        "purpose": "The one easing for entrances and state changes."
+      },
+      {
+        "name": "motion-fast",
+        "value": "120ms",
+        "purpose": "Press and hover."
+      },
+      {
+        "name": "motion",
+        "value": "180ms",
+        "purpose": "Default transition; entrances 160-260ms, neutralised by prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone",
+        "value": "< 768px",
+        "purpose": "One pane: list first, detail with Back."
+      },
+      {
+        "name": "md",
+        "value": "768px",
+        "purpose": "List minmax(280px,320px) + decision."
+      },
+      {
+        "name": "lg",
+        "value": "1024px",
+        "purpose": "App sidebar docks."
+      },
+      {
+        "name": "three-pane",
+        "value": "80rem",
+        "purpose": "List 300px / decision / history 280px; written in rem."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Navy action: Run now, Open report.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z\"/><path d=\"M14 2v6h6\"/></svg>Open report</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:10px;background:var(--brand,#0b1230);color:var(--on-accent,#fff);font:500 14px/1 \"Overpass Variable\", Overpass, ui-sans-serif, system-ui, sans-serif;cursor:pointer;transition:background .15s,transform .12s}.ds-btn-primary:hover{background:color-mix(in oklab,var(--brand,#0b1230) 80%,transparent)}.ds-btn-primary:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in oklab,var(--zi-violet,#1e5bff) 50%,transparent)}.ds-btn-primary:active{transform:translateY(1px)}"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary action: Ask about this.",
+      "html": "<button class=\"ds-btn-outline\">Ask about this</button>",
+      "css": ".ds-btn-outline{height:32px;padding:0 10px;border:1px solid var(--line,#e1e5ec);border-radius:10px;background:var(--bg,#f6f7f9);color:var(--text,#0e1430);font:500 14px/1 \"Overpass Variable\", Overpass, ui-sans-serif, system-ui, sans-serif;cursor:pointer}.ds-btn-outline:hover{background:var(--surface-2,#eef0f4)}.ds-btn-outline:focus-visible{outline:none;border-color:var(--zi-violet,#1e5bff);box-shadow:0 0 0 3px color-mix(in oklab,var(--zi-violet,#1e5bff) 50%,transparent)}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Dismiss, Back, row buttons.",
+      "html": "<button class=\"ds-btn-ghost\">Dismiss</button>",
+      "css": ".ds-btn-ghost{height:32px;padding:0 10px;border:1px solid transparent;border-radius:10px;background:none;color:var(--text,#0e1430);font:500 14px/1 \"Overpass Variable\", Overpass, ui-sans-serif, system-ui, sans-serif;cursor:pointer}.ds-btn-ghost:hover{background:var(--surface-2,#eef0f4)}.ds-btn-ghost:focus-visible{outline:none;border-color:var(--zi-violet,#1e5bff);box-shadow:0 0 0 3px color-mix(in oklab,var(--zi-violet,#1e5bff) 50%,transparent)}"
+    },
+    {
+      "name": "Verdict and read pills",
+      "kind": "chip",
+      "refersTo": "pill-action",
+      "description": "Needs action (scarlet soft), Normal (green), Couldn't check (amber).",
+      "html": "<span class=\"ds-pill ds-pill-act\">Needs action</span> <span class=\"ds-pill ds-pill-ok\">Normal</span> <span class=\"ds-pill ds-pill-warn\">Couldn't check</span>",
+      "css": ".ds-pill{display:inline-flex;align-items:center;padding:2px 10px;border-radius:9999px;font:700 12px/1.33 \"Overpass Variable\", Overpass, ui-sans-serif, system-ui, sans-serif;white-space:nowrap}.ds-pill-act{background:var(--signal-soft,#fdecee);color:var(--danger,#b3121f)}.ds-pill-ok{background:var(--success-soft,#e7f6ec);color:var(--success,#16753a)}.ds-pill-warn{background:var(--warning-soft,#fff6da);color:var(--warning,#6b5200)}"
+    },
+    {
+      "name": "Inbox row",
+      "kind": "nav",
+      "refersTo": "inbox-row",
+      "description": "One proposed change: ring stop, entity, condition, struck old and new value.",
+      "html": "<button class=\"ds-row\" aria-current=\"true\"><span class=\"ds-stop\"></span><span class=\"ds-row-t\"><b>TH-149-SCRATCHLOUNGE</b><small>13:18 · 9 budget changes in 48h</small></span><span class=\"ds-row-v\"><s>₹4,000</s>₹3,200</span></button>",
+      "css": ".ds-row{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:start;width:320px;padding:10px 12px;border:1px solid transparent;border-radius:10px;background:none;text-align:left;color:var(--text,#0e1430);font:400 14px/1.55 \"Overpass Variable\", Overpass, ui-sans-serif, system-ui, sans-serif;cursor:pointer}.ds-row:hover{background:var(--surface-2,#eef0f4)}.ds-row[aria-current]{background:var(--brand-soft,#f1f4ff);border-color:var(--brand-soft-line,#c9d6ff)}.ds-row:focus-visible{outline:2px solid var(--zi-violet,#1e5bff);outline-offset:2px}.ds-stop{display:block;margin-top:2px;width:18px;height:18px;border:4px solid var(--brand,#0b1230);border-radius:50%;background:var(--panel,#fff)}.ds-row-t b{display:block;font-size:13.5px;font-weight:700}.ds-row-t small{font-size:12px;color:var(--text-dim,#566079)}.ds-row-v{text-align:right;font-weight:800;font-variant-numeric:tabular-nums}.ds-row-v s{display:block;font-size:11.5px;font-weight:500;color:var(--text-dim,#566079)}"
+    },
+    {
+      "name": "Range bar",
+      "kind": "custom",
+      "description": "Check row: green normal band, median tick, ring for today (scarlet when out of range).",
+      "html": "<div class=\"ds-rb\"><div class=\"ds-rb-h\"><span>Link CTR</span><b>2.06%</b></div><div class=\"ds-rb-bar\"><span class=\"ds-rb-band\" style=\"left:20%;width:45%\"></span><span class=\"ds-rb-tick\" style=\"left:42%\"></span><span class=\"ds-rb-now\" style=\"left:85%\"></span></div><div class=\"ds-rb-f\"><small>normal 1.44%–1.85%</small><span class=\"ds-pill-hi\">High</span></div></div>",
+      "css": ".ds-rb{width:320px;padding:10px 0;border-bottom:1px solid var(--line,#e1e5ec);font:400 13.5px/1.55 \"Overpass Variable\", Overpass, ui-sans-serif, system-ui, sans-serif;color:var(--text,#0e1430);font-variant-numeric:tabular-nums}.ds-rb-h,.ds-rb-f{display:flex;justify-content:space-between;align-items:baseline}.ds-rb-h b{font-size:15px;font-weight:800}.ds-rb-bar{position:relative;height:14px;margin:6px 8px 4px}.ds-rb-bar:before{content:'';position:absolute;left:-8px;right:-8px;top:6px;height:2px;background:var(--line,#e1e5ec)}.ds-rb-band{position:absolute;top:2px;height:10px;border:1px solid var(--success-line,#a9d9b8);border-radius:3px;background:var(--success-soft,#e7f6ec)}.ds-rb-tick{position:absolute;top:1px;width:2px;height:12px;margin-left:-1px;background:var(--text-faint,#646d86)}.ds-rb-now{position:absolute;top:0;margin-left:-7px;width:14px;height:14px;border:3.5px solid var(--signal,#e21d2d);border-radius:50%;background:var(--panel,#fff);box-sizing:border-box}.ds-rb-f small{font-size:12px;color:var(--text-dim,#566079)}.ds-pill-hi{padding:2px 10px;border-radius:9999px;background:var(--signal-soft,#fdecee);color:var(--danger,#b3121f);font-size:12px;font-weight:700}"
+    },
+    {
+      "name": "Metro timeline",
+      "kind": "custom",
+      "description": "History rail: scarlet line, dashed scarlet proposed stop, navy event stops.",
+      "html": "<ol class=\"ds-metro\"><li><span class=\"ds-ms ds-ms-p\"></span><small>Proposed</small><b>Review daily budget</b></li><li><span class=\"ds-ms\"></span><small>13:18 · Run now</small><b>9 budget changes recorded</b><em>Frequent churn can destabilise learning.</em></li></ol>",
+      "css": ".ds-metro{position:relative;margin:0;padding:0 0 0 30px;list-style:none;width:260px;font:400 14px/1.55 \"Overpass Variable\", Overpass, ui-sans-serif, system-ui, sans-serif;color:var(--text,#0e1430);font-variant-numeric:tabular-nums}.ds-metro:before{content:'';position:absolute;top:8px;bottom:8px;left:9px;width:4px;border-radius:9999px;background:var(--signal,#e21d2d)}.ds-metro li{position:relative;padding-bottom:18px}.ds-metro li:last-child{padding-bottom:0}.ds-metro small{display:block;font-size:12px;color:var(--text-dim,#566079)}.ds-metro b{display:block;font-size:14px}.ds-metro em{display:block;font-style:normal;font-size:12.5px;color:var(--text-dim,#566079)}.ds-ms{position:absolute;top:3px;left:-27px;width:14px;height:14px;border:3px solid var(--brand,#0b1230);border-radius:50%;background:var(--panel,#fff);box-sizing:border-box}.ds-ms-p{left:-29px;width:18px;height:18px;border:4px dashed var(--signal,#e21d2d)}"
+    },
+    {
+      "name": "Brand mark and count badge",
+      "kind": "nav",
+      "refersTo": "badge-count",
+      "description": "Navy ring with a scarlet dot; scarlet count pill.",
+      "html": "<span class=\"ds-brand\"><i></i>Seleric</span> <span class=\"ds-badge\">3</span>",
+      "css": ".ds-brand{display:inline-flex;align-items:center;gap:8px;font:800 18px/1 \"Overpass Variable\", Overpass, ui-sans-serif, system-ui, sans-serif;letter-spacing:-0.025em;color:var(--text,#0e1430)}.ds-brand i{width:16px;height:16px;box-sizing:border-box;border:3.5px solid var(--brand,#0b1230);border-radius:50%;box-shadow:6px 0 0 -3px var(--signal,#e21d2d)}.ds-badge{display:inline-block;min-width:20px;padding:0 6px;border-radius:9999px;background:var(--signal,#e21d2d);color:#fff;text-align:center;font:700 11px/18px \"Overpass Variable\", Overpass, ui-sans-serif, system-ui, sans-serif;font-variant-numeric:tabular-nums}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Metro Line",
+    "overview": "The app reads like a transit diagram printed on cool paper. Navy is the ink everything is drawn in; one scarlet line runs through it and marks only the stops where a person has to get off and act. Records are rows, events are ring stops on a line, and a number's normal range is a short green band you can read at a glance. There is one face, Overpass, set heavy for figures and names and light for everything else.\n\nDensity is an operator's: a 14px body, 13.5px row titles, a 300px list beside a reading column capped at 760px, and a narrow history rail. Hierarchy comes from weight and size of the figure (the proposed value is the largest thing on screen), never from colour fills or decoration. Surfaces are flat white cards on a grey canvas, separated by hairlines.\n\nDark mode is the same line at night: a deep navy ground, cobalt taking over as primary because navy would vanish, scarlet kept for the line.",
+    "keyCharacteristics": [
+      "One typeface (Overpass Variable, self-hosted), weights 400 to 800.",
+      "Navy ink and primary; scarlet only for what needs a person; green band for normal; cobalt for links and focus.",
+      "Ring stops instead of dots, icons or avatars to mark rows and events.",
+      "Tabular numerals on every figure.",
+      "Flat, hairline-separated surfaces; shadows only for floating layers.",
+      "Phone shows the list first, the detail on tap with Back."
+    ],
+    "rules": [
+      {
+        "name": "The Scarlet Stop Rule",
+        "body": "The scarlet line itself (the history rail's route and the brand mark's dot) is the world's route and always draws in scarlet. Anywhere else, scarlet on a stop, ring, value, pill or badge means a person must act: an action-needed run, an out-of-range reading, the proposed stop, the count badge. A failed job, an error banner or a destructive button uses Scarlet Ink or the danger tone unless a person must act on it.",
+        "section": "colors"
+      },
+      {
+        "name": "The Navy Ink Rule",
+        "body": "Navy is both the ink and the primary action. There is no second brand hue; a \"branded\" control is simply a navy one.",
+        "section": "colors"
+      },
+      {
+        "name": "The Green Band Rule",
+        "body": "Green means healthy: inside the normal range, all in order, resolved. It never marks a button or a brand moment.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Figure Rule",
+        "body": "Every number that can change (money, counts, percentages, times in lists, badges) is set with tabular numerals so columns and updates do not jitter.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Face Rule",
+        "body": "Overpass is the only text face. Hierarchy is weight and size, never a second family.",
+        "section": "typography"
+      },
+      {
+        "name": "The 44 Rule",
+        "body": "On coarse pointers every tap target in the Bots surface grows to at least 44px (buttons `h-11`, icon buttons `size-11`, tabs 48px, rows 14px vertical padding) without moving anything at fine pointers.",
+        "section": "layout"
+      },
+      {
+        "name": "The List-First Rule",
+        "body": "Phones never open on a detail; they show the list, then the detail with Back.",
+        "section": "layout"
+      },
+      {
+        "name": "The Hairline Rule",
+        "body": "Separate with a 1px Hairline or whitespace; a status frame is a full 1px border in the status colour, never a thick side stripe.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep scarlet for the line itself and, on stops, rings, values, pills and badges, only for what needs a person: action-needed, out-of-range, the proposed stop, the count badge.",
+      "Do use Navy Ink for primary actions and ring stops; cobalt only for links and focus.",
+      "Do show a normal range as a green band with a median tick and a ring for today.",
+      "Do set every figure in tabular numerals.",
+      "Do give every tap target 44px on coarse pointers.",
+      "Do show phones the list first and the detail with Back.",
+      "Do mark events and rows with ring stops, dashed for a change that is only proposed.",
+      "Do write mixed-unit arbitrary breakpoints in rem (`min-[80rem]`)."
+    ],
+    "donts": [
+      "Don't use scarlet for decoration, headings, failed jobs or generic errors.",
+      "Don't add a second typeface; headings use Overpass.",
+      "Don't mark status with a thick coloured side stripe; use a full 1px border or a pill.",
+      "Don't add uppercase tracked labels above headings; group heads are 12px sentence case.",
+      "Don't add resting shadows to cards; flat with a hairline.",
+      "Don't use glyph or emoji icons; icons are lucide line icons at 16px."
+    ]
+  }
+}

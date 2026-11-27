@@ -14,11 +14,17 @@ interface BotsStore {
   runs: BotRun[];
   chat: BotRun[];
   activity: BotActivity[];
+  /** D-253: every bot's runs today, newest first (the inbox and the Bots nav badge). */
+  inbox: BotRun[];
+  /** How many local days the inbox covers: 1 = today, the page can widen it. */
+  inboxDays: number;
   error: string | null;
   busy: boolean;
   /** A webhook's secret from the reply that created it; shown once, cleared when another bot opens. */
   newSecret: { triggerId: string; secret: string } | null;
   loadList: () => Promise<void>;
+  loadInbox: (days?: number) => Promise<void>;
+  dismiss: (runId: string, undo?: boolean) => Promise<void>;
   select: (id: string | null) => Promise<void>;
   refresh: () => Promise<void>;
   create: (template: string, name?: string) => Promise<void>;
@@ -59,7 +65,7 @@ export const useBotsStore = create<BotsStore>((set, get) => {
   }
 
   return {
-    bots: [], templates: [], readTools: [], selectedId: null, bot: null, runs: [], chat: [], activity: [],
+    bots: [], templates: [], readTools: [], selectedId: null, bot: null, runs: [], chat: [], activity: [], inbox: [], inboxDays: 1,
     error: null, busy: false, newSecret: null,
 
     loadList: async () => {
@@ -73,6 +79,14 @@ export const useBotsStore = create<BotsStore>((set, get) => {
           await get().select((bots.find((b) => b.bot_id === (current ?? want)) ?? bots[0])?.bot_id ?? null);
         }
       } catch (e) { set({ error: message(e) }); }
+    },
+
+    loadInbox: async (days = get().inboxDays) => {
+      try { set({ inbox: (await botsApi.inbox(days)).runs, inboxDays: days }); } catch (e) { set({ error: message(e) }); }
+    },
+
+    dismiss: async (runId, undo = false) => {
+      if (await attempt(() => botsApi.dismiss(runId, undo))) await get().loadInbox();
     },
 
     select: async (id) => {
@@ -142,7 +156,7 @@ export const useBotsStore = create<BotsStore>((set, get) => {
 
     runNow: async (text = "") => {
       const id = get().selectedId;
-      if (id && await attempt(() => botsApi.run(id, "manual", text))) await get().refresh();
+      if (id && await attempt(() => botsApi.run(id, "manual", text))) await Promise.all([get().refresh(), get().loadInbox()]);
     },
 
     ask: async (text) => {

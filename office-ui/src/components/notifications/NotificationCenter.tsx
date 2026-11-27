@@ -23,10 +23,10 @@ import { useShellStore } from "../../stores/shell";
 import { ago, formatValue } from "../ops/format";
 import { ChevronDownIcon, ThumbDownIcon, ThumbUpIcon } from "../icons";
 
-const SEVERITY: Record<Severity, { label: string; tone: string; bar: string }> = {
-  critical: { label: "Critical", tone: "bg-[var(--danger-soft)] text-[var(--danger)]", bar: "bg-[var(--danger)]" },
-  warning: { label: "Warning", tone: "bg-[var(--warning-soft)] text-[var(--warning)]", bar: "bg-[var(--warning)]" },
-  info: { label: "Info", tone: "bg-muted text-muted-foreground", bar: "bg-muted-foreground/40" },
+const SEVERITY: Record<Severity, { label: string; tone: string; bar: string; frame: string }> = {
+  critical: { label: "Critical", tone: "bg-[var(--danger-soft)] text-[var(--danger)]", bar: "bg-[var(--danger)]", frame: "border-[var(--danger)]" },
+  warning: { label: "Warning", tone: "bg-[var(--warning-soft)] text-[var(--warning)]", bar: "bg-[var(--warning)]", frame: "border-[var(--warning)]" },
+  info: { label: "Info", tone: "bg-muted text-muted-foreground", bar: "bg-muted-foreground/40", frame: "" },
 };
 
 const STATUS: Record<TenantStatus["status"], { label: string; dot: string }> = {
@@ -201,8 +201,7 @@ export function FindingCard({ item, now, actionsEnabled }: { item: NotificationI
   }, [open, item.finding_id, item.level, item.entity_id]);
 
   return (
-    <article aria-label={`${SEVERITY[item.severity].label}: ${item.title}`} className={cn("relative overflow-hidden rounded-lg border bg-card p-3 pl-4", resolved && "opacity-70")}>
-      <span aria-hidden="true" className={cn("absolute inset-y-0 left-0 w-1", resolved ? "bg-[var(--success)]" : SEVERITY[item.severity].bar)} />
+    <article aria-label={`${SEVERITY[item.severity].label}: ${item.title}`} className={cn("relative overflow-hidden rounded-lg border bg-card p-3", resolved ? "opacity-70" : SEVERITY[item.severity].frame)}>
       <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
         {resolved ? <span className="inline-flex h-5 items-center rounded-full bg-[var(--success-soft)] px-2 text-[11px] font-medium text-[var(--success)]">Resolved</span> : <SeverityPill severity={item.severity} />}
         <span>{item.title}</span>

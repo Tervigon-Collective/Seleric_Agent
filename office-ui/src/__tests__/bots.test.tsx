@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { botsApi, type Bot, type BotActivity, type BotRun } from "../api/bots";
-import { ActivityTimeline, BotsWorkspace, cronText, groupByRun, splitAnswer, stepLabel, stepText, triggerText } from "../components/bots/BotsWorkspace";
+import { ActivityTimeline, BotsWorkspace, bandScale, cronText, groupByRun, historyFor, inboxGroups, itemsOf, splitAnswer, stepLabel, stepText, triggerText } from "../components/bots/BotsWorkspace";
 import { BotReports } from "../components/notifications/NotificationCenter";
 import { useShellStore } from "../stores/shell";
 import { readRoute, writeRoute } from "../routing";
@@ -33,7 +33,7 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  useBotsStore.setState({ bots: [], templates: [], readTools: [], selectedId: null, bot: null, runs: [], chat: [], activity: [], error: null, busy: false });
+  useBotsStore.setState({ bots: [], templates: [], readTools: [], selectedId: null, bot: null, runs: [], chat: [], activity: [], inbox: [], inboxDays: 1, error: null, busy: false });
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); history.replaceState({}, "", "/"); });
 
@@ -111,27 +111,104 @@ describe("notification center bot reports", () => {
   });
 });
 
+const action: BotRun = {
+  ...run, run_id: "run_b", outcome: "action_needed", trigger_kind: "watch", created_at: "2026-11-21T09:36:00Z", bot_name: "Marketing",
+  answer: "**Two budgets raised.**\nOUTCOME: action_needed — cap TH-149", merged: [],
+  report: {
+    version: 1, headline: "Two budgets raised.",
+    eda_checks: [{ metric: "ad_spend", label: "Ad spend so far", unit: "inr", now: 19242, p10: 15568, p50: 20000, p90: 27755, read: "Normal" }],
+    proposals: [
+      { entity: "TH-149-SCRATCHLOUNGE-6OCT", field: "daily budget", current: 5000, proposed: 3000, condition: "only if short-window CPA > 7-day CPA", reason: "Budget raised today." },
+      { entity: "DOG TOY CS-23NOV-NEW", field: "daily budget", current: 4000, proposed: 3000, condition: "", reason: "Results unproven." },
+    ],
+    movers: [{ entity: "TH-149-SCRATCHLOUNGE-6OCT", figure: "₹2,307", note: "Budget raised to ₹5,000" }],
+    checks: [{ label: "Top-ad CTR", now: "−15 to −39%", normal: "", read: "High" }],
+    unverified: ["the ₹5,000 budget figure"],
+  },
+};
+const calm: BotRun = { ...run, bot_name: "Marketing" };
+
+function mockBots(bots: Bot[] = [bot], inbox: BotRun[] = [action, calm]) {
+  vi.spyOn(botsApi, "list").mockImplementation(async () => ({ bots }));
+  vi.spyOn(botsApi, "templates").mockResolvedValue({ templates: [{ template: "marketing", name: "Marketing", role: "", tools: [] }], read_tools: [] });
+  vi.spyOn(botsApi, "get").mockImplementation(async (id) => bots.find((b) => b.bot_id === id) ?? bot);
+  vi.spyOn(botsApi, "runs").mockResolvedValue({ runs: [] });
+  vi.spyOn(botsApi, "activity").mockResolvedValue({ activity: [act_(1, "run_b", { kind: "trigger", summary: "Campaign list changed" })] });
+  return vi.spyOn(botsApi, "inbox").mockResolvedValue({ runs: inbox });
+}
+const button = (label: string) => [...document.body.querySelectorAll("button")].find((b) => b.textContent?.trim() === label || b.getAttribute("aria-label") === label)!;
+const settle = async () => { await act(async () => { await Promise.resolve(); await Promise.resolve(); }); };
+
+describe("bots inbox logic", () => {
+  it("splits runs into decisions (one per proposal), dismissed flags and calm runs", () => {
+    const g = inboxGroups([action, calm, { ...action, run_id: "run_c", dismissed_at: "2026-11-21T10:00:00Z" }]);
+    expect(g.decide.map((i) => i.key)).toEqual(["run_b:0", "run_b:1"]);
+    expect(g.earlier.map((i) => i.run.run_id)).toEqual(["run_c"]);
+    expect(g.calm.map((r) => r.run_id)).toEqual(["run_a"]);
+  });
+
+  it("places the band, median tick and today's marker on one scale", () => {
+    const s = bandScale({ now: 30, p10: 10, p50: 15, p90: 20 });
+    expect(s.band[0]).toBeLessThan(s.tick!);
+    expect(s.tick!).toBeLessThan(s.band[1]);
+    expect(s.marker).toBeGreaterThan(s.band[1]);
+    expect(s.marker).toBeLessThan(100);
+  });
+
+  it("follows the proposed campaign through other runs, and the bot's day when there is no campaign", () => {
+    const later: BotRun = { ...action, run_id: "run_z", report: { version: 1, eda_checks: [], movers: [{ entity: "th-149-scratchlounge-6oct ", figure: "₹4,200", note: "Raised" }] } };
+    const [first] = itemsOf([action]);
+    const h = historyFor(first, [later, action]);
+    expect(h.events.map((e) => e.title)).toEqual(["₹3,000 daily budget", "₹4,200", "₹2,307"]);
+    const review = itemsOf([{ ...action, report: { version: 1, eda_checks: [], proposals: [{ entity: "X", field: "status", current: null, proposed: null, condition: "", reason: "Flips" }] } }])[0];
+    expect(historyFor(review, []).events[0]).toMatchObject({ title: "Review status", note: "" });
+    expect(historyFor(itemsOf([calm])[0], [action, calm]).events.map((e) => e.title)).toEqual(["Needs action", "All in order"]);
+  });
+});
+
 describe("bots page", () => {
-  it("lists bots, opens the first, shows runs with merged triggers, and runs on demand", async () => {
-    vi.spyOn(botsApi, "list").mockResolvedValue({ bots: [{ ...bot, last_run: run }] });
-    vi.spyOn(botsApi, "templates").mockResolvedValue({ templates: [{ template: "marketing", name: "Marketing", role: "", tools: [] }], read_tools: ["meta_insights_live"] });
-    vi.spyOn(botsApi, "get").mockResolvedValue(bot);
-    vi.spyOn(botsApi, "runs").mockImplementation(async (_id, kind) => ({ runs: kind === "chat" ? [] : [run] }));
-    vi.spyOn(botsApi, "activity").mockResolvedValue({ activity: [act_(1, "run_a", { kind: "trigger", summary: "Cron: schedule" })] });
+  it("opens the first decision with its proposal, checks and movers, and runs on demand", async () => {
+    mockBots();
     const start = vi.spyOn(botsApi, "run").mockResolvedValue({ run_id: "run_new", status: "queued" });
-
     await act(async () => root.render(<BotsWorkspace />));
-    await act(async () => { await Promise.resolve(); });
+    await settle();
     const text = container.textContent ?? "";
-    expect(text).toContain("Paid media watch (Meta)");
-    expect(text).toContain("All in order");
-    expect(text).toContain("+ 1 more trigger while it waited");
-    expect(text).toContain("instructions v2");
-    expect(container.querySelector('[aria-label="Bot activity"]')?.textContent).toContain("Cron: schedule");
-
-    const button = [...container.querySelectorAll("button")].find((b) => b.textContent === "Run now")!;
-    await act(async () => { button.click(); });
+    expect(text).toContain("Needs you · 2");
+    expect(text).toContain("TH-149-SCRATCHLOUNGE-6OCT");
+    expect(text).toContain("₹3,000");
+    expect(text).toContain("proposed daily budget");
+    expect(text).toContain("normal ₹15,568–₹27,755");
+    expect(text).toContain("Top-ad CTR");
+    expect(text).toContain("What moved today");
+    expect(text).toContain("Not checked against live data: the ₹5,000 budget figure");
+    expect(text).toContain("1 run, nothing to do");
+    expect(location.search).not.toContain("run=");
+    await act(async () => { button("Run now").click(); });
     expect(start).toHaveBeenCalledWith("bot_1", "manual", "");
+  });
+
+  it("dismisses a decision and brings it back", async () => {
+    const inbox = mockBots();
+    const dismiss = vi.spyOn(botsApi, "dismiss").mockResolvedValue({ run_id: "run_b", dismissed_at: "2026-11-21T10:00:00Z" });
+    await act(async () => root.render(<BotsWorkspace />));
+    await settle();
+    inbox.mockResolvedValue({ runs: [{ ...action, dismissed_at: "2026-11-21T10:00:00Z" }, calm] });
+    await act(async () => { button("Dismiss all 2").click(); });
+    await settle();
+    expect(dismiss).toHaveBeenCalledWith("run_b", false);
+    expect(container.textContent).toContain("Nothing needs you right now.");
+    expect(container.textContent).toContain("Dismissed");
+  });
+
+  it("opens the report with the run's steps and asks about the decision", async () => {
+    mockBots();
+    await act(async () => root.render(<BotsWorkspace />));
+    await settle();
+    await act(async () => { button("Open report").click(); });
+    expect(document.body.querySelector('[aria-label="Bot activity"]')?.textContent).toContain("Campaign list changed");
+    await act(async () => { button("Ask about this").click(); });
+    const box = document.body.querySelector('textarea[aria-label="Message the bot"]') as HTMLTextAreaElement;
+    expect(box.value).toContain("About TH-149-SCRATCHLOUNGE-6OCT");
   });
 
   it("opens the bot named in the URL, deletes it after confirming, then opens its neighbour", async () => {
@@ -143,40 +220,23 @@ describe("bots page", () => {
     vi.spyOn(botsApi, "get").mockImplementation(async (id) => listed.find((b) => b.bot_id === id)!);
     vi.spyOn(botsApi, "runs").mockResolvedValue({ runs: [] });
     vi.spyOn(botsApi, "activity").mockResolvedValue({ activity: [] });
+    vi.spyOn(botsApi, "inbox").mockResolvedValue({ runs: [] });
     const remove = vi.spyOn(botsApi, "remove").mockImplementation(async (id) => { listed = listed.filter((b) => b.bot_id !== id); });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     history.replaceState({}, "", "/?bots=1&bot=bot_2");
 
     await act(async () => root.render(<BotsWorkspace />));
-    await act(async () => { await Promise.resolve(); });
+    await settle();
     expect(useBotsStore.getState().selectedId).toBe("bot_2");
 
-    const settings = [...container.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Settings")!;
-    await act(async () => { settings.click(); });
-    const del = [...document.body.querySelectorAll("button")].find((b) => b.textContent === "Delete bot")!;
-    await act(async () => { del.click(); });
+    await act(async () => { (container.querySelector('[aria-label="Bot settings"]') as HTMLButtonElement).click(); });
+    await act(async () => { button("Delete bot").click(); });
     expect(remove).toHaveBeenCalledWith("bot_2");
     expect(useBotsStore.getState().bots.map((b) => b.bot_id)).toEqual(["bot_1", "bot_3"]);
     expect(useBotsStore.getState().selectedId).toBe("bot_3");
     expect(location.search).toContain("bot=bot_3");
     writeRoute({ workspace: "conversation" });
     expect(location.search).not.toContain("bot");
-  });
-
-  it("hides the activity panel with its close button and brings it back", async () => {
-    vi.spyOn(botsApi, "list").mockResolvedValue({ bots: [bot] });
-    vi.spyOn(botsApi, "templates").mockResolvedValue({ templates: [], read_tools: [] });
-    vi.spyOn(botsApi, "get").mockResolvedValue(bot);
-    vi.spyOn(botsApi, "runs").mockResolvedValue({ runs: [] });
-    vi.spyOn(botsApi, "activity").mockResolvedValue({ activity: [] });
-    await act(async () => root.render(<BotsWorkspace />));
-    await act(async () => { await Promise.resolve(); });
-    const panel = () => container.querySelector('[aria-label="Bot activity"]');
-    expect(panel()).not.toBeNull();
-    await act(async () => { (container.querySelector('[aria-label="Hide activity"]') as HTMLButtonElement).click(); });
-    expect(panel()).toBeNull();
-    await act(async () => { (container.querySelector('[aria-label="Show activity"]') as HTMLButtonElement).click(); });
-    expect(panel()).not.toBeNull();
   });
 
   it("shows a version conflict and reloads the bot", async () => {

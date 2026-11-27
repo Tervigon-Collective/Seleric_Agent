@@ -8,6 +8,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { cn } from "cn";
 import { useConversationStore } from "../stores/conversation";
 import { useMonitoringStore } from "../stores/monitoring";
+import { useBotsStore } from "../stores/bots";
 import { unseenCount, useNotificationsStore } from "../stores/notifications";
 import { useShellStore, type Workspace } from "../stores/shell";
 import { useThemeStore, type ThemeMode } from "../stores/theme";
@@ -32,7 +33,7 @@ function NavItem({ icon, label, current, onClick, trailing, badge }: {
       onClick={onClick}
       aria-current={current ? "page" : undefined}
       title={label}
-      className={cn("relative h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-sm font-normal text-foreground transition-[background-color,transform] duration-150 active:scale-[0.985] lg:group-data-[collapsed=true]/sb:justify-center lg:group-data-[collapsed=true]/sb:px-0", current && "bg-[var(--active)] hover:bg-[var(--active)]")}
+      className={cn("relative h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-sm font-normal text-foreground transition-[background-color,transform] duration-150 active:scale-[0.985] lg:group-data-[collapsed=true]/sb:justify-center lg:group-data-[collapsed=true]/sb:px-0", current && "bg-[var(--active)] font-semibold shadow-[var(--shadow)] ring-1 ring-border hover:bg-[var(--active)]")}
     >
       <span className="text-muted-foreground">{icon}</span>
       <span className={cn("truncate", RAIL_HIDE)}>{label}</span>
@@ -78,7 +79,17 @@ function SettingsMenu() {
  * The one app shell: a left sidebar (workspace navigation, a workspace-specific body, settings) and a slim top bar.
  * Each workspace passes its own sidebar body and header controls; navigation always goes through the shell store.
  */
-export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, header, children, className }: {
+/** Count badge: scarlet pill in the nav, a dot-sized pill on the collapsed rail. */
+function NavBadge({ n, label, tone = "signal" }: { n: number; label: string; tone?: "signal" | "warning" }) {
+  const fill = tone === "signal" ? "bg-[var(--signal)] text-[var(--on-accent)]" : "bg-[var(--warning-soft)] text-[var(--warning)]";
+  return <span aria-label={label} className={cn("min-w-5 rounded-full px-1.5 text-center text-[11px] leading-[18px] font-bold tabular-nums", fill)}>{n}</span>;
+}
+const railBadge = (n: number, tone: "signal" | "warning" = "signal") => (
+  <span aria-hidden="true" className={cn("absolute top-0.5 right-0.5 hidden min-w-4 rounded-full px-1 text-center text-[10px] leading-4 font-bold tabular-nums lg:group-data-[collapsed=true]/sb:block",
+    tone === "signal" ? "bg-[var(--signal)] text-[var(--on-accent)]" : "bg-[var(--warning-soft)] text-[var(--warning)]")}>{n}</span>
+);
+
+export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, header, children, className, rail = false }: {
   workspace: Workspace;
   /** aria-label of the sidebar landmark. */
   sidebarLabel: string;
@@ -88,10 +99,12 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
   header?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Desktop shows the icon rail only, with no top bar (pages that bring their own list pane, like Bots). */
+  rail?: boolean;
 }) {
   const sidebarOpen = useShellStore((s) => s.sidebarOpen);
   const toggleSidebar = useShellStore((s) => s.toggleSidebar);
-  const collapsed = useShellStore((s) => s.sidebarCollapsed);
+  const userCollapsed = useShellStore((s) => s.sidebarCollapsed);
   const toggleCollapsed = useShellStore((s) => s.toggleSidebarCollapsed);
   const setWorkspace = useShellStore((s) => s.setWorkspace);
   const openOps = useShellStore((s) => s.openOps);
@@ -106,6 +119,11 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
   const monitorDown = useNotificationsStore((s) => s.feed?.tenants.some((t) => t.status === "down" || t.status === "stale") ?? false);
   useEffect(() => useNotificationsStore.getState().startPolling(), []);
   const monBadge = alerts + unseen;
+  const collapsed = rail || userCollapsed;
+  // Bots: runs today that still need a person's decision (the Bots page polls the same list).
+  // one per proposed change, as the Bots page lists them
+  const botsBadge = useBotsStore((s) => s.inbox.reduce((n, r) => n + (r.outcome === "action_needed" && !r.dismissed_at ? Math.max(1, r.report?.proposals?.length ?? 0) : 0), 0));
+  useEffect(() => { if (!useBotsStore.getState().inbox.length) void useBotsStore.getState().loadInbox(); }, []);
   const monTone = critical || alerts > 0;
 
   // Gesture: a swipe right from the left edge opens the navigation (touch and pen only; the toggle button does the same).
@@ -137,10 +155,10 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
         <aside aria-label={sidebarLabel} id="app-sidebar" data-slot="app-sidebar" data-collapsed={collapsed} className="group/sb flex h-full min-h-0 w-full flex-col gap-1 border-r bg-sidebar px-2 pt-2 pb-2 animate-in fade-in-0 slide-in-from-left-2 duration-200 lg:w-[272px] lg:shrink-0 lg:transition-[width] lg:duration-200 lg:ease-out lg:data-[collapsed=true]:w-16">
           <div className="flex items-center justify-between px-1 pb-1 lg:group-data-[collapsed=true]/sb:flex-col lg:group-data-[collapsed=true]/sb:gap-1.5">
             <Button variant="ghost" className="h-8 gap-2 px-1.5" onClick={go(() => setWorkspace("conversation"))} aria-label="Seleric home">
-              <span className="grid size-6 place-items-center rounded-[7px] bg-foreground text-[13px] font-semibold text-background">S</span>
-              <strong className={cn("font-serif text-xl font-medium tracking-tight", RAIL_HIDE)}>Seleric</strong>
+              <span aria-hidden="true" className="size-4 rounded-full border-[3.5px] border-[var(--brand)] shadow-[6px_0_0_-3px_var(--signal)] dark:border-[var(--text)]" />
+              <strong className={cn("text-lg font-extrabold tracking-tight", RAIL_HIDE)}>Seleric</strong>
             </Button>
-            <Button variant="ghost" size="icon-sm" className="hidden lg:inline-flex" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} aria-controls="app-sidebar" title={`${collapsed ? "Expand" : "Collapse"} sidebar (Ctrl+\\)`} onClick={toggleCollapsed}><SidebarToggleIcon collapsed={collapsed} /></Button>
+            <Button variant="ghost" size="icon-sm" className={cn("hidden lg:inline-flex", rail && "lg:hidden")} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} aria-controls="app-sidebar" title={`${collapsed ? "Expand" : "Collapse"} sidebar (Ctrl+\\)`} onClick={toggleCollapsed}><SidebarToggleIcon collapsed={collapsed} /></Button>
             <Button variant="ghost" size="icon-sm" className="lg:hidden" aria-label="Close navigation" onClick={toggleSidebar}><XIcon /></Button>
           </div>
           <NavItem icon={<PlusIcon />} label="New chat" current={workspace === "conversation" && !selectedThreadId} onClick={go(() => { setWorkspace("conversation"); void createThread(); })} />
@@ -148,10 +166,12 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
           <nav aria-label="Workspace" className="flex flex-col gap-0.5">
             <NavItem icon={<ActivityIcon />} label="Monitoring" current={workspace === "ops"}
               onClick={go(() => openOps(unseen > 0 ? "notifications" : "dashboard"))}
-              trailing={monBadge > 0 ? <span className={cn("font-medium tabular-nums", monTone ? "text-destructive" : "text-[var(--warning)]")} aria-label={`${monBadge} need attention`}>{monBadge}</span>
+              trailing={monBadge > 0 ? <NavBadge n={monBadge} label={`${monBadge} need attention`} tone={monTone ? "signal" : "warning"} />
                 : monitorDown ? <span className="text-[var(--warning)]" aria-label="Live monitor is not running">!</span> : undefined}
-              badge={monBadge > 0 ? <span aria-hidden="true" className={cn("absolute top-0.5 right-1 hidden min-w-4 rounded-full px-1 text-center text-[10px] leading-4 font-semibold lg:group-data-[collapsed=true]/sb:block", monTone ? "bg-[var(--danger-soft)] text-destructive" : "bg-[var(--warning-soft)] text-[var(--warning)]")}>{monBadge}</span> : undefined} />
-            <NavItem icon={<BotIcon />} label="Bots" current={workspace === "bots"} onClick={go(() => setWorkspace("bots"))} />
+              badge={monBadge > 0 ? railBadge(monBadge, monTone ? "signal" : "warning") : undefined} />
+            <NavItem icon={<BotIcon />} label="Bots" current={workspace === "bots"} onClick={go(() => setWorkspace("bots"))}
+              trailing={botsBadge > 0 ? <NavBadge n={botsBadge} label={`${botsBadge} need your decision`} /> : undefined}
+              badge={botsBadge > 0 ? railBadge(botsBadge) : undefined} />
             <NavItem icon={<OfficeIcon />} label="Office" current={workspace === "office"} onClick={go(() => setWorkspace("office"))} />
           </nav>
           <div className={cn("mt-2 flex min-h-0 flex-1 flex-col", RAIL_HIDE)}>{sidebarBody}</div>
@@ -160,9 +180,9 @@ export function AppFrame({ workspace, sidebarLabel, toggleLabel, sidebarBody, he
         </aside>
       </ResponsivePanel>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="z-30 flex h-12 shrink-0 items-center gap-1.5 overflow-x-clip px-3 max-md:px-2">
+        <header className={cn("z-30 flex h-12 shrink-0", rail && sidebarOpen && "lg:hidden", "items-center gap-1.5 overflow-x-clip px-3 max-md:px-2")}>
           {/* Hidden on desktop while the sidebar is open (its own toggle collapses it); it shows below desktop width, and whenever the sidebar has been closed, so it can always be reopened. */}
-          <Button variant="ghost" size="icon" className={cn(sidebarOpen && "lg:hidden")} aria-label={toggleLabel} aria-expanded={sidebarOpen} onClick={toggleSidebar} title={toggleLabel}><MenuIcon /></Button>
+          <Button variant="ghost" size="icon" className={cn("pointer-coarse:size-11", sidebarOpen && "lg:hidden")} aria-label={toggleLabel} aria-expanded={sidebarOpen} onClick={toggleSidebar} title={toggleLabel}><MenuIcon /></Button>
           {header}
         </header>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>

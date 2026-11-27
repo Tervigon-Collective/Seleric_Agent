@@ -71,6 +71,22 @@ export interface Bot {
   last_run?: BotRunSummary | null;
 }
 
+/** D-253: the run's answer as data. eda_checks are computed in code from bot_eda; the rest is read out of the answer. */
+export interface EdaCheck { metric: string; label: string; unit: "inr" | "count" | "pct"; now: number; p10: number; p50: number | null; p90: number; read: "Low" | "Normal" | "High" }
+export interface Proposal { entity: string; field: string; current: number | null; proposed: number | null; condition: string; reason: string }
+export interface Mover { entity: string; figure: string; note: string }
+export interface AnswerCheck { label: string; now: string; normal: string; read: string }
+export interface RunReport {
+  version: number;
+  eda_checks: EdaCheck[];
+  headline?: string;
+  proposals?: Proposal[];
+  movers?: Mover[];
+  checks?: AnswerCheck[];
+  unverified?: string[];
+  extract_failed?: boolean;
+}
+
 export interface BotRun extends BotRunSummary {
   bot_id: string;
   reason: string;
@@ -82,6 +98,11 @@ export interface BotRun extends BotRunSummary {
   mission_id: string | null;
   tool_calls: number;
   started_at: string | null;
+  report?: RunReport | null;
+  dismissed_at?: string | null;
+  dismissed_by?: string | null;
+  /** Inbox rows only. */
+  bot_name?: string;
 }
 
 export interface BotActivity {
@@ -134,6 +155,10 @@ export class BotsApi {
   }
   runs(id: string, kind?: RunKind): Promise<{ runs: BotRun[] }> {
     return this.http.request(`/v1/bots/${enc(id)}/runs${kind ? `?kind=${kind}` : ""}`);
+  }
+  inbox(days = 1): Promise<{ runs: BotRun[] }> { return this.http.request(`/v1/bots/inbox?days=${days}`); }
+  dismiss(runId: string, undo = false): Promise<{ run_id: string; dismissed_at: string | null }> {
+    return this.http.request(`/v1/bots/runs/${enc(runId)}/dismiss`, json("POST", { undo }));
   }
   activity(id: string): Promise<{ activity: BotActivity[] }> { return this.http.request(`/v1/bots/${enc(id)}/activity`); }
   saveSkill(id: string, skill: { skill_id?: string; name: string; body: string; enabled: boolean }): Promise<{ skills: BotSkill[] }> {
