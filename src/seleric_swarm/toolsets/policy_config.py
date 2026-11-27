@@ -16,6 +16,7 @@ DIAG_HISTORY_DAYS: int = 56            # daily history fetched before the event
 DIAG_REFERENCE_WEEKS: int = 4          # same-weekday reference days per event day
 DIAG_EVENT_Z: float = 2.0              # |z| at/above which the event is unusual
 DIAG_EVENT_Z_NOTABLE: float = 1.5      # |z| at/above which it is notable (diagnosed, flagged moderate)
+DIAG_LOG_MAX_NEGATIVE_SHARE: float = 0.2  # log scale for a mostly positive series: at most this share of history days negative
 DIAG_OUTLIER_Z: float = 3.0            # robust z marking a history day abnormal (excluded from references)
 DIAG_IDENTITY_TOLERANCE: float = 0.01  # relative dispersion allowed in a verified identity
 # Additive accounting bridge (outcome = signed sum of same-unit additive metrics):
