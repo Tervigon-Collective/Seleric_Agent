@@ -47,3 +47,16 @@ Not usable as-is: the "exact bridge" for input metrics such as spend; event size
 - (a) `_bridge_parts`: bridge candidates computed from the outcome, or from a data twin of it, are dropped (gross/net profit are built on `order_pnl_ad_spend`, the twin of `ad_spend`). Residual: `ssot_net_sales = ssot_net_cogs + ssot_contribution_before_ads` stays, because the SSOT catalogue metrics carry no `depends_on`. That is a catalogue gap (Core change) and is not fixed here.
 - (c) Compare mode with fewer than 3 days per period: the change is sized against the 1-day noise profile instead of reading 0 ("overlap a lot").
 - Tests: `tests/unit/test_diagnosis_live_20261126.py` (3; all fail on the old engine). Full unit suite 1222 pass; only `test_auto_chart` fails, as before this work.
+
+## Live re-run on the fixed engine (2026-11-27, throwaway container, branch code)
+
+| Case | Result | ClickHouse |
+|---|---|---|
+| Meta spend 09-15/16 vs usual | −100 %, strong; no spend bridge | 0 on both days |
+| vs 09-11/12 | 0 vs 100,824, "clearly differ" (was "overlap a lot") | 43,824 + 57,000 |
+| CTR 10-04/05 | 0.98 % vs 1.96 %; AWARENESS ad 0 → 52 % of volume | as before |
+| Meta spend 09-26 | 31,560, normal; reference avoids outage days | 31,560 (+4.1 % on 30,313) |
+| Net sales 10-02 | −50.6 % vs usual 89,342 (refs 09-25..10-01); was +73.8 % vs 25.6 k | 44,485; refs 66–100 k |
+| Campaign net profit 10-02 | −12,486 vs 5,971, strong; bridge = sales − COGS − spend | — |
+
+Open: the net sales drop is sized "within normal day-to-day range" (daily net sales swing 15–100 k in Sep plus returns lumps); the direction and size are right. Residual trivial bridge net_sales = net_cogs + contribution_before_ads (catalogue lineage gap).

@@ -1,3 +1,4 @@
+import seleric_swarm.causal.diagnosis as _dg, sys as _s; print("ENGINE", _dg.__file__, file=_s.stderr)
 import asyncio, json, sys
 from datetime import datetime
 from types import SimpleNamespace
@@ -30,4 +31,5 @@ async def main():
         out.append({"name": c["name"], "success": r.success, "summary": r.summary, "report": rep})
     print(json.dumps(out, default=str))
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
