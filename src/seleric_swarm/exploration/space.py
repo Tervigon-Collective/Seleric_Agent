@@ -55,6 +55,21 @@ def default_brand_id() -> str:
     return str(_scope_file().get("default_brand_id") or "")
 
 
+def default_meta_account_id(brand_id: str | int | None = None) -> str:
+    """Meta ``act_…`` for the workspace brand, from live-monitor tenants (same source as Monitoring)."""
+    bid = str(brand_id if brand_id is not None else default_brand_id() or "20")
+    try:
+        from seleric_swarm.services.live_monitor.config import load
+
+        cfg, _ = load()
+    except Exception:
+        return ""
+    for tenant in cfg.tenants:
+        if tenant.enabled and tenant.platform == "meta" and str(tenant.brand_id) == bid:
+            return tenant.account_id
+    return ""
+
+
 def _catalogue_dimension_ids(catalogue: Any) -> set[str]:
     ids: set[str] = set()
     for dim in getattr(catalogue, "dimensions", ()) or ():

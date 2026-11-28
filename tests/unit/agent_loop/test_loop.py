@@ -407,6 +407,26 @@ async def test_every_query_runs_at_the_full_row_limit_whatever_the_model_asked()
     assert "limit" not in with_full_limit({"schema": {"properties": {}}}, "metrics_query", {"measures": ["a"]})
 
 
+def test_ads_scope_always_passes_brand_and_fails_without_it():
+    from seleric_swarm.agent.mcp_toolset import with_ads_scope
+
+    eda = {"schema": {"properties": {"brand_id": {"type": "integer"}, "account_id": {"type": "string"}}}}
+    filled = with_ads_scope(eda, "bot_eda", {}, brand_id="20", meta_account_id="act_1685189008684458")
+    assert filled == {"brand_id": 20, "account_id": "act_1685189008684458"}
+    assert "brand_id is required" in with_ads_scope(eda, "bot_eda", {}, brand_id=None, meta_account_id="act_x")
+    live = {"schema": {"properties": {
+        "object_id": {"type": "string"}, "account_id": {"type": "string"}, "level": {"type": "string"},
+        "brand_id": {"type": "string"}}}}
+    account = with_ads_scope(live, "meta_insights_live", {"level": "account"},
+                             brand_id="20", meta_account_id="act_1685189008684458")
+    assert account["brand_id"] == "20" and account["account_id"] == "act_1685189008684458"
+    assert account["object_id"] == "act_1685189008684458"
+    kept = with_ads_scope(live, "meta_insights_live",
+                          {"object_id": "120", "account_id": "act_other", "level": "campaign"},
+                          brand_id="20", meta_account_id="act_1685189008684458")
+    assert kept["object_id"] == "120" and kept["account_id"] == "act_other"
+
+
 def test_a_result_that_hit_the_row_limit_says_it_is_incomplete():
     from seleric_swarm.agent.mcp_toolset import flag_row_limit
     hit = {"provenance": {"row_limit": 50000, "row_limit_hit": True}}

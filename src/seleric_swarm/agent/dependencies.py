@@ -98,6 +98,10 @@ class SelericDeps:
     # The date axis the user picked for this chat ("order_date" | "event_date"); None leaves it to Core's default.
     # Applied to MCP calls by the tool layer (mcp_toolset, toolsets/_data), never written into the prompt.
     date_axis: str | None = None
+    # Bot / workspace brand forced onto every Meta/ads tool call (never a Core soft-default).
+    brand_id: str | None = None
+    # Meta act_… for this brand (from live-monitor); required with brand_id on ads tools that take account_id.
+    meta_account_id: str | None = None
     # Real per-mission execution-limit enforcement (agent/limits.py). Not a
     # dataclass default_factory: ExecutionBudgetTracker needs this same
     # instance's own `limits`, so it's built in __post_init__ instead — every

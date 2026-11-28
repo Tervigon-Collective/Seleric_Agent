@@ -22,6 +22,7 @@ from sqlalchemy import text
 from seleric_swarm.services.bots import (
     delivery,
     eda,
+    finding_handoff,
     hindsight,
     report,
     schedule,
@@ -80,9 +81,18 @@ def _webhook_data(data: str) -> str:
 
 def brief(bot: dict[str, Any], run: dict[str, Any], history: list[dict[str, Any]], recalled: list[dict[str, str]] | None = None,
           documents: list[dict[str, str]] | None = None) -> str:
+    from seleric_swarm.exploration.space import default_meta_account_id
+
     skills = [k for k in bot.get("skills") or [] if k["enabled"]]
+    account = default_meta_account_id(bot["brand_id"])
+    scope = (
+        f"Every Meta/ads tool call is scoped by the runtime to brand_id={bot['brand_id']}"
+        + (f" and Meta account_id={account}" if account else "")
+        + ". Do not put brand or act_ ids in skills; the tool layer always passes them."
+    )
     parts = [
         f'You are running as the Seleric bot "{bot["name"]}" ({bot["role"] or bot["template"]}) for brand {bot["brand_id"]}.',
+        scope,
         f"Why this run started: {run['trigger_kind']} — {run['reason']}.",
         *(f"Also arrived while this run waited: {m['kind']} — {m['reason']}." for m in run.get("merged") or []),
         *(_webhook_data(d) for d in [run["query"] if run["trigger_kind"] == "webhook" else "",
@@ -249,10 +259,14 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
         for row in recall_rows:
             store.add_activity(conn, run["run_id"], bot["bot_id"], kind="memory", **row)
     try:
+        from seleric_swarm.exploration.space import default_meta_account_id
+
+        brand = str(bot["brand_id"])
         dispatched = await run_v3_mission(
             runtime, query=question(run, trig, format_text), mission_id=mission_id, thread_id=thread_of(bot, run),
             owner_user_id=f"bot:{bot['bot_id']}", bot_brief=brief(bot, run, history, recalled, documents),
-            extra_tools=tuple(bot["run_tools"]), policy=policy(bot),
+            extra_tools=tuple(bot["run_tools"]), policy=policy(bot), brand_id=brand,
+            meta_account_id=default_meta_account_id(brand) or None,
             local_tools=(*settings_tools.document_tools(bot["bot_id"], run["run_id"], documents, mem=mem),
                          *(settings_tools.build(bot["bot_id"], run["run_id"], mem=mem) if gets_settings_tools(run) else ())),
         )
@@ -298,6 +312,17 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
         store.finish_run(conn, run["run_id"], status=status, outcome=outcome, answer=answer, error=error,
                          mission_id=mission_id, instructions_version=bot["instructions_version"], tool_calls=len(calls),
                          report=run_report)
+        # B31: findings are the record — signal runs write analysis onto monitor.findings.diagnosis
+        if run["trigger_kind"] == "signal":
+            written = finding_handoff.write_back(
+                conn, bot_id=bot["bot_id"], run_id=run["run_id"], trigger_kind=run["trigger_kind"],
+                trigger=trigger if isinstance(trigger, dict) else {},
+                merged=list(run.get("merged") or []),
+                outcome=outcome, why=why, answer=answer, report=run_report, run_status=status,
+            )
+            if written:
+                store.add_activity(conn, run["run_id"], bot["bot_id"], kind="note", outcome="completed",
+                                   summary=f"Wrote diagnosis onto finding(s): {', '.join(written)}")
     try:
         sent = await delivery.deliver(bot, run, outcome, why, answer, previous, trig)
     except Exception:

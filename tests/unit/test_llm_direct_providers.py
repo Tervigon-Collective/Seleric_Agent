@@ -197,7 +197,7 @@ def test_private_address_behind_a_public_name_is_refused(monkeypatch):
 
 def test_saved_main_list_replaces_the_env_chain_and_runs_on_its_connection(public_dns):
     settings = _settings(azure_openai_models='["gpt-5-mini"]')
-    assert store.role_chain(settings, "main") == [("azure", "gpt-5-mini", None)]
+    assert store.role_chain(settings, "main") == [("azure", "gpt-5-mini", None)]  # no plan connected → env Azure
     row = store.add_connection("compatible", "sk-x", base_url="https://models.example.com/v1")
     roles = {"main": store.clean_role(settings, [{"connection": row["id"], "model": "m1", "thinking": "high"},
                                                  {"connection": "azure", "model": "gpt-4o-code"}]),

@@ -119,3 +119,31 @@ def test_loop_uses_responses_for_chatgpt_and_the_cli_for_claude():
     assert chain[0].profile["openai_responses_requires_streaming"] is True
     assert str(chain[0].client.base_url).startswith("https://api.openai.com/v1")
     assert isinstance(chain[1], ClaudeModel)
+
+
+def test_unsaved_defaults_prefer_subscription_then_azure_only():
+    secret = credential_from_token(
+        {"access_token": "atk", "refresh_token": "rtk", "scope": "chatgpt.tokens.use.direct", "expires_in": 999999},
+        {"sub": "user"}, client_id="oaiapp_x",
+    )
+    chat = store.add_oauth_connection("chatgpt", json.dumps(secret))
+    settings = Settings(
+        llm_provider="azure_openai_compatible",
+        azure_openai_api_key="az",
+        azure_openai_endpoint="https://azure.example.invalid",
+        azure_openai_models='["gpt-5-mini","gpt-4o-code"]',
+        azure_openai_helper_model="Llama-4-Maverick",
+        SELERIC_OPENAI_API_KEY="sk-company",  # must not appear in the default chain
+        llm_models='["openai:gpt-5-mini"]',
+    )
+    assert store.role_chain(settings, "main") == [
+        (chat["id"], "gpt-6.2-astra", None),
+        ("azure", "gpt-5-mini", None),
+        ("azure", "gpt-4o-code", None),
+    ]
+    assert store.role_chain(settings, "helper") == [
+        (chat["id"], "gpt-6.2-sol", None),
+        ("azure", "Llama-4-Maverick", None),
+    ]
+    assert [c["id"] for c in store.view(settings)["connections"][:1]] == [chat["id"]]
+    assert store.view(settings)["defaults"]["main"][0]["connection"] == chat["id"]

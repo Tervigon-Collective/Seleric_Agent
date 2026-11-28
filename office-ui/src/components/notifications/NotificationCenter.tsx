@@ -219,7 +219,18 @@ export function FindingCard({ item, now, actionsEnabled }: { item: NotificationI
         <span className="ml-auto tabular-nums">{resolved ? `resolved ${since(item.resolved_at, now)}` : `since ${since(item.opened_at, now)}`}</span>
       </div>
       <p className="mt-1 mb-0 truncate text-xs text-muted-foreground" title={item.path.join(" › ")}>{item.path.join(" › ") || "Account"}</p>
-      <p className="mt-1.5 mb-0 text-sm leading-snug">{item.cause || item.narration || item.summary}</p>
+      <p className="mt-1.5 mb-0 text-sm leading-snug">
+        {item.diagnosis_status === "pending_bot" && !item.bot_run_id
+          ? (item.bot_skip_reason || "Investigating…")
+          : (item.cause || item.narration || item.summary)}
+      </p>
+      {item.bot_run_id && (
+        <p className="mt-1 mb-0 text-xs">
+          <a className="text-muted-foreground underline-offset-2 hover:underline" href={`/?bots=1&run=${encodeURIComponent(item.bot_run_id)}`}>
+            Open bot report{item.bot_outcome ? ` (${item.bot_outcome.replace(/_/g, " ")})` : ""}
+          </a>
+        </p>
+      )}
       {(item.impact_inr != null || item.confidence != null) && !resolved && (
         <p className="mt-1 mb-0 text-xs text-muted-foreground tabular-nums">
           {item.impact_inr != null && item.impact_inr > 0 && <>About {inr(item.impact_inr)} at stake</>}

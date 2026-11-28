@@ -196,6 +196,39 @@ def with_full_limit(defn: dict[str, Any] | None, name: str, args: dict[str, Any]
     return {**args, "limit": QUERY_ROW_LIMIT} if name in QUERY_TOOLS and "limit" in props else args
 
 
+def with_ads_scope(
+    defn: dict[str, Any] | None,
+    name: str,
+    args: dict[str, Any],
+    *,
+    brand_id: str | None,
+    meta_account_id: str | None,
+) -> dict[str, Any] | str:
+    """Always attach brand_id (and Meta account_id when the tool takes it) on ads / bot_eda calls.
+
+    No Core soft-default: if this run has no brand_id, return an error string and the call fails.
+    Skills stay ID-free — the tool layer is what puts brand_id on the wire.
+    """
+    if name not in ADS_READ_TOOLS and name != eda.TOOL:
+        return args
+    brand = str(args["brand_id"]) if args.get("brand_id") is not None else (brand_id or "")
+    if not brand:
+        return "brand_id is required on Meta/ads tool calls; this run has no brand scoped."
+    props = ((defn or {}).get("schema") or {}).get("properties") or {}
+    out = dict(args)
+    # Always put brand_id on the wire for Meta/ads (Core rejects credential resolve without a selector).
+    want_int = ((props.get("brand_id") or {}).get("type") == "integer") or name == eda.TOOL
+    out["brand_id"] = int(brand) if want_int else brand
+    account = out.get("account_id") or meta_account_id or ""
+    if name == eda.TOOL or "account_id" in props:
+        if not account:
+            return "account_id is required for this Meta tool; no Meta account is configured for the brand."
+        out["account_id"] = account
+    if name == "meta_insights_live" and not out.get("object_id") and out.get("account_id"):
+        out["object_id"] = out["account_id"]
+    return out
+
+
 def flag_composed(payload: Any) -> None:
     """A multi-view result is several parts, each sorted and limited on its own, so each part holds a different set of
     entities. An entity absent from a part fell outside that part's top-N: its value there is unknown, not zero.
@@ -583,7 +616,10 @@ async def _eda(gateway: Any, args: dict[str, Any], today: date | None) -> tuple[
     async def call(name: str, a: dict[str, Any]) -> tuple[Any, bool]:
         return await _execute(gateway, name, a, day)  # raw: the pack reads Meta's actions lists itself
     try:
-        return await eda.run(call, int(args["brand_id"]), str(args["account_id"]), day), False
+        brand, account = args.get("brand_id"), args.get("account_id")
+        if brand is None or not account:
+            return {"error": "bot_eda needs brand_id and account_id (workspace defaults missing)."}, True
+        return await eda.run(call, int(brand), str(account), day), False
     except Exception as exc:  # a bug in the pack must not end the run: the bot falls back to its own reads
         _log.warning("bot_eda_failed", exc_info=True)
         return {"error": f"bot_eda failed: {type(exc).__name__}: {exc}"}, True
@@ -605,6 +641,15 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
             if _takes_date_axis(defs.get(name), args):
                 args = with_date_axis(args, ctx.deps.date_axis, ctx.deps.catalogue)
             args = with_full_limit(defs.get(name), name, args)
+            scoped = with_ads_scope(
+                defs.get(name), name, args,
+                brand_id=ctx.deps.brand_id, meta_account_id=ctx.deps.meta_account_id,
+            )
+            if isinstance(scoped, str):
+                state.steps.append({"kind": "tool_call", "tool": name, "args": args})
+                state.steps.append({"kind": "tool_return", "tool": name, "ok": False, "result": scoped})
+                return json.dumps({"error": scoped}, default=str)
+            args = scoped
             started = time.perf_counter()
             err = validate(defs, name, args)
             if err:

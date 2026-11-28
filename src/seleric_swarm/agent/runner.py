@@ -446,6 +446,8 @@ async def run_v3_mission(
     extra_tools: tuple[str, ...] = (),
     policy: Any = None,
     local_tools: tuple[Any, ...] = (),
+    brand_id: str | None = None,
+    meta_account_id: str | None = None,
     **_ignored: Any,
 ) -> dict[str, Any]:
     """Execute the reasoning loop and persist for conversations + Office UI.
@@ -512,6 +514,10 @@ async def run_v3_mission(
             stages["context_ms"] = round((time.perf_counter() - started) * 1000)
             from seleric_swarm.agent.prompt import system_prompt
 
+            from seleric_swarm.exploration.space import default_brand_id, default_meta_account_id
+
+            scoped_brand = (brand_id or default_brand_id() or "").strip() or None
+            scoped_account = (meta_account_id or default_meta_account_id(scoped_brand) or "").strip() or None
             deps = SelericDeps(
                 mission_id=mission_id, as_of=as_of_dt,
                 principal=_principal(workspace_id=workspace_id, user_id=owner_user_id),
@@ -523,6 +529,7 @@ async def run_v3_mission(
                     agent_retries=int(getattr(runtime.settings, "agent_retries", 2)),
                 ),
                 catalogue=catalogue, metrics=getattr(runtime, "metrics", None), date_axis=date_axis,
+                brand_id=scoped_brand, meta_account_id=scoped_account,
             )
             loop_result = await asyncio.wait_for(
                 run_turn(

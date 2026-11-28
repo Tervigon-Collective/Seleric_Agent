@@ -7,7 +7,8 @@ endpoint. ChatGPT subscription keeps an encrypted plan sign-in. Claude subscript
 Claude Code CLI on this machine already holds that sign-in.
 
 The server's own connections (Azure from env, OpenAI from ``SELERIC_OPENAI_API_KEY``) are always listed and cannot
-be edited here. With no Main model saved, the agent keeps the env chain (``LLM_MODELS`` / ``AZURE_OPENAI_MODELS``).
+be edited here. With no Main / Helper list saved, a connected subscription is the default and Azure from env is
+the only fallback (``AZURE_OPENAI_MODELS`` / helper deployment). With neither, the env chain runs as before.
 """
 
 from __future__ import annotations
@@ -41,6 +42,13 @@ PROVIDERS: dict[str, dict[str, str]] = {
 MAX_MODEL_BACKUPS = 10  # Rakazo's limit: the main model plus ten fallbacks
 THINKING_LEVELS = ("minimal", "low", "medium", "high")
 ROLES = ("main", "helper")
+SUBSCRIPTION_PROVIDERS = frozenset({"chatgpt", "claude-code"})
+# Plan model ids when Settings → Models has no saved list. Prefer the strongest common plan models first.
+_CHATGPT_DEFAULTS = {
+    "main": ("gpt-6.2-astra", "gpt-6.1-terra", "gpt-6-astra", "gpt-5.6-terra"),
+    "helper": ("gpt-6.2-sol", "gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol"),
+}
+_CLAUDE_DEFAULTS = {"main": "sonnet", "helper": "haiku"}
 _lock = threading.Lock()
 
 
@@ -151,7 +159,8 @@ def connections(settings: Settings) -> dict[str, Connection]:
         except Exception:  # noqa: BLE001 - a rotated or wrong key must not take the agent down
             continue
         found[row["id"]] = Connection(row["id"], row["provider"], row["label"], row["base_url"], key, auth=auth)
-    return found
+    # Subscriptions first so UI pickers and "server default" start on the plan, not the Azure key.
+    return dict(sorted(found.items(), key=lambda item: (0 if item[1].provider in SUBSCRIPTION_PROVIDERS else 1, item[0])))
 
 
 def check_base_url(url: str) -> str:
@@ -291,11 +300,53 @@ def save_roles(roles: dict[str, list[dict[str, Any]]], expected_version: int | N
     return _mutate(expected_version, lambda data: data.update(roles))
 
 
+def _subscription_default_model(provider: str, role: str) -> str | None:
+    if provider == "chatgpt":
+        return _CHATGPT_DEFAULTS.get(role, ())[0] if _CHATGPT_DEFAULTS.get(role) else None
+    if provider == "claude-code":
+        return _CLAUDE_DEFAULTS.get(role)
+    return None
+
+
+def _subscription_defaults(known: dict[str, Connection], role: str) -> list[tuple[str, str, str | None]]:
+    """One entry per connected plan, in connection order (already subscription-first)."""
+    out: list[tuple[str, str, str | None]] = []
+    for conn in known.values():
+        if conn.provider not in SUBSCRIPTION_PROVIDERS:
+            continue
+        model = _subscription_default_model(conn.provider, role)
+        if model:
+            out.append((conn.id, model, None))
+    return out
+
+
+def _azure_fallback(settings: Settings, role: str, known: dict[str, Connection]) -> list[tuple[str, str, str | None]]:
+    """Azure API-key deployments only — never the company OpenAI key — behind the plan."""
+    if "azure" not in known:
+        return []
+    if role == "main":
+        return [("azure", model, None) for model in settings.resolved_models()]
+    from seleric_swarm.config.settings import helper_chat_model
+
+    model = helper_chat_model(settings) or settings.primary_model()
+    return [("azure", model, None)] if model else []
+
+
+def default_role_chain(settings: Settings, role: str) -> list[tuple[str, str, str | None]]:
+    """Server default for a role: connected subscriptions first, Azure API key last; else the env chain."""
+    known = connections(settings)
+    plans = _subscription_defaults(known, role)
+    if plans:
+        return plans + _azure_fallback(settings, role, known)
+    env = settings.loop_chain() if role == "main" else settings.helper_chain()
+    return [(conn, model, None) for conn, model in env if conn in known]
+
+
 def role_chain(settings: Settings, role: str) -> list[tuple[str, str, str | None]]:
-    """(connection id, model, thinking) for a role: the saved list, else the server env chain.
+    """(connection id, model, thinking) for a role: the saved list, else subscription → Azure defaults.
 
     Entries whose connection is unknown here are dropped; if none is left (this container lacks SELERIC_MODELS_KEY,
-    or the key was rotated) the env chain runs and the error is logged, so a mission never gets the stub model.
+    or the key was rotated) the default chain runs and the error is logged, so a mission never gets the stub model.
     """
     known = connections(settings)
     saved = [(m["connection"], m["model"], m.get("thinking")) for m in load()[role]]
@@ -306,13 +357,13 @@ def role_chain(settings: Settings, role: str) -> list[tuple[str, str, str | None
         logging.getLogger("seleric.models").error("saved %s models have no usable connection here; using server defaults", role)
     if usable:
         return usable
-    env = settings.loop_chain() if role == "main" else settings.helper_chain()
-    return [(conn, model, None) for conn, model in env if conn in known]
+    return default_role_chain(settings, role)
 
 
 def view(settings: Settings) -> dict[str, Any]:
     data = load()
     hints = {c["id"]: c.get("key_hint", "") for c in data["connections"]}
+    defaults = {role: [{"connection": c, "model": m} for c, m, _ in default_role_chain(settings, role)] for role in ROLES}
     return {
         "version": data["version"],
         "can_save_keys": _fernet() is not None,
@@ -324,10 +375,7 @@ def view(settings: Settings) -> dict[str, Any]:
         ],
         "main": data["main"],
         "helper": data["helper"],
-        "defaults": {
-            "main": [{"connection": c, "model": m} for c, m in settings.loop_chain()],
-            "helper": [{"connection": c, "model": m} for c, m in settings.helper_chain()],
-        },
+        "defaults": defaults,
         "max_fallbacks": MAX_MODEL_BACKUPS,
         "thinking_levels": list(THINKING_LEVELS),
     }

@@ -15,7 +15,7 @@ triggers:
     enabled: false
     config:
       tool: meta_campaigns_list
-      args: {account_id: act_1685189008684458, status: [ACTIVE], limit: 500}
+      args: {brand_id: "20", account_id: act_1685189008684458, status: [ACTIVE], limit: 500}
       fields: [effective_status, daily_budget, lifetime_budget]
       interval_min: 15
 notify:

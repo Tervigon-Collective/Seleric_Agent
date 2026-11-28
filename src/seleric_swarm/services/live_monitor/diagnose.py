@@ -1,28 +1,17 @@
-"""Structured diagnosis for a live finding: deterministic gates + artifacts, optional LLM cause.
+"""Structured diagnosis for a live finding: deterministic gates + artifacts only (B31).
 
-Never invents a breach — it only explains a hit that already passed the rule's statistical gates.
-Recommended action is always chosen from the finding's allow-listed actions.
+Never invents a breach — it only surfaces gates for a hit that already passed the rule's statistical gates.
+Cause / bullets come from the Marketing bot write-back (``bots.finding_handoff``); this module leaves
+``status=pending_bot`` until then. Recommended action is always chosen from the finding's allow-listed actions.
 """
 
 from __future__ import annotations
 
-import json
-import logging
-import uuid
 from datetime import datetime
 from typing import Any
 
-from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
-
-log = logging.getLogger(__name__)
-PROMPT_ID = "live_monitor.diagnose"
-PROMPT_VERSION = "1"
 ACTOR = "live_monitor.diagnose"
-
-SYSTEM = """You diagnose one live Meta ads alert for a performance marketer.
-Reply with ONLY a JSON object: {"cause": "<one sentence>", "bullets": ["claim", ...], "recommended_action_id": "<id or null>"}.
-Use only the numbers and evidence given. Do not invent causes. bullets: 2 to 4 short checkable claims.
-recommended_action_id must be one of the allowed_action_ids (or null). No markdown, no prose outside JSON."""
+PENDING_CAUSE = "Marketing bot investigating"
 
 
 def gates_from_evidence(evidence: dict[str, Any], confidence: float | None) -> dict[str, Any]:
@@ -135,37 +124,6 @@ def fallback_bullets(evidence: dict[str, Any], gates: dict[str, Any]) -> list[st
     return bullets[:4] or ["See the observed metrics for details."]
 
 
-def _parse_llm(text: str, allowed: set[str]) -> dict[str, Any] | None:
-    raw = text.strip()
-    if raw.startswith("```"):
-        raw = raw.strip("`")
-        if raw.startswith("json"):
-            raw = raw[4:].strip()
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        start, end = raw.find("{"), raw.rfind("}")
-        if start < 0 or end <= start:
-            return None
-        try:
-            data = json.loads(raw[start : end + 1])
-        except json.JSONDecodeError:
-            return None
-    if not isinstance(data, dict):
-        return None
-    rid = data.get("recommended_action_id")
-    if rid is not None and rid not in allowed:
-        data["recommended_action_id"] = None
-    bullets = data.get("bullets")
-    if not isinstance(bullets, list):
-        data["bullets"] = []
-    else:
-        data["bullets"] = [str(b)[:200] for b in bullets[:4]]
-    cause = data.get("cause")
-    data["cause"] = str(cause)[:400] if cause else None
-    return data
-
-
 async def diagnose(
     llm: Any,
     model: str,
@@ -174,69 +132,28 @@ async def diagnose(
     *,
     change: str,
 ) -> dict[str, Any]:
-    """Returns diagnosis fields to merge into finding.diagnosis (status ready|failed)."""
+    """Gates + artifacts only. ``llm`` / ``model`` / ``guardrails`` kept for call-site compatibility; unused (B31)."""
+    del llm, model, guardrails  # B31: no diagnose LLM — bot write-back fills cause/bullets
     d = finding.get("diagnosis") or {}
     evidence = dict(d.get("evidence") or {})
     actions = list(d.get("actions") or [])
-    path = list((d.get("entity") or {}).get("path") or [])
     gates = gates_from_evidence(evidence, finding.get("confidence"))
     artifacts = artifacts_from_evidence(evidence, finding.get("summary") or "")
-    allowed = {a["id"] for a in actions if a.get("id")}
-    cause = fallback_cause(finding.get("title") or d.get("title") or "Alert", finding.get("summary") or "", path)
-    bullets = fallback_bullets(evidence, gates)
     rec_id, rec_title = pick_recommended(actions)
-    source = "rule"
-
-    if llm is not None:
-        payload = json.dumps({
-            "change": change,
-            "rule": finding.get("title") or d.get("title"),
-            "severity": finding.get("severity"),
-            "summary": finding.get("summary"),
-            "where": path,
-            "level": (d.get("entity") or {}).get("level"),
-            "evidence": evidence,
-            "gates": gates,
-            "allowed_action_ids": sorted(allowed),
-            "guardrails": {k: guardrails.get(k) for k in ("be_roas_platform", "target_roas", "allowable_cpa")},
-        }, default=str)
-        req = LLMRequest(
-            model=model, temperature=0.1, max_tokens=350, timeout_s=25.0,
-            messages=[ChatMessage(role="system", content=SYSTEM), ChatMessage(role="user", content=payload)],
-            metadata=LLMRequestMetadata(
-                request_id=str(uuid.uuid4()), session_id=f"live-monitor:{finding.get('brand_id')}",
-                mission_id=finding.get("finding_id"), workflow_name="live_monitor", workflow_version="1",
-                agent_id="live_monitor", agent_version="1", prompt_id=PROMPT_ID, prompt_version=PROMPT_VERSION,
-                model=model or None,
-            ),
-            tags=["live_monitor", "diagnose"],
-        )
-        try:
-            parsed = _parse_llm((await llm.complete(req)).text, allowed)
-            if parsed:
-                if parsed.get("cause"):
-                    cause = parsed["cause"]
-                if parsed.get("bullets"):
-                    bullets = parsed["bullets"]
-                if parsed.get("recommended_action_id"):
-                    rec_id, rec_title = pick_recommended(actions, parsed["recommended_action_id"])
-                source = "llm"
-        except Exception:
-            log.warning("diagnose LLM failed for %s; using rule fallback", finding.get("finding_id"), exc_info=True)
-
+    now = datetime.now().astimezone().isoformat()
     return {
-        "status": "ready",
-        "cause": cause,
-        "bullets": bullets,
+        "status": "pending_bot",
+        "cause": PENDING_CAUSE,
+        "bullets": [],
         "artifacts": artifacts,
         "gates": gates,
         "recommended_action_id": rec_id,
         "recommended_summary": rec_title,
-        "diagnosed_at": datetime.now().astimezone().isoformat(),
+        "diagnosed_at": now,
         "diagnosed_by": ACTOR,
-        "diagnosis_source": source,
-        "narration": cause,
-        "narration_source": source,
+        "diagnosis_source": "awaiting_bot",
+        "narration": PENDING_CAUSE,
+        "narration_source": "awaiting_bot",
         "narration_change": change,
-        "narrated_at": datetime.now().astimezone().isoformat(),
+        "narrated_at": now,
     }

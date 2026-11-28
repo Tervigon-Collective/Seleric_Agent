@@ -25,15 +25,14 @@ DESCRIPTION = (
     "Bot runs only. The run's exploratory data analysis, computed in code: where today so far sits against the last "
     "56 days at the same hour (and the same weekday), the 7-day trend, campaigns that drive the gap to expected, ads "
     "under the top movers, the funnel to our own Shopify-attributed orders, ad fatigue, concentration, and recent "
-    "campaign edits. Call it first in a standing run; its tables carry query_ids for run_python. It gives ranges, not "
-    "verdicts: you decide what matters.")
+    "campaign edits. Call it first in a standing run (brand_id and account_id default to the workspace); its tables "
+    "carry query_ids for run_python. It gives ranges, not verdicts: you decide what matters.")
 SCHEMA = {
     "type": "object",
     "properties": {
-        "brand_id": {"type": "integer", "description": "Brand the ad account belongs to (warehouse scope)."},
-        "account_id": {"type": "string", "description": "Meta ad account id, act_..."},
+        "brand_id": {"type": "integer", "description": "Brand the ad account belongs to (warehouse scope). Defaults to the workspace brand."},
+        "account_id": {"type": "string", "description": "Meta ad account id, act_.... Defaults to the brand's live-monitor Meta account."},
     },
-    "required": ["brand_id", "account_id"],
     "additionalProperties": False,
 }
 HISTORY_DAYS, CAMPAIGN_DAYS, FATIGUE_DAYS, RECENT_DAYS = 56, 28, 14, 3

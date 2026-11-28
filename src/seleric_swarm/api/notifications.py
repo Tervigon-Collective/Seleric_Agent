@@ -89,6 +89,8 @@ def _item(r: dict[str, Any], label: str | None) -> dict[str, Any]:
         "diagnosis_status": d.get("status"), "gates": gates,
         "recommended_action_id": d.get("recommended_action_id"),
         "recommended_summary": d.get("recommended_summary"),
+        "bot_run_id": d.get("bot_run_id"), "bot_id": d.get("bot_id"), "bot_outcome": d.get("bot_outcome"),
+        "bot_skip_reason": d.get("bot_skip_reason"),
         "level": e.get("level") or r.get("entity_type"), "entity_id": e.get("id") or r.get("entity_id"),
         "entity_name": e.get("name"), "path": e.get("path") or [],
         "evidence": d.get("evidence") or {}, "actions": d.get("actions") or [], "playbook_ref": d.get("playbook_ref"),

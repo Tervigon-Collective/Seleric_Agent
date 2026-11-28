@@ -27,8 +27,14 @@ def fire(conn: Connection, trig: dict[str, Any], bot: dict[str, Any], *, kind: s
          detail: dict[str, Any] | None = None, query: str = "") -> str:
     limit = int(bot["limits"].get("max_scheduled_runs_per_day", store.DEFAULT_LIMITS["max_scheduled_runs_per_day"]))
     if store.scheduled_runs_today(conn, bot["bot_id"]) >= limit:
+        why = f"Not run: the bot reached its limit of {limit} scheduled runs today."
         store.skip_run(conn, bot["bot_id"], kind=kind, reason=reason, trigger_id=trig["trigger_id"], dedupe_key=dedupe_key,
-                       why=f"Not run: the bot reached its limit of {limit} scheduled runs today.")
+                       why=why)
+        # B31: signal skips leave a trail on the finding so the card is not stuck on "investigating"
+        fid = (detail or {}).get("finding_id") if kind == "signal" else None
+        if fid:
+            from seleric_swarm.services.bots import finding_handoff
+            finding_handoff.note_not_investigated(conn, str(fid), why=finding_handoff.CAP_NOTE, bot_id=bot["bot_id"])
         return "skipped"
     return store.enqueue_run(conn, bot["bot_id"], kind=kind, reason=reason, trigger_id=trig["trigger_id"],
                              dedupe_key=dedupe_key, detail=detail, query=query)["status"]

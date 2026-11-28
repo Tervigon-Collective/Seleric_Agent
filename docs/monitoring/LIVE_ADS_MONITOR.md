@@ -17,7 +17,7 @@ A long‑running process (`live-monitor-cron`) that every **5 minutes**:
 2. Pulls live insights (today; rolling 3d / 7d / prior‑7d on the hour).
 3. Runs **due** rules (by cadence: 5m, 1h, or daily).
 4. Opens / escalates / resolves findings in `monitor.findings`.
-5. On **open / reopen / escalate**, runs a structured **diagnosis** once (gates + artifacts + recommended action; LLM cause with rule fallback). Eased / resolved still get a short narration.
+5. On **open / reopen / escalate**, writes **gates + artifacts** and leaves the finding `pending_bot` for the Marketing bot’s signal run (B31). Eased / resolved still get a short narration.
 6. Surfaces cards in **Notifications** with a primary Approve CTA, evidence / gates, and an activity trail (gated by `ADS_ACTIONS_ENABLED`).
 
 Baselines and finance guardrails refresh **nightly** (after 03:00 local). Daily rules run after **10:00** local.
@@ -48,7 +48,7 @@ Only entities that can actually spend are judged for performance: an ACTIVE camp
 
 ### Trust / gates
 
-Diagnosis never re-judges ROAS/CPA. When a finding opens (or reopens / escalates), the monitor writes a structured diagnosis once: deterministic **gates** and **artifacts** from the hit evidence, plus an optional LLM sentence for cause / bullets / recommended action.
+Diagnosis never re-judges ROAS/CPA. When a finding opens (or reopens / escalates), the monitor writes deterministic **gates** and **artifacts** from the hit evidence and leaves `diagnosis.status = pending_bot`. **Cause / bullets / narration come from the Marketing bot** after its signal run (B31) — `diagnose.py` no longer calls an LLM. Until the bot writes back, the card shows “Marketing bot investigating” (or “not investigated (cap)” if the bot hit its daily run limit).
 
 | Gate chip | Meaning |
 |-----------|---------|

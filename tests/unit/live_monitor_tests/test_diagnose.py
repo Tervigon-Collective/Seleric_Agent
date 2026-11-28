@@ -1,4 +1,7 @@
-"""Diagnosis must explain gated hits only — never invent numbers or recommend unlisted actions."""
+"""Diagnosis must explain gated hits only — never invent numbers or recommend unlisted actions.
+
+B31: diagnose is gates-only (pending_bot); the Marketing bot fills cause/bullets later.
+"""
 
 from __future__ import annotations
 
@@ -43,7 +46,6 @@ def test_gates_and_artifacts_are_deterministic_from_evidence():
     assert arts[0]["kind"] == "metric_row"
     keys = {r["key"] for r in arts[0]["payload"]["rows"]}
     assert "spend_3d" in keys and "roas_3d" in keys
-    # No invented keys
     assert "made_up_roas" not in keys
 
 
@@ -62,26 +64,24 @@ def test_pick_recommended_stays_in_allow_list():
     assert rid == "open_agent"
 
 
-def test_llm_recommendation_outside_allow_list_is_dropped():
-    parsed = D._parse_llm(
-        '{"cause": "Spend rose while purchases stalled.", "bullets": ["a", "b"], "recommended_action_id": "nuke_account"}',
-        {"pause", "open_agent"},
-    )
-    assert parsed is not None
-    assert parsed["recommended_action_id"] is None
-    assert parsed["cause"].startswith("Spend rose")
+def test_diagnose_gates_only_pending_bot_no_llm():
+    """B31: even with an llm stub, diagnose never calls it and leaves pending_bot."""
 
+    class Boom:
+        async def complete(self, *_a, **_k):
+            raise AssertionError("diagnose must not call the LLM")
 
-def test_diagnose_fallback_without_llm():
     out = asyncio.run(
-        D.diagnose(None, "", _finding(), {"be_roas_platform": 2.2, "target_roas": 2.9, "allowable_cpa": 1200},
+        D.diagnose(Boom(), "gpt-test", _finding(),
+                   {"be_roas_platform": 2.2, "target_roas": 2.9, "allowable_cpa": 1200},
                    change="opened")
     )
-    assert out["status"] == "ready"
-    assert out["diagnosis_source"] == "rule"
+    assert out["status"] == "pending_bot"
+    assert out["diagnosis_source"] == "awaiting_bot"
+    assert out["cause"] == D.PENDING_CAUSE
+    assert out["bullets"] == []
     assert out["recommended_action_id"] == "budget_down"
     assert out["gates"]["confidence"] == 0.91
-    assert all(isinstance(b, str) for b in out["bullets"])
     assert out["artifacts"][0]["source"] == "rule.evidence"
 
 
