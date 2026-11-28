@@ -487,8 +487,26 @@ add_activity = _activity
 # ---------------------------------------------------------------- skills
 
 def list_skills(conn: Connection, bot_id: str) -> list[dict[str, Any]]:
-    return [dict(r) for r in conn.execute(text(
+    lib = skill_library()
+    return [_with_library(dict(r), lib) for r in conn.execute(text(
         "SELECT * FROM bots.skills WHERE bot_id = :b ORDER BY name"), {"b": bot_id}).mappings()]
+
+
+def _same_as_library(name: str, body: str, tools: list[str], lib: dict[str, Any]) -> bool:
+    return (name.strip(), body.strip(), sorted(tools)) == (lib["name"].strip(), lib["body"].strip(), sorted(lib.get("tools") or []))
+
+
+def _with_library(row: dict[str, Any], library: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """D-260: an unedited library skill is the library's current text and tools; an edited one is the bot's own copy,
+    flagged ``library_differs`` when the library has changed since (Settings offers Update)."""
+    lib = library.get(row.get("library") or "")
+    row["library_differs"] = False
+    if lib is None:  # own skill, or its library file was removed: the stored copy
+        return row
+    if not row.get("edited"):
+        return {**row, "name": lib["name"], "body": lib["body"].strip(), "tools": sorted(lib.get("tools") or [])}
+    row["library_differs"] = not _same_as_library(row["name"], row["body"], row.get("tools") or [], lib)
+    return row
 
 
 def save_skill(conn: Connection, bot_id: str, *, name: str, body: str, author: str, enabled: bool = True,
@@ -502,20 +520,28 @@ def save_skill(conn: Connection, bot_id: str, *, name: str, body: str, author: s
     if taken and taken[0] != skill_id:
         raise BotError(f"this bot already has a skill named {name!r}")
     if skill_id:
+        library = conn.execute(text("SELECT library FROM bots.skills WHERE skill_id = :s AND bot_id = :b"),
+                               {"s": skill_id, "b": bot_id}).scalar()
+        lib = skill_library().get(library or "")
+        if lib is not None and tools is None:  # a library skill reads with the library's current tools
+            tools_json = _j(check_tools(list(lib.get("tools") or [])))
+        # D-260: saved with the library's own text (e.g. only switched on/off) it keeps following the library
+        edited = lib is None or not _same_as_library(name, body, json.loads(tools_json or "[]"), lib)
         done = conn.execute(text("""UPDATE bots.skills SET name = :n, body = :body, enabled = :e, author = :a, updated_at = NOW(),
-                                    tools = COALESCE(CAST(:tools AS jsonb), tools)
-                                    WHERE skill_id = :s AND bot_id = :b"""),
-                            {"n": name, "body": body, "e": enabled, "a": author, "s": skill_id, "b": bot_id,
-                             "tools": tools_json}).rowcount
-        if not done:
+                             tools = COALESCE(CAST(:tools AS jsonb), tools), edited = :ed
+                             WHERE skill_id = :s AND bot_id = :b"""),
+                     {"n": name, "body": body, "e": enabled, "a": author, "s": skill_id, "b": bot_id,
+                      "tools": tools_json, "ed": edited})
+        if not done.rowcount:
             raise KeyError(skill_id)
     else:
         skill_id = new_id("skl")
-        conn.execute(text("""INSERT INTO bots.skills(skill_id, bot_id, name, body, enabled, author, tools, library)
-                             VALUES (:s, :b, :n, :body, :e, :a, CAST(:tools AS jsonb), :lib)"""),
+        conn.execute(text("""INSERT INTO bots.skills(skill_id, bot_id, name, body, enabled, author, tools, library, edited)
+                             VALUES (:s, :b, :n, :body, :e, :a, CAST(:tools AS jsonb), :lib, :ed)"""),
                      {"s": skill_id, "b": bot_id, "n": name, "body": body, "e": enabled, "a": author,
-                      "tools": tools_json or "[]", "lib": library})
-    return dict(conn.execute(text("SELECT * FROM bots.skills WHERE skill_id = :s"), {"s": skill_id}).mappings().one())
+                      "tools": tools_json or "[]", "lib": library, "ed": library is None})
+    return _with_library(dict(conn.execute(text("SELECT * FROM bots.skills WHERE skill_id = :s"), {"s": skill_id}).mappings().one()),
+                         skill_library())
 
 
 def delete_skill(conn: Connection, bot_id: str, skill_id: str) -> None:
@@ -523,8 +549,8 @@ def delete_skill(conn: Connection, bot_id: str, skill_id: str) -> None:
 
 
 def add_library_skill(conn: Connection, bot_id: str, key: str, *, author: str) -> dict[str, Any]:
-    """Turn on a library skill for this bot: its body and tools are copied in (then editable per bot). Already there:
-    switched on again, the bot's own edits kept."""
+    """Turn on a library skill for this bot: it follows the library until someone edits it for this bot (D-260).
+    Already there: switched on again, the bot's own edits kept."""
     lib = skill_library().get(key)
     if lib is None:
         raise BotError(f"unknown skill {key!r}")
@@ -532,6 +558,18 @@ def add_library_skill(conn: Connection, bot_id: str, key: str, *, author: str) -
                         {"b": bot_id, "k": key}).scalar()
     if have:
         conn.execute(text("UPDATE bots.skills SET enabled = TRUE, updated_at = NOW() WHERE skill_id = :s"), {"s": have})
-        return dict(conn.execute(text("SELECT * FROM bots.skills WHERE skill_id = :s"), {"s": have}).mappings().one())
+        return _with_library(dict(conn.execute(text("SELECT * FROM bots.skills WHERE skill_id = :s"), {"s": have}).mappings().one()),
+                             skill_library())
     return save_skill(conn, bot_id, name=lib["name"], body=lib["body"], author=author, tools=lib.get("tools") or [],
                       library=key)
+
+
+def reset_skill_to_library(conn: Connection, bot_id: str, skill_id: str, *, author: str) -> dict[str, Any]:
+    """D-260 Update: drop this bot's edits so the skill follows the library again."""
+    done = conn.execute(text("""UPDATE bots.skills SET edited = FALSE, author = :a, updated_at = NOW()
+                                WHERE skill_id = :s AND bot_id = :b AND library IS NOT NULL"""),
+                        {"a": author, "s": skill_id, "b": bot_id}).rowcount
+    if not done:
+        raise KeyError(skill_id)
+    return _with_library(dict(conn.execute(text("SELECT * FROM bots.skills WHERE skill_id = :s"), {"s": skill_id}).mappings().one()),
+                         skill_library())

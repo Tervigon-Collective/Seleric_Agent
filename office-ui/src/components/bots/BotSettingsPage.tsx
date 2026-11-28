@@ -153,6 +153,7 @@ function SkillRow({ name, summary, tools, skill, onToggle }: {
   name: string; summary?: string; tools: string[]; skill?: BotSkill; onToggle: (on: boolean) => void;
 }) {
   const deleteSkill = useBotsStore((s) => s.deleteSkill);
+  const resetSkill = useBotsStore((s) => s.resetSkill);
   const busy = useBotsStore((s) => s.busy);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -164,6 +165,15 @@ function SkillRow({ name, summary, tools, skill, onToggle }: {
         <p className="m-0 font-medium">{name}</p>
         {summary && <p className="m-0 text-muted-foreground">{summary}</p>}
         {tools.length > 0 && <p className="m-0 mt-1 text-xs text-muted-foreground">Reads: {tools.map(humanize).join(", ")}</p>}
+        {skill?.library && skill.edited && (
+          <p className="m-0 mt-1 text-xs text-muted-foreground">
+            {skill.library_differs ? "Edited for this bot. The ready-made version has changed since. " : "Edited for this bot. "}
+            <Button variant="link" size="sm" className="h-auto p-0 text-xs text-brand" disabled={busy}
+              onClick={() => { if (window.confirm(`Replace this bot's edits to “${name}” with the ready-made version?`)) void resetSkill(skill.skill_id); }}>
+              {skill.library_differs ? "Update to the ready-made version" : "Go back to the ready-made version"}
+            </Button>
+          </p>
+        )}
         {skill && !editing && (
           <Button variant="link" size="sm" className="mt-1 h-auto p-0 text-xs text-brand" aria-expanded={open} onClick={() => setOpen(!open)}>
             {open ? "Hide how it works" : "Show how it works"}

@@ -32,6 +32,10 @@ export interface BotSkill {
   updated_at: string;
   tools?: string[];
   library?: string | null;
+  /** D-260: false = follows the library's current text; true = this bot's own copy. */
+  edited?: boolean;
+  /** D-260: edited, and the library has changed since: Settings offers Update. */
+  library_differs?: boolean;
 }
 
 /** D-257 skill library (config/bots/skills): what a bot can be good at, and the read tools that brings. */
@@ -193,6 +197,9 @@ export class BotsApi {
   }
   deleteSkill(id: string, skillId: string): Promise<unknown> {
     return this.http.request(`/v1/bots/${enc(id)}/skills/${enc(skillId)}`, { method: "DELETE" });
+  }
+  resetSkill(id: string, skillId: string): Promise<{ skills: BotSkill[] }> {
+    return this.http.request(`/v1/bots/${enc(id)}/skills/${enc(skillId)}/library`, { method: "POST" });
   }
   skillLibrary(): Promise<{ skills: LibrarySkill[] }> { return this.http.request("/v1/bots/skills/library"); }
   addLibrarySkill(id: string, key: string): Promise<{ skills: BotSkill[] }> {

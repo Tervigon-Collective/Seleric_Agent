@@ -40,6 +40,7 @@ interface BotsStore {
   saveSkill: (skill: Pick<BotSkill, "name" | "body" | "enabled"> & { skill_id?: string }) => Promise<boolean>;
   deleteSkill: (skillId: string) => Promise<void>;
   addLibrarySkill: (key: string) => Promise<void>;
+  resetSkill: (skillId: string) => Promise<void>;
 }
 
 /** The open bot lives in ?bot= so a reload or a shared link opens the same one. */
@@ -194,6 +195,11 @@ export const useBotsStore = create<BotsStore>((set, get) => {
     addLibrarySkill: async (key) => {
       const id = get().selectedId;
       if (id && await attempt(() => botsApi.addLibrarySkill(id, key))) await get().refresh();
+    },
+
+    resetSkill: async (skillId) => {
+      const id = get().selectedId;
+      if (id && await attempt(() => botsApi.resetSkill(id, skillId))) await get().refresh();
     },
   };
 });

@@ -19,7 +19,8 @@
 ``GET    /v1/bots/{id}/memory?bank=bot|shared``  what Hindsight holds (``q``, ``offset``); ``POST`` adds a note
 ``DELETE /v1/bots/{id}/memory/{document_id}``    forget a run's learning or a note, with every fact taken from it
 ``GET    /v1/bots/skills/library``               skills a bot can turn on (config/bots/skills/*.yaml)
-``POST   /v1/bots/{id}/skills/library/{key}``    turn a library skill on for this bot (copied in, editable)
+``POST   /v1/bots/{id}/skills/library/{key}``    turn a library skill on for this bot (follows the library until edited)
+``POST   /v1/bots/{id}/skills/{sid}/library``    drop this bot's edits: the skill follows the library again (D-260)
 ``POST   /v1/bots/{id}/knowledge?name=&shared=`` upload one document (raw body) to Hindsight for this bot or the brand
 ``GET    /v1/bots/{id}/knowledge``               uploaded documents of the bot's and the brand's bank, with status
 ``DELETE /v1/bots/{id}/knowledge/{document_id}?shared=``  remove one from Hindsight
@@ -273,6 +274,16 @@ def add_library_skill(bot_id: str, key: str, who: Principal = Depends(request_pr
         with store.engine().begin() as conn:
             store.get_bot(conn, bot_id)
             store.add_library_skill(conn, bot_id, key, author=who.user_id)
+            return {"skills": store.list_skills(conn, bot_id)}
+    except (store.BotError, KeyError) as exc:
+        raise _bad(exc) from exc
+
+
+@router.post("/{bot_id}/skills/{skill_id}/library")
+def reset_skill(bot_id: str, skill_id: str, who: Principal = Depends(request_principal)) -> dict[str, Any]:
+    try:
+        with store.engine().begin() as conn:
+            store.reset_skill_to_library(conn, bot_id, skill_id, author=who.user_id)
             return {"skills": store.list_skills(conn, bot_id)}
     except (store.BotError, KeyError) as exc:
         raise _bad(exc) from exc

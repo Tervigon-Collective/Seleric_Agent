@@ -315,6 +315,15 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None, is_cance
         state.payloads.append(data)
         return data
 
+    async def search_brand_documents(ctx: RunContext[SelericDeps], query: str, brand_id: str = "") -> dict[str, Any]:
+        """Search documents the team uploaded for a brand (SOPs, briefs, report formats, brand notes) and platform-wide
+        ones; returns matching passages. Use when the question is about how the team works or what a document says.
+        Context only: figures always come from the data tools. brand_id defaults to this deployment's brand."""
+        from seleric_swarm.config.settings import get_settings
+        from seleric_swarm.services.bots import hindsight
+
+        return await hindsight.brand_documents(brand_id.strip() or str(get_settings().default_brand_id), query)
+
     async def escalate(ctx: RunContext[SelericDeps], reason: str) -> str:
         """Ask for deeper reasoning for the rest of this turn. Call once, together with your first data calls, when the question needs real analysis (causes, trade-offs, many moving parts) rather than a lookup. ``reason`` is one sentence."""
         set_loop_effort(LOOP_ESCALATED_EFFORT)
@@ -329,5 +338,7 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None, is_cance
     own = [run_python, show_chart, show_table, audit_entities, business_snapshot, escalate]
     mail = build_email_tools(state, is_cancelled=is_cancelled or (lambda: False), figures=figures or (lambda: list(state.payloads)))
     keep = (lambda fn: True) if only is None else (lambda fn: fn.__name__ in only)
+    # D-260: chat only (bots recall the same banks in their brief); not quotable, a document is never evidence for a figure
+    unquoted = [*mail, search_brand_documents]
     return [*(_tracked(state, fn, raises_effort=fn is diagnosis.diagnose_metric_change) for fn in [*helpers, *own] if keep(fn)),
-            *(_tracked(state, fn, quotable=False) for fn in mail if keep(fn))]
+            *(_tracked(state, fn, quotable=False) for fn in unquoted if keep(fn))]

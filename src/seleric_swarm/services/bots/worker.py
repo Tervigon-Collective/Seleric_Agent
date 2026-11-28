@@ -89,7 +89,8 @@ def brief(bot: dict[str, Any], run: dict[str, Any], history: list[dict[str, Any]
                                      *(m.get("data") or "" for m in run.get("merged") or [])] if d),
         f"Your goal, from the operator (version {bot['instructions_version']}):\n{bot['instructions'].strip()}",
         *([SKILLS_HEAD + "\n\n".join(f"### {k['name']}\n{k['body'].strip()}" for k in skills)] if skills else []),
-        *([("Documents in your knowledge (their matching passages are recalled below; the operator may name them): "
+        *([("Documents in your knowledge (their matching passages are recalled below; open one whole with read_document "
+            "when you need all of it; the operator may name them): "
             + "; ".join(f"{d['name']} ({d['scope']}, id {d['document_id']})" for d in documents))] if documents else []),
         RULES,
         *([SETTINGS_RULE] if gets_settings_tools(run) else []),
@@ -252,7 +253,8 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
             runtime, query=question(run, trig, format_text), mission_id=mission_id, thread_id=thread_of(bot, run),
             owner_user_id=f"bot:{bot['bot_id']}", bot_brief=brief(bot, run, history, recalled, documents),
             extra_tools=tuple(bot["run_tools"]), policy=policy(bot),
-            local_tools=tuple(settings_tools.build(bot["bot_id"], run["run_id"], mem=mem)) if gets_settings_tools(run) else (),
+            local_tools=(*settings_tools.document_tools(bot["bot_id"], run["run_id"], documents, mem=mem),
+                         *(settings_tools.build(bot["bot_id"], run["run_id"], mem=mem) if gets_settings_tools(run) else ())),
         )
         result = dispatched.get("result") or {}
         status = str(result.get("status") or "failed")

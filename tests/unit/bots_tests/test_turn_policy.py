@@ -10,6 +10,7 @@ from seleric_swarm.services.bots import worker
 from seleric_swarm.state.scratchpad import Scratchpad
 
 MAIL = {"draft_mom_email", "draft_ad_hoc_email", "send_email"}
+CHAT_ONLY = {"search_brand_documents"}  # D-260: bots recall the same banks in their brief
 
 
 def _names(tools):
@@ -18,7 +19,7 @@ def _names(tools):
 
 def test_analysis_allowlist_covers_every_non_email_tool():
     every = _names(build_local_tools(TurnState()))
-    assert every - MAIL == ANALYSIS_TOOLS  # a new local tool must be classed here, or bots silently lose it
+    assert every - MAIL - CHAT_ONLY == ANALYSIS_TOOLS  # a new local tool must be classed here, or bots silently lose it
     assert _names(build_local_tools(TurnState(), only=ANALYSIS_TOOLS)) == ANALYSIS_TOOLS
 
 
