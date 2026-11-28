@@ -19,7 +19,16 @@ from uuid import uuid4
 
 from sqlalchemy import text
 
-from seleric_swarm.services.bots import delivery, eda, hindsight, report, schedule, store
+from seleric_swarm.services.bots import (
+    delivery,
+    eda,
+    hindsight,
+    report,
+    schedule,
+    settings_tools,
+    store,
+)
+from seleric_swarm.services.bots.settings_tools import gets_settings_tools
 
 _log = logging.getLogger("seleric.bots")
 
@@ -29,9 +38,15 @@ OUTCOMES = ("action_needed", "no_action", "cleared", "unverified")
 TARGET_KEYS = ("object_id", "campaign_id", "adset_id", "ad_id", "account_id", "customer_id", "brand_id")
 CHAT_HISTORY_RUNS = 4
 WEBHOOK_SHOWN = 4000  # characters of the webhook body the brief shows
-SKILLS_HEAD = "Skills the operator wrote for you (use the one that fits the task):\n"
-RULES = ("Rules for bots in this phase: you are read-only. Never say you changed anything. If a change is warranted, "
-         "propose it: entity, current value, proposed value, reason. A person approves every change.")
+SKILLS_HEAD = "Your skills (how to do the work; use the ones that fit the task):\n"
+RULES = ("Rules for bots in this phase: you are read-only for ads and data. Never say you changed an ad, campaign or "
+         "budget. If a change is warranted, propose it: entity, current value, proposed value, reason. A person "
+         "approves every change.")
+SETTINGS_RULE = ("The operator is talking to you now. When they ask you to do something at set times (a report, a "
+                 "check) or to change your goal, do it yourself with your settings tools (bot_settings, save_schedule, "
+                 "pause_schedule, delete_schedule, set_goal), then say exactly what you changed. Only change your "
+                 "settings when they ask.")
+FORMAT_DOC_CHARS = 8000
 OUTCOME_RULE = (
     "End your answer with one last line in exactly this form: OUTCOME: <action_needed | no_action | cleared | "
     "unverified> — <one-line reason>. action_needed: the data you read shows something a person should act on. "
@@ -63,7 +78,8 @@ def _webhook_data(data: str) -> str:
             f"<webhook_data>\n{data[:WEBHOOK_SHOWN]}\n</webhook_data>")
 
 
-def brief(bot: dict[str, Any], run: dict[str, Any], history: list[dict[str, Any]], recalled: list[dict[str, str]] | None = None) -> str:
+def brief(bot: dict[str, Any], run: dict[str, Any], history: list[dict[str, Any]], recalled: list[dict[str, str]] | None = None,
+          documents: list[dict[str, str]] | None = None) -> str:
     skills = [k for k in bot.get("skills") or [] if k["enabled"]]
     parts = [
         f'You are running as the Seleric bot "{bot["name"]}" ({bot["role"] or bot["template"]}) for brand {bot["brand_id"]}.',
@@ -71,9 +87,12 @@ def brief(bot: dict[str, Any], run: dict[str, Any], history: list[dict[str, Any]
         *(f"Also arrived while this run waited: {m['kind']} — {m['reason']}." for m in run.get("merged") or []),
         *(_webhook_data(d) for d in [run["query"] if run["trigger_kind"] == "webhook" else "",
                                      *(m.get("data") or "" for m in run.get("merged") or [])] if d),
-        f"Standing instructions from the operator (version {bot['instructions_version']}):\n{bot['instructions'].strip()}",
+        f"Your goal, from the operator (version {bot['instructions_version']}):\n{bot['instructions'].strip()}",
         *([SKILLS_HEAD + "\n\n".join(f"### {k['name']}\n{k['body'].strip()}" for k in skills)] if skills else []),
+        *([("Documents in your knowledge (their matching passages are recalled below; the operator may name them): "
+            + "; ".join(f"{d['name']} ({d['scope']}, id {d['document_id']})" for d in documents))] if documents else []),
         RULES,
+        *([SETTINGS_RULE] if gets_settings_tools(run) else []),
         OUTCOME_RULE,
     ]
     if recalled:
@@ -84,15 +103,26 @@ def brief(bot: dict[str, Any], run: dict[str, Any], history: list[dict[str, Any]
     return "\n\n".join(parts)
 
 
-def question(run: dict[str, Any]) -> str:
-    """What the run is asked: the operator's own words, or the standing task with the answer layout."""
-    asked = task(run)
-    return asked if run["trigger_kind"] in ("chat", "manual") and run["query"].strip() else f"{asked}\n\n{ANSWER_FORMAT}"
+def question(run: dict[str, Any], trigger: dict[str, Any] | None = None, format_text: str = "") -> str:
+    """What the run is asked: the operator's own words, or the standing task with the answer layout. D-257: a schedule
+    with a format document is laid out like that document instead."""
+    asked = task(run, trigger)
+    if run["trigger_kind"] in ("chat", "manual") and run["query"].strip():
+        return asked
+    if format_text:
+        name = ((trigger or {}).get("config") or {}).get("format_doc", {}).get("name", "format")
+        return (f"{asked}\n\nLay the answer out like this document (its headings, sections, order and tables; fill it "
+                f"with this run's figures; it is the email body):\n{hindsight.document_data(name, format_text)}\n\n"
+                "No intro, no sign-off; then the OUTCOME line.")
+    return f"{asked}\n\n{ANSWER_FORMAT}"
 
 
-def task(run: dict[str, Any]) -> str:
+def task(run: dict[str, Any], trigger: dict[str, Any] | None = None) -> str:
     if run["trigger_kind"] in ("chat", "manual") and run["query"].strip():
         return run["query"].strip()
+    scheduled = ((trigger or {}).get("config") or {}).get("task") if run["trigger_kind"] == "cron" else None
+    if scheduled:
+        return f"Your schedule \"{trigger['config'].get('title') or 'scheduled task'}\" is due. Do this now: {scheduled}"
     if run["trigger_kind"] == "watch":
         return ("A watched value changed (see why above). Confirm it on live data with the same tool and arguments shown "
                 "there (they are what the watch checks), or fetch the changed item by its id; say what it means for the "
@@ -109,7 +139,7 @@ def skipped_eda(bot: dict[str, Any], run: dict[str, Any], calls: list[dict[str, 
     """A standing-task run (what question() treats as one: not chat, not a manual run with its own question) of a bot
     that has the EDA tool, which never got a completed EDA."""
     standing = run["trigger_kind"] != "chat" and not (run["trigger_kind"] == "manual" and str(run.get("query") or "").strip())
-    return (eda.TOOL in bot["tools"] and standing
+    return (eda.TOOL in bot["run_tools"] and standing
             and not any(c["tool"] == eda.TOOL and c["outcome"] == "completed" for c in calls))
 
 
@@ -205,18 +235,24 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
         history = [h for h in store.list_runs(conn, bot["bot_id"], kind="chat", limit=CHAT_HISTORY_RUNS + 1)
                    if h["run_id"] != run["run_id"] and h["status"] in ("completed", "partial")][:CHAT_HISTORY_RUNS]
         history = history if run["trigger_kind"] == "chat" else []
+        trig = store.get_trigger(conn, run.get("trigger_id"))  # D-257: a schedule's task / format / recipients, as now
     mission_id = f"MS3-{uuid4().hex[:10]}"
     status, answer, error, steps = "failed", "", None, []
     mem = hindsight.memory()
-    recalled, recall_rows = await _recall(mem, bot, run)
+    recalled, recall_rows = await _recall(mem, bot, run, trig)
+    documents = await settings_tools.knowledge(mem, bot)
+    format_text, format_row = await _format_doc(mem, bot, trig)
+    if format_row:
+        recall_rows.append(format_row)
     with engine.begin() as conn:  # before the run, so the sidebar shows it first
         for row in recall_rows:
             store.add_activity(conn, run["run_id"], bot["bot_id"], kind="memory", **row)
     try:
         dispatched = await run_v3_mission(
-            runtime, query=question(run), mission_id=mission_id, thread_id=thread_of(bot, run),
-            owner_user_id=f"bot:{bot['bot_id']}", bot_brief=brief(bot, run, history, recalled), extra_tools=tuple(bot["tools"]),
-            policy=policy(bot),
+            runtime, query=question(run, trig, format_text), mission_id=mission_id, thread_id=thread_of(bot, run),
+            owner_user_id=f"bot:{bot['bot_id']}", bot_brief=brief(bot, run, history, recalled, documents),
+            extra_tools=tuple(bot["run_tools"]), policy=policy(bot),
+            local_tools=tuple(settings_tools.build(bot["bot_id"], run["run_id"], mem=mem)) if gets_settings_tools(run) else (),
         )
         result = dispatched.get("result") or {}
         status = str(result.get("status") or "failed")
@@ -261,7 +297,7 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
                          mission_id=mission_id, instructions_version=bot["instructions_version"], tool_calls=len(calls),
                          report=run_report)
     try:
-        sent = await delivery.deliver(bot, run, outcome, why, answer, previous)
+        sent = await delivery.deliver(bot, run, outcome, why, answer, previous, trig)
     except Exception:
         _log.warning("bot_delivery_failed run=%s", run["run_id"], exc_info=True)
         sent = [{"tool": "notification_center", "outcome": "failed", "summary": "Delivery failed (see worker log)"}]
@@ -271,12 +307,34 @@ async def execute(runtime: Any, run: dict[str, Any]) -> None:
                 store.add_activity(conn, run["run_id"], bot["bot_id"], kind="delivery", **row)
 
 
-async def _recall(mem: hindsight.Memory | None, bot: dict[str, Any], run: dict[str, Any]) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
+async def _format_doc(mem: hindsight.Memory | None, bot: dict[str, Any], trig: dict[str, Any] | None) -> tuple[str, dict[str, Any] | None]:
+    """A schedule's format document, whole (capped). Best-effort like recall: missing, the run uses the usual layout
+    and the timeline says so. Only from this bot's or its brand's shared bank."""
+    doc = ((trig or {}).get("config") or {}).get("format_doc")
+    if not doc or mem is None:
+        return "", None
+    row = {"tool": "format_document", "target": doc.get("name"), "detail": doc}
+    if doc.get("bank") not in (mem.bot_bank(bot), mem.shared_bank(bot)):
+        return "", {**row, "outcome": "denied", "summary": "Format document is not in this bot's knowledge; usual layout used."}
+    try:
+        found = await mem.get_document(doc["bank"], doc["document_id"])
+    except Exception as exc:
+        found, err = None, type(exc).__name__
+    else:
+        err = "deleted" if found is None else ""
+    text_ = str((found or {}).get("original_text") or "").strip()
+    if not text_:
+        return "", {**row, "outcome": "failed", "summary": f"Format document not readable ({err or 'no text'}); usual layout used."}
+    return text_[:FORMAT_DOC_CHARS], {**row, "outcome": "completed", "summary": f"Laid out like {doc.get('name')}"}
+
+
+async def _recall(mem: hindsight.Memory | None, bot: dict[str, Any], run: dict[str, Any],
+                  trig: dict[str, Any] | None = None) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
     """Best-effort: a Hindsight failure is one 'failed' memory row in the sidebar, never a failed or unverified run."""
     if mem is None:
         return [], []
     try:
-        items, error = await mem.recall(bot, f"{run['reason']}\n{task(run)}")
+        items, error = await mem.recall(bot, f"{run['reason']}\n{task(run, trig)}")
     except Exception as exc:
         items, error = [], f"{type(exc).__name__}: {exc}"
     row = {"tool": "memory_recall", "target": mem.bot_bank(bot), "outcome": "failed" if error and not items else "completed",

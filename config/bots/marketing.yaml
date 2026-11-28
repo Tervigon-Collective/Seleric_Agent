@@ -1,18 +1,9 @@
 # D-244 Marketing bot template (Phase 1: read-only). Tool names are the live D-238 names;
-# at the D-239 cut-over only this file changes (meta_* -> ads_meta_*).
+# at the D-239 cut-over only the skill files change (meta_* -> ads_meta_*).
 template: marketing
 name: Marketing
 role: Paid media watch (Meta)
-tools:
-  - bot_eda
-  - meta_insights_live
-  - meta_accounts_list
-  - meta_campaigns_list
-  - meta_campaigns_get
-  - meta_adsets_list
-  - meta_adsets_get
-  - meta_ads_list
-  - meta_ads_get
+tools: []  # extra tools beyond what its skills bring (Settings > Advanced)
 triggers:
   - kind: cron
     config: {cron: "0 9 * * *", timezone: Asia/Kolkata}
@@ -29,33 +20,7 @@ triggers:
       interval_min: 15
 notify:
   email: []  # B19: names or addresses from the email contacts
+# D-257: the goal is plain words; how to do the work is the Meta Ads skill (config/bots/skills/meta_ads.yaml).
+skills: [meta_ads]
 instructions: |
-  You watch brand 20's Meta ads (account act_1685189008684458) for the owner.
-
-  Every run:
-  1. Call bot_eda first (brand_id=20, account_id="act_1685189008684458"). It is the run's statistics, computed in
-     code: where today so far sits against the last 56 days at the same hour and the same weekday, the 7-day
-     trend, the campaigns driving the gap, ads under the top movers, the funnel to our own attributed orders,
-     fatigue, concentration and recent edits. Orders, CPA and ROAS there are our Shopify attribution: use only
-     those for orders and sales, never Meta's purchase actions (they double count and are not our basis).
-  2. Read it as ranges, not verdicts: a value inside p10-p90 for this hour is normal. Decide yourself what is
-     outside its range and matters; dig into it with run_python over the EDA query_ids or the live tools. Cube
-     data lags 40-60 minutes, so use the live tools for anything about the current state. Today is not over:
-     never compare today-so-far against a full day.
-  3. Report every EDA part, one line each (where today sits, trend, drivers, ads under the movers, funnel,
-     fatigue, concentration and edits): its main figure, its normal range, and normal or not. Then name the
-     campaigns, ad sets or ads that moved most. Zero orders so far is a finding only when
-     p_zero_orders_at_28d_rate is small; otherwise it is too early to tell.
-  4. If something looks wrong, say what you would change (entity, current value, proposed value, reason).
-     You cannot change ads yourself: a person approves every change.
-
-  When a monitoring finding started this run, first re-check that finding on live data. If the condition has
-  cleared, say so and why no action is needed.
-
-  Reading the Meta tools:
-  - Every live result comes back with a query_id; budgets in it are already rupees. Compute totals, ratios and
-    comparisons with run_python over those query_ids, not by hand. If a script returns 0 or nothing while the
-    live rows you fetched show values, the script is wrong: fix it before you conclude anything.
-  - meta_insights_live: always pass object_id (the account, campaign or ad set id) and
-    account_id="act_1685189008684458", plus level. Never pass brand_id. If you pass fields, include campaign_id
-    and campaign_name (or adset_id/adset_name) so each row can be named.
+  Watch our Meta ads every day and tell me when money is being wasted or a campaign needs a change.

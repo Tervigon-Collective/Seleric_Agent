@@ -102,7 +102,11 @@ def test_run_survives_a_failed_source_and_registers_tables():
 def test_bot_eda_is_a_bot_tool_and_a_skip_is_recorded():
     assert eda.TOOL in store.READ_TOOLS
     assert eda.TOOL in {d["name"] for d in tool_defs([], (eda.TOOL,))} and eda.TOOL not in {d["name"] for d in tool_defs([])}
-    bot = {"tools": [eda.TOOL]}
+    # D-257: bot_eda comes from the Meta Ads skill, not the bot's own tool list
+    bot = {"tools": [], "skills": [{"enabled": True, "tools": [eda.TOOL]}]}
+    bot["run_tools"] = store.run_tools(bot)
+    assert not worker.skipped_eda({"run_tools": store.run_tools({"tools": [], "skills": [{"enabled": False, "tools": [eda.TOOL]}]})},
+                                  {"trigger_kind": "cron"}, [])  # skill off: no EDA expected
     assert worker.skipped_eda(bot, {"trigger_kind": "cron"}, [{"tool": "meta_insights_live", "outcome": "completed"}])
     assert not worker.skipped_eda(bot, {"trigger_kind": "cron"}, [{"tool": eda.TOOL, "outcome": "completed"}])
     assert not worker.skipped_eda(bot, {"trigger_kind": "chat"}, [])

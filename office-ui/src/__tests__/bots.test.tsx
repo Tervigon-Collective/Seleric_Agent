@@ -81,7 +81,8 @@ describe("activity timeline", () => {
     expect(triggerText({ ...bot.triggers![0], kind: "watch", config: { tool: "meta_campaigns_list", fields: ["effective_status"], interval_min: 15 } }))
       .toBe("When meta campaigns list changes: effective status · checked every 15 min");
     expect(triggerText({ ...bot.triggers![0], kind: "webhook", config: {} })).toBe("When another system calls its webhook");
-    expect(cronText("30 7 * * 1", "UTC")).toBe("Schedule 30 7 * * 1 (UTC)");
+    expect(cronText("30 7 * * 1", "UTC")).toBe("Every Monday at 07:30 (UTC)");
+    expect(cronText("*/15 * * * *", "UTC")).toBe("Schedule */15 * * * * (UTC)");
   });
 
   it("splits the verdict off even when the fact-check note follows it", () => {
@@ -249,8 +250,14 @@ describe("bots page", () => {
     expect(useBotsStore.getState().selectedId).toBe("bot_2");
 
     await act(async () => { button("Bot settings").click(); });
+    expect(location.search).toContain("settings=goal");
+    expect(container.textContent).toContain("What this bot is for, in your words.");
+    await act(async () => { [...container.querySelectorAll("nav button")].find((b) => b.textContent?.startsWith("Advanced"))!.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+    expect(location.search).toContain("settings=advanced");
     await act(async () => { button("Delete bot").click(); });
+    await settle();
     expect(remove).toHaveBeenCalledWith("bot_2");
+    expect(location.search).not.toContain("settings");
     expect(useBotsStore.getState().bots.map((b) => b.bot_id)).toEqual(["bot_1", "bot_3"]);
     expect(useBotsStore.getState().selectedId).toBe("bot_3");
     expect(location.search).toContain("bot=bot_3");

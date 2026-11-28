@@ -6,7 +6,8 @@ B20 rule, evaluated once per run: a scheduled (cron) run always reports (daily s
 
 A run that reports gets one ``delivery`` activity row (``tool = notification_center``); the Notification Center reads
 those rows, so the rule lives here only. Email goes to the bot's own recipient list (B19). The operator chose those
-recipients when configuring the bot, which is the approval for these summaries; the send itself goes through the
+recipients when configuring the bot, which is the approval for these summaries (D-257: a schedule may name its own
+recipients, chosen the same way); the send itself goes through the
 existing MailService (one sender wins, status recorded).
 """
 
@@ -72,9 +73,16 @@ def subject(bot: dict[str, Any], outcome: str | None, why: str) -> str:
     return f"[Seleric bot] {bot['name']}: {verdict}" + (f" — {why[:120]}" if why else "")
 
 
-async def email(bot: dict[str, Any], run: dict[str, Any], outcome: str | None, why: str, answer: str) -> dict[str, Any] | None:
-    """Send the run to the bot's recipients; the activity row describing what happened (None: nobody to send to)."""
-    refs = list((bot.get("notify") or {}).get("email") or [])
+def recipients(bot: dict[str, Any], trigger: dict[str, Any] | None) -> list[str]:
+    """The schedule's own recipients when it has them, else the bot's."""
+    own = ((trigger or {}).get("config") or {}).get("email") if (trigger or {}).get("kind") == "cron" else None
+    return list(own or (bot.get("notify") or {}).get("email") or [])
+
+
+async def email(bot: dict[str, Any], run: dict[str, Any], outcome: str | None, why: str, answer: str,
+                trigger: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Send the run to its recipients; the activity row describing what happened (None: nobody to send to)."""
+    refs = recipients(bot, trigger)
     if not refs:
         return None
     mail = get_mail_runtime()
@@ -91,7 +99,9 @@ async def email(bot: dict[str, Any], run: dict[str, Any], outcome: str | None, w
         return {"tool": "email", "outcome": "failed", "summary": "None of the bot's email recipients resolve any more."}
     footer = f"Started by: {run['trigger_kind']} — {run['reason'][:300]}\n\nSent by the Seleric bot \"{bot['name']}\" (read-only)."
     body, found = tables(f"{_body(answer) or why}\n\n{footer}")
-    rendered = render_ad_hoc(AdHoc(subject=subject(bot, outcome, why), body=body, tables=found))
+    title = ((trigger or {}).get("config") or {}).get("title")  # a schedule's report is named by its schedule
+    rendered = render_ad_hoc(AdHoc(subject=f"[Seleric bot] {bot['name']}: {title}" if title else subject(bot, outcome, why),
+                                   body=body, tables=found))
     draft = Draft(sender=mail.sender, to=tuple(to), subject=rendered.subject, html=rendered.html, text=rendered.text)
     try:
         rec = mail.service.create(draft, meta={"bot_id": bot["bot_id"], "bot_run_id": run["run_id"]}, run_id=run["run_id"])
@@ -106,12 +116,12 @@ async def email(bot: dict[str, Any], run: dict[str, Any], outcome: str | None, w
 
 
 async def deliver(bot: dict[str, Any], run: dict[str, Any], outcome: str | None, why: str, answer: str,
-                  previous_outcome: str | None) -> list[dict[str, Any]]:
+                  previous_outcome: str | None, trigger: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Activity rows (kind ``delivery``) for this run: none when the B20 rule keeps it on the Bots page."""
     reason = why_notify(run["trigger_kind"], outcome, previous_outcome)
     if reason is None:
         return []
     rows = [{"tool": "notification_center", "outcome": "completed", "decision": outcome,
              "summary": f"{subject(bot, outcome, why)} ({reason})", "detail": {"reason": reason}}]
-    sent = await email(bot, run, outcome, why, answer)
+    sent = await email(bot, run, outcome, why, answer, trigger)
     return rows + ([sent] if sent else [])

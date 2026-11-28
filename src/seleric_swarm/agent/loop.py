@@ -49,7 +49,7 @@ from seleric_swarm.agent.grounding import (
     quoted_figures,
     unverified_note,
 )
-from seleric_swarm.agent.local_tools import build_local_tools
+from seleric_swarm.agent.local_tools import _tracked, build_local_tools
 from seleric_swarm.agent.mcp_toolset import TurnState, build_mcp_tools
 from seleric_swarm.agent.model import begin_loop_effort, loop_effort
 from seleric_swarm.agent.model_health import LIVE_STREAM, StreamStalled
@@ -272,6 +272,7 @@ async def run_turn(
     workspace_notes: str = "",
     bot_brief: str = "",
     policy: TurnPolicy | None = None,
+    local_tools: tuple[Any, ...] = (),
     is_cancelled: Callable[[], bool] = lambda: False,
     snapshot_loader: Any = None,
     on_stream: Callable[[str, str], None] | None = None,
@@ -300,7 +301,8 @@ async def run_turn(
 
     tools = [*build_mcp_tools(gateway, tool_defs, state),
              *build_local_tools(state, snapshot_loader=snapshot_loader, is_cancelled=is_cancelled, figures=email_figures,
-                               only=policy.local_tools)]
+                               only=policy.local_tools),
+             *(_tracked(state, fn, quotable=False) for fn in local_tools)]  # a caller's own tools (bots: its settings), outside the allowlist
     llm_calls: list[dict[str, Any]] = []
     agent: Agent[SelericDeps, str] = Agent(
         model=_TimedModel(model, llm_calls, turn_started=started, timing=timing),

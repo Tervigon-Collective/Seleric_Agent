@@ -1,0 +1,20 @@
+# D-257 skill library (see meta_ads.yaml). Read-only Google Ads tools.
+key: google_ads
+name: Google Ads
+summary: Reads Google Ads campaigns live and runs read-only Google Ads queries (GAQL).
+tools:
+  - google_campaigns_list
+  - google_campaigns_get
+  - google_query_gaql
+body: |
+  Google Ads work for this brand.
+
+  - Start with google_campaigns_list to see the brand's campaigns, their status and budgets; use
+    google_campaigns_get for one campaign's detail.
+  - For spend, clicks, conversions and other figures by day or by campaign, use google_query_gaql with a
+    read-only GAQL query over the dates you need. Every result comes back with a query_id: compute totals, ratios
+    and comparisons with run_python over those query_ids, not by hand.
+  - Orders and sales: prefer our own attributed orders (the metrics catalogue) over Google's conversions, and
+    say which one you used.
+  - Today is not over: compare the same hours of earlier days, never today-so-far against a full day.
+  - If something looks wrong, say what you would change (campaign, current value, proposed value, reason).

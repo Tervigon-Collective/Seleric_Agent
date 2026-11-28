@@ -445,6 +445,7 @@ async def run_v3_mission(
     bot_brief: str = "",
     extra_tools: tuple[str, ...] = (),
     policy: Any = None,
+    local_tools: tuple[Any, ...] = (),
     **_ignored: Any,
 ) -> dict[str, Any]:
     """Execute the reasoning loop and persist for conversations + Office UI.
@@ -539,6 +540,7 @@ async def run_v3_mission(
                     workspace_notes=workspace_notes,
                     bot_brief=bot_brief,
                     **({"policy": policy} if policy is not None else {}),
+                    local_tools=local_tools,
                     is_cancelled=lambda: is_cancel_requested(mission_id, runtime),
                     snapshot_loader=_snapshot_loader(runtime),
                     on_stream=on_stream,

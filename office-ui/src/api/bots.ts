@@ -11,6 +11,9 @@ export interface BotTrigger {
   config: {
     cron?: string; timezone?: string; detector_prefix?: string; severities?: string[];
     tool?: string; args?: Record<string, unknown>; fields?: string[]; interval_min?: number;
+    /** D-257 schedules: what to do, in plain words; its email layout; its own recipients. */
+    title?: string; task?: string; email?: string[];
+    format_doc?: { bank: string; document_id: string; name: string };
   };
   enabled: boolean;
   next_run_at: string | null;
@@ -27,6 +30,22 @@ export interface BotSkill {
   enabled: boolean;
   author: string;
   updated_at: string;
+  tools?: string[];
+  library?: string | null;
+}
+
+/** D-257 skill library (config/bots/skills): what a bot can be good at, and the read tools that brings. */
+export interface LibrarySkill { key: string; name: string; summary: string; tools: string[]; body: string }
+
+/** D-257: a document uploaded to the bot's (or the brand's shared) Hindsight bank. */
+export interface KnowledgeDoc {
+  document_id: string;
+  name: string;
+  scope: MemoryBank;
+  bank: string;
+  status: "ready" | "processing" | "failed";
+  updated_at: string | null;
+  error: string | null;
 }
 
 export interface MemoryItem {
@@ -67,6 +86,8 @@ export interface Bot {
   updated_by: string;
   triggers?: BotTrigger[];
   skills?: BotSkill[];
+  /** The bot's own tools plus its enabled skills' tools: what a run may call. */
+  run_tools?: string[];
   next_run_at?: string | null;
   last_run?: BotRunSummary | null;
 }
@@ -147,6 +168,9 @@ export class BotsApi {
   setTrigger(id: string, triggerId: string, enabled: boolean): Promise<unknown> {
     return this.http.request(`/v1/bots/${enc(id)}/triggers/${enc(triggerId)}`, json("PATCH", { enabled }));
   }
+  editTrigger(id: string, triggerId: string, config: BotTrigger["config"]): Promise<{ triggers: BotTrigger[] }> {
+    return this.http.request(`/v1/bots/${enc(id)}/triggers/${enc(triggerId)}`, json("PATCH", { config }));
+  }
   deleteTrigger(id: string, triggerId: string): Promise<unknown> {
     return this.http.request(`/v1/bots/${enc(id)}/triggers/${enc(triggerId)}`, { method: "DELETE" });
   }
@@ -166,6 +190,22 @@ export class BotsApi {
   }
   deleteSkill(id: string, skillId: string): Promise<unknown> {
     return this.http.request(`/v1/bots/${enc(id)}/skills/${enc(skillId)}`, { method: "DELETE" });
+  }
+  skillLibrary(): Promise<{ skills: LibrarySkill[] }> { return this.http.request("/v1/bots/skills/library"); }
+  addLibrarySkill(id: string, key: string): Promise<{ skills: BotSkill[] }> {
+    return this.http.request(`/v1/bots/${enc(id)}/skills/library/${enc(key)}`, { method: "POST" });
+  }
+  knowledge(id: string): Promise<{ documents: KnowledgeDoc[]; storage: string; max_mb: number; types: string[] }> {
+    return this.http.request(`/v1/bots/${enc(id)}/knowledge`);
+  }
+  /** One file per request, sent as the raw body (the server takes no multipart). */
+  upload(id: string, file: File, shared: boolean): Promise<{ document_id: string; name: string; status: string }> {
+    return this.http.request(`/v1/bots/${enc(id)}/knowledge?name=${enc(file.name)}&shared=${shared}`, {
+      method: "POST", body: file, headers: { "Content-Type": file.type || "application/octet-stream" },
+    });
+  }
+  removeDocument(id: string, documentId: string, shared: boolean): Promise<unknown> {
+    return this.http.request(`/v1/bots/${enc(id)}/knowledge/${enc(documentId)}?shared=${shared}`, { method: "DELETE" });
   }
   memory(id: string, bank: MemoryBank, q = ""): Promise<{ bank: string; items: MemoryItem[]; total: number }> {
     return this.http.request(`/v1/bots/${enc(id)}/memory?bank=${bank}${q ? `&q=${enc(q)}` : ""}`);

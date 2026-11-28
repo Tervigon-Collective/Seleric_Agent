@@ -32,11 +32,13 @@ interface BotsStore {
   save: (changes: BotChanges) => Promise<boolean>;
   addTrigger: (kind: TriggerKind, config: BotTrigger["config"]) => Promise<boolean>;
   setTrigger: (triggerId: string, enabled: boolean) => Promise<void>;
+  editTrigger: (triggerId: string, config: BotTrigger["config"]) => Promise<boolean>;
   deleteTrigger: (triggerId: string) => Promise<void>;
   runNow: (message?: string) => Promise<void>;
   ask: (message: string) => Promise<void>;
   saveSkill: (skill: Pick<BotSkill, "name" | "body" | "enabled"> & { skill_id?: string }) => Promise<boolean>;
   deleteSkill: (skillId: string) => Promise<void>;
+  addLibrarySkill: (key: string) => Promise<void>;
 }
 
 /** The open bot lives in ?bot= so a reload or a shared link opens the same one. */
@@ -149,6 +151,13 @@ export const useBotsStore = create<BotsStore>((set, get) => {
       if (id && await attempt(() => botsApi.setTrigger(id, triggerId, enabled))) await get().refresh();
     },
 
+    editTrigger: async (triggerId, config) => {
+      const id = get().selectedId;
+      const ok = !!id && await attempt(() => botsApi.editTrigger(id, triggerId, config));
+      if (ok) await get().refresh();
+      return ok;
+    },
+
     deleteTrigger: async (triggerId) => {
       const id = get().selectedId;
       if (id && await attempt(() => botsApi.deleteTrigger(id, triggerId))) await get().refresh();
@@ -174,6 +183,11 @@ export const useBotsStore = create<BotsStore>((set, get) => {
     deleteSkill: async (skillId) => {
       const id = get().selectedId;
       if (id && await attempt(() => botsApi.deleteSkill(id, skillId))) await get().refresh();
+    },
+
+    addLibrarySkill: async (key) => {
+      const id = get().selectedId;
+      if (id && await attempt(() => botsApi.addLibrarySkill(id, key))) await get().refresh();
     },
   };
 });

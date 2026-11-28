@@ -1,4 +1,4 @@
-"""Postgres access for Bots (schema ``bots``, migrations 022-023): registry, triggers, runs, activity, skills."""
+"""Postgres access for Bots (schema ``bots``, migrations 022-025): registry, triggers, runs, activity, skills."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from seleric_swarm.protocols.mcp.servers.seleric_remote import ADS_READ_TOOLS
 from seleric_swarm.services.bots import eda
 
 TEMPLATES_DIR = Path("config/bots")  # relative to the working dir, like config/live_monitor.yaml (/app in the image)
+SKILLS_DIR = TEMPLATES_DIR / "skills"  # D-257 skill library: what a skill knows how to do + the read tools it needs
 
 # Phase 1 is read-only: a bot may only add these Seleric MCP tools to the agent's base (catalogue/metrics) set.
 # Write tools reach bots in Phase 3, through per-bot D-239 keys, never through this list.
@@ -28,6 +29,7 @@ TRIGGER_KINDS = ("cron", "signal", "watch", "webhook")
 AUTO_KINDS = ("cron", "signal", "watch", "webhook")
 WATCH_MIN_INTERVAL = 5  # minutes; live-monitor-cron already reads the same account every 5
 MAX_NOTIFY = 20
+MAX_TASK_CHARS = 2000  # a schedule's "what to do", in plain words
 DEFAULT_LIMITS: dict[str, int] = {"max_scheduled_runs_per_day": 24, "max_tool_calls": 40, "max_pending_proposals": 5}
 
 
@@ -62,6 +64,14 @@ def templates() -> dict[str, dict[str, Any]]:
     return out
 
 
+def skill_library() -> dict[str, dict[str, Any]]:
+    out = {}
+    for path in sorted(SKILLS_DIR.glob("*.yaml")):
+        doc = yaml.safe_load(path.read_text()) or {}
+        out[doc["key"]] = doc
+    return out
+
+
 def check_tools(tools: list[str]) -> list[str]:
     bad = sorted(set(tools) - READ_TOOLS)
     if bad:
@@ -81,7 +91,8 @@ def check_trigger(kind: str, config: dict[str, Any]) -> dict[str, Any]:
             next_cron(str(config.get("cron") or ""), str(config.get("timezone") or "Asia/Kolkata"))
         except Exception as exc:  # croniter / zoneinfo raise several types
             raise BotError(f"invalid cron schedule: {exc}") from exc
-        return {"cron": str(config["cron"]).strip(), "timezone": str(config.get("timezone") or "Asia/Kolkata")}
+        return {"cron": str(config["cron"]).strip(), "timezone": str(config.get("timezone") or "Asia/Kolkata"),
+                **check_schedule(config)}
     if kind == "webhook":
         return {}
     if kind == "watch":
@@ -102,6 +113,27 @@ def check_trigger(kind: str, config: dict[str, Any]) -> dict[str, Any]:
     if not prefix or not sev:
         raise BotError("signal trigger needs detector_prefix and at least one severity")
     return {"detector_prefix": prefix, "severities": sev}
+
+
+def check_schedule(config: dict[str, Any]) -> dict[str, Any]:
+    """D-257: what a schedule does besides its time. All optional; a cron with no task does the bot's goal."""
+    out: dict[str, Any] = {}
+    title, task = str(config.get("title") or "").strip(), str(config.get("task") or "").strip()
+    if title:
+        out["title"] = title[:120]
+    if task:
+        if len(task) > MAX_TASK_CHARS:
+            raise BotError(f"a schedule's task is at most {MAX_TASK_CHARS} characters")
+        out["task"] = task
+    doc = config.get("format_doc")
+    if doc:
+        if not isinstance(doc, dict) or not all(str(doc.get(k) or "").strip() for k in ("bank", "document_id")):
+            raise BotError("format_doc needs bank and document_id")
+        out["format_doc"] = {"bank": str(doc["bank"]), "document_id": str(doc["document_id"]),
+                             "name": str(doc.get("name") or doc["document_id"])[:200]}
+    if config.get("email"):
+        out["email"] = check_notify({"email": list(config["email"])})["email"]
+    return out
 
 
 def check_notify(notify: dict[str, Any]) -> dict[str, Any]:
@@ -146,7 +178,13 @@ def get_bot(conn: Connection, bot_id: str) -> dict[str, Any]:
     bot["limits"] = {**DEFAULT_LIMITS, **(bot.get("limits") or {})}
     bot["triggers"] = list_triggers(conn, bot_id)
     bot["skills"] = list_skills(conn, bot_id)
+    bot["run_tools"] = run_tools(bot)
     return bot
+
+
+def run_tools(bot: dict[str, Any]) -> list[str]:
+    """What a run may call: the bot's extra tools plus the tools of its enabled skills (D-257)."""
+    return sorted({*(bot.get("tools") or []), *(t for k in bot.get("skills") or [] if k["enabled"] for t in k.get("tools") or [])})
 
 
 def create_bot(conn: Connection, *, template: str, actor: str, name: str | None = None, brand_id: int = 20) -> dict[str, Any]:
@@ -165,8 +203,11 @@ def create_bot(conn: Connection, *, template: str, actor: str, name: str | None 
                  {"b": bot_id, "body": tpl.get("instructions", ""), "a": actor})
     for trig in tpl.get("triggers") or []:
         add_trigger(conn, bot_id, kind=trig["kind"], config=trig.get("config") or {}, enabled=trig.get("enabled", True))
-    for skill in tpl.get("skills") or []:
-        save_skill(conn, bot_id, name=skill["name"], body=skill["body"], author=actor)
+    for skill in tpl.get("skills") or []:  # a library key, or a skill written inline
+        if isinstance(skill, str):
+            add_library_skill(conn, bot_id, skill, author=actor)
+        else:
+            save_skill(conn, bot_id, name=skill["name"], body=skill["body"], author=actor, tools=skill.get("tools") or [])
     return get_bot(conn, bot_id)
 
 
@@ -270,6 +311,26 @@ def set_trigger_enabled(conn: Connection, bot_id: str, trigger_id: str, enabled:
                  {"e": enabled, "n": next_run, "t": trigger_id})
 
 
+def update_trigger(conn: Connection, bot_id: str, trigger_id: str, config: dict[str, Any]) -> dict[str, Any]:
+    """Replace a trigger's settings (D-257: schedules are editable). Kind and webhook secret stay; a cron moves to its
+    next slot under the new expression."""
+    from seleric_swarm.services.bots.schedule import next_cron
+
+    row = conn.execute(text("SELECT kind, enabled FROM bots.triggers WHERE trigger_id = :t AND bot_id = :b"),
+                       {"t": trigger_id, "b": bot_id}).mappings().first()
+    if row is None:
+        raise KeyError(trigger_id)
+    config = check_trigger(row["kind"], config)
+    sets = "config = CAST(:c AS jsonb)"
+    params: dict[str, Any] = {"c": _j(config), "t": trigger_id}
+    if row["kind"] == "cron":
+        sets += ", next_run_at = :n"
+        params["n"] = next_cron(config["cron"], config["timezone"]) if row["enabled"] else None
+    conn.execute(text(f"UPDATE bots.triggers SET {sets} WHERE trigger_id = :t"), params)
+    return dict(conn.execute(text(f"SELECT {_TRIGGER_COLS} FROM bots.triggers WHERE trigger_id = :t"),
+                             {"t": trigger_id}).mappings().one())
+
+
 def delete_trigger(conn: Connection, bot_id: str, trigger_id: str) -> None:
     conn.execute(text("DELETE FROM bots.triggers WHERE trigger_id = :t AND bot_id = :b"), {"t": trigger_id, "b": bot_id})
 
@@ -290,9 +351,14 @@ def enqueue_run(conn: Connection, bot_id: str, *, kind: str, reason: str, query:
         if seen:
             return {"run_id": seen[0], "status": "duplicate"}
     entry = {"kind": kind, "reason": reason, "trigger_id": trigger_id, "dedupe_key": dedupe_key, **(detail or {})}
-    if kind in AUTO_KINDS:  # chat/manual always get their own run: the person is waiting for that answer
-        waiting = conn.execute(text("""SELECT run_id FROM bots.runs WHERE bot_id = :b AND status = 'queued'
-                                       AND trigger_kind = ANY(:auto) ORDER BY created_at LIMIT 1 FOR UPDATE"""),
+    # chat/manual always get their own run: the person is waiting for that answer. D-257: so does a schedule with its
+    # own task (a report), and nothing merges into one: its task, format and recipients are its trigger's.
+    if kind in AUTO_KINDS and not _has_task(conn, trigger_id):
+        waiting = conn.execute(text("""SELECT r.run_id FROM bots.runs r WHERE r.bot_id = :b AND r.status = 'queued'
+                                       AND r.trigger_kind = ANY(:auto)
+                                       AND NOT EXISTS (SELECT 1 FROM bots.triggers t WHERE t.trigger_id = r.trigger_id
+                                                       AND COALESCE(t.config->>'task', '') <> '')
+                                       ORDER BY r.created_at LIMIT 1 FOR UPDATE OF r"""),
                                {"b": bot_id, "auto": list(AUTO_KINDS)}).first()
         if waiting:
             conn.execute(text("UPDATE bots.runs SET merged = merged || CAST(:m AS jsonb) WHERE run_id = :r"),
@@ -307,6 +373,18 @@ def enqueue_run(conn: Connection, bot_id: str, *, kind: str, reason: str, query:
                   "by": requested_by})
     _activity(conn, run_id, bot_id, kind="trigger", outcome="completed", summary=f"{kind.capitalize()}: {reason}", detail=entry)
     return {"run_id": run_id, "status": "queued"}
+
+
+def _has_task(conn: Connection, trigger_id: str | None) -> bool:
+    return bool(trigger_id) and bool(conn.execute(text(
+        "SELECT COALESCE(config->>'task', '') <> '' FROM bots.triggers WHERE trigger_id = :t"), {"t": trigger_id}).scalar())
+
+
+def get_trigger(conn: Connection, trigger_id: str | None) -> dict[str, Any] | None:
+    if not trigger_id:
+        return None
+    row = conn.execute(text(f"SELECT {_TRIGGER_COLS} FROM bots.triggers WHERE trigger_id = :t"), {"t": trigger_id}).mappings().first()
+    return dict(row) if row else None
 
 
 def skip_run(conn: Connection, bot_id: str, *, kind: str, reason: str, why: str, trigger_id: str | None,
@@ -414,27 +492,46 @@ def list_skills(conn: Connection, bot_id: str) -> list[dict[str, Any]]:
 
 
 def save_skill(conn: Connection, bot_id: str, *, name: str, body: str, author: str, enabled: bool = True,
-               skill_id: str | None = None) -> dict[str, Any]:
-    """Create a skill, or replace one (by id). Names are unique per bot."""
+               skill_id: str | None = None, tools: list[str] | None = None, library: str | None = None) -> dict[str, Any]:
+    """Create a skill, or replace one (by id). Names are unique per bot. ``tools=None`` keeps a replaced skill's tools."""
     name, body = name.strip(), body.strip()
+    tools_json = None if tools is None else _j(check_tools(list(tools)))
     if not name or not body:
         raise BotError("a skill needs a name and a body")
     taken = conn.execute(text("SELECT skill_id FROM bots.skills WHERE bot_id = :b AND name = :n"), {"b": bot_id, "n": name}).first()
     if taken and taken[0] != skill_id:
         raise BotError(f"this bot already has a skill named {name!r}")
     if skill_id:
-        done = conn.execute(text("""UPDATE bots.skills SET name = :n, body = :body, enabled = :e, author = :a, updated_at = NOW()
+        done = conn.execute(text("""UPDATE bots.skills SET name = :n, body = :body, enabled = :e, author = :a, updated_at = NOW(),
+                                    tools = COALESCE(CAST(:tools AS jsonb), tools)
                                     WHERE skill_id = :s AND bot_id = :b"""),
-                            {"n": name, "body": body, "e": enabled, "a": author, "s": skill_id, "b": bot_id}).rowcount
+                            {"n": name, "body": body, "e": enabled, "a": author, "s": skill_id, "b": bot_id,
+                             "tools": tools_json}).rowcount
         if not done:
             raise KeyError(skill_id)
     else:
         skill_id = new_id("skl")
-        conn.execute(text("""INSERT INTO bots.skills(skill_id, bot_id, name, body, enabled, author)
-                             VALUES (:s, :b, :n, :body, :e, :a)"""),
-                     {"s": skill_id, "b": bot_id, "n": name, "body": body, "e": enabled, "a": author})
+        conn.execute(text("""INSERT INTO bots.skills(skill_id, bot_id, name, body, enabled, author, tools, library)
+                             VALUES (:s, :b, :n, :body, :e, :a, CAST(:tools AS jsonb), :lib)"""),
+                     {"s": skill_id, "b": bot_id, "n": name, "body": body, "e": enabled, "a": author,
+                      "tools": tools_json or "[]", "lib": library})
     return dict(conn.execute(text("SELECT * FROM bots.skills WHERE skill_id = :s"), {"s": skill_id}).mappings().one())
 
 
 def delete_skill(conn: Connection, bot_id: str, skill_id: str) -> None:
     conn.execute(text("DELETE FROM bots.skills WHERE skill_id = :s AND bot_id = :b"), {"s": skill_id, "b": bot_id})
+
+
+def add_library_skill(conn: Connection, bot_id: str, key: str, *, author: str) -> dict[str, Any]:
+    """Turn on a library skill for this bot: its body and tools are copied in (then editable per bot). Already there:
+    switched on again, the bot's own edits kept."""
+    lib = skill_library().get(key)
+    if lib is None:
+        raise BotError(f"unknown skill {key!r}")
+    have = conn.execute(text("SELECT skill_id FROM bots.skills WHERE bot_id = :b AND library = :k"),
+                        {"b": bot_id, "k": key}).scalar()
+    if have:
+        conn.execute(text("UPDATE bots.skills SET enabled = TRUE, updated_at = NOW() WHERE skill_id = :s"), {"s": have})
+        return dict(conn.execute(text("SELECT * FROM bots.skills WHERE skill_id = :s"), {"s": have}).mappings().one())
+    return save_skill(conn, bot_id, name=lib["name"], body=lib["body"], author=author, tools=lib.get("tools") or [],
+                      library=key)
