@@ -74,4 +74,23 @@ describe("bot settings page", () => {
     await act(async () => { button("Add schedule").click(); }); // the editor's save; the opener hides while editing
     expect(addTrigger).toHaveBeenCalledWith("cron", expect.objectContaining({ cron: "0 9 * * 1", timezone: "Asia/Kolkata", task: "Email me last week's Meta report" }));
   });
+
+  it("runs a saved schedule from the list and the editor", async () => {
+    const runTrigger = vi.fn().mockResolvedValue(undefined);
+    const schedule = {
+      trigger_id: "trg_1", kind: "cron" as const, enabled: true, next_run_at: null, last_fired_at: null, state: null,
+      config: { cron: "0 9 * * *", timezone: "Asia/Kolkata", title: "Weekly Meta report", task: "Email me last week's Meta report" },
+    };
+    const withSchedule = { ...bot, triggers: [schedule] };
+    useBotsStore.setState({ bot: withSchedule, runTrigger });
+    await act(async () => {
+      root.render(<BotSettingsPage bot={withSchedule} section="schedules" onSection={() => {}} onBack={() => {}} onDeleted={() => {}} />);
+    });
+    await act(async () => { button("Run now").click(); });
+    expect(runTrigger).toHaveBeenCalledWith("trg_1");
+    await act(async () => { button("Edit").click(); });
+    await settle();
+    await act(async () => { button("Run now").click(); });
+    expect(runTrigger).toHaveBeenCalledTimes(2);
+  });
 });

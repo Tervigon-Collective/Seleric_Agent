@@ -174,6 +174,9 @@ export class BotsApi {
   deleteTrigger(id: string, triggerId: string): Promise<unknown> {
     return this.http.request(`/v1/bots/${enc(id)}/triggers/${enc(triggerId)}`, { method: "DELETE" });
   }
+  runTrigger(id: string, triggerId: string): Promise<{ run_id: string; status: string }> {
+    return this.http.request(`/v1/bots/${enc(id)}/triggers/${enc(triggerId)}/run`, { method: "POST" });
+  }
   run(id: string, kind: "manual" | "chat", message = ""): Promise<{ run_id: string; status: string }> {
     return this.http.request(`/v1/bots/${enc(id)}/runs`, json("POST", { kind, message }));
   }

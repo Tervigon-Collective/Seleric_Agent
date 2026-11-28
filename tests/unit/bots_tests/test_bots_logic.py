@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from seleric_swarm.agent.mcp_toolset import tool_defs
-from seleric_swarm.services.bots import store, worker
+from seleric_swarm.services.bots import schedule, store, worker
 from seleric_swarm.services.bots.schedule import next_cron
 
 
@@ -15,6 +15,17 @@ def test_cron_is_read_in_the_bots_timezone():
     assert next_cron("0 9 * * *", "Asia/Kolkata", datetime(2026, 11, 21, 3, 30, tzinfo=UTC)) == datetime(2026, 11, 22, 3, 30, tzinfo=UTC)
     # just before IST midnight → next morning, not the same UTC date
     assert next_cron("0 9 * * *", "Asia/Kolkata", datetime(2026, 11, 21, 18, 29, tzinfo=UTC)) == datetime(2026, 11, 22, 3, 30, tzinfo=UTC)
+
+
+def test_run_now_only_fires_a_schedule_of_this_bot():
+    bot = {"bot_id": "bot_1", "enabled": True}
+    cron = {"bot_id": "bot_1", "trigger_id": "trg_1", "kind": "cron", "config": {"cron": "0 9 * * *", "title": "Weekly"}}
+    with pytest.raises(store.BotError, match="only a schedule"):
+        schedule.run_now(None, bot, {**cron, "kind": "signal"}, who="me")  # type: ignore[arg-type]
+    with pytest.raises(store.BotError, match="paused"):
+        schedule.run_now(None, {**bot, "enabled": False}, cron, who="me")  # type: ignore[arg-type]
+    with pytest.raises(KeyError):
+        schedule.run_now(None, bot, {**cron, "bot_id": "other"}, who="me")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("kind,config", [

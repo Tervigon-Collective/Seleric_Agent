@@ -3,7 +3,7 @@
  * Hindsight + what it learned) · Schedules (when it runs, what to do, in what layout, to whom) · Chat · Advanced. */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "cn";
-import { ChevronLeftIcon, PlusIcon } from "../icons";
+import { ChevronLeftIcon, PlayIcon, PlusIcon } from "../icons";
 import { SafeContent } from "../SafeContent";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -357,6 +357,7 @@ function Memory({ bot }: { bot: Bot }) {
 function ScheduleEditor({ bot, trigger, onDone }: { bot: Bot; trigger?: BotTrigger; onDone: () => void }) {
   const addTrigger = useBotsStore((s) => s.addTrigger);
   const editTrigger = useBotsStore((s) => s.editTrigger);
+  const runTrigger = useBotsStore((s) => s.runTrigger);
   const busy = useBotsStore((s) => s.busy);
   const c = trigger?.config ?? {};
   const [parts, setParts] = useState<CronParts>(() => (c.cron ? parseCron(c.cron) : { freq: "weekly", days: [1], dom: 1, time: "09:00" }));
@@ -431,6 +432,12 @@ function ScheduleEditor({ bot, trigger, onDone }: { bot: Bot; trigger?: BotTrigg
       </label>
       <div className="flex flex-wrap items-center gap-2">
         <Button disabled={busy || !cron || (parts.freq === "weekly" && !parts.days.length)} onClick={() => void save()}>{trigger ? "Save schedule" : "Add schedule"}</Button>
+        {trigger && (
+          <Button variant="outline" disabled={busy || !bot.enabled} onClick={() => void runTrigger(trigger.trigger_id)}
+            title={bot.enabled ? "Run this schedule once now (saved settings)" : "Turn the bot on to run"}>
+            <PlayIcon />Run now
+          </Button>
+        )}
         <Button variant="ghost" onClick={onDone}>Cancel</Button>
         <span className="text-xs text-muted-foreground">{cronText(cron, tz)}</span>
       </div>
@@ -441,6 +448,8 @@ function ScheduleEditor({ bot, trigger, onDone }: { bot: Bot; trigger?: BotTrigg
 function Schedules({ bot }: { bot: Bot }) {
   const setTrigger = useBotsStore((s) => s.setTrigger);
   const deleteTrigger = useBotsStore((s) => s.deleteTrigger);
+  const runTrigger = useBotsStore((s) => s.runTrigger);
+  const busy = useBotsStore((s) => s.busy);
   const [editing, setEditing] = useState<string | null>(null);
   const schedules = (bot.triggers ?? []).filter((t) => t.kind === "cron");
   const defaults = (bot.notify?.email ?? []).join(", ") || "nobody yet";
@@ -461,6 +470,10 @@ function Schedules({ bot }: { bot: Bot }) {
                     {t.config.format_doc ? `Laid out like ${t.config.format_doc.name}` : "Usual layout"} · Emails {(t.config.email ?? []).join(", ") || defaults} · {triggerDetail(t)}
                   </p>
                 </div>
+                <Button variant="ghost" size="sm" disabled={busy || !bot.enabled} onClick={() => void runTrigger(t.trigger_id)}
+                  title={bot.enabled ? "Run this schedule once now" : "Turn the bot on to run"}>
+                  <PlayIcon />Run now
+                </Button>
                 <Button variant="ghost" size="sm" onClick={() => setEditing(t.trigger_id)}>Edit</Button>
                 <Button variant="ghost" size="sm" onClick={() => window.confirm("Delete this schedule?") && void deleteTrigger(t.trigger_id)}>Delete</Button>
               </Row>

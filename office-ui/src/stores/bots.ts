@@ -35,6 +35,7 @@ interface BotsStore {
   editTrigger: (triggerId: string, config: BotTrigger["config"]) => Promise<boolean>;
   deleteTrigger: (triggerId: string) => Promise<void>;
   runNow: (message?: string) => Promise<void>;
+  runTrigger: (triggerId: string) => Promise<void>;
   ask: (message: string) => Promise<void>;
   saveSkill: (skill: Pick<BotSkill, "name" | "body" | "enabled"> & { skill_id?: string }) => Promise<boolean>;
   deleteSkill: (skillId: string) => Promise<void>;
@@ -166,6 +167,11 @@ export const useBotsStore = create<BotsStore>((set, get) => {
     runNow: async (text = "") => {
       const id = get().selectedId;
       if (id && await attempt(() => botsApi.run(id, "manual", text))) await Promise.all([get().refresh(), get().loadInbox()]);
+    },
+
+    runTrigger: async (triggerId) => {
+      const id = get().selectedId;
+      if (id && await attempt(() => botsApi.runTrigger(id, triggerId))) await Promise.all([get().refresh(), get().loadInbox()]);
     },
 
     ask: async (text) => {

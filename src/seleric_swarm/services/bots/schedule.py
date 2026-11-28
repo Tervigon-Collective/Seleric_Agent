@@ -34,6 +34,22 @@ def fire(conn: Connection, trig: dict[str, Any], bot: dict[str, Any], *, kind: s
                              dedupe_key=dedupe_key, detail=detail, query=query)["status"]
 
 
+def run_now(conn: Connection, bot: dict[str, Any], trig: dict[str, Any], *, who: str) -> dict[str, Any]:
+    """Queue this schedule once with its task, format and recipients. Not limited like a due cron (same as Run now)."""
+    if trig.get("bot_id") != bot["bot_id"]:
+        raise KeyError(trig.get("trigger_id") or "trigger")
+    if trig.get("kind") != "cron":
+        raise store.BotError("only a schedule can be run this way")
+    if not bot["enabled"]:
+        raise store.BotError("this bot is paused; turn it on first")
+    cfg = trig.get("config") or {}
+    label = str(cfg.get("title") or cfg.get("task") or "schedule").strip()[:80] or "schedule"
+    result = store.enqueue_run(conn, bot["bot_id"], kind="cron", reason=f"run now by {who}: {label}",
+                               trigger_id=trig["trigger_id"], requested_by=who)
+    conn.execute(text("UPDATE bots.triggers SET last_fired_at = NOW() WHERE trigger_id = :t"), {"t": trig["trigger_id"]})
+    return result
+
+
 def due_cron(conn: Connection, now: datetime) -> list[dict[str, Any]]:
     return [dict(r) for r in conn.execute(text("""
         SELECT t.* FROM bots.triggers t JOIN bots.bots b ON b.bot_id = t.bot_id

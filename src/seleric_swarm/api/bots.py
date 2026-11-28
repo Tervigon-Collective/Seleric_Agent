@@ -9,6 +9,7 @@
 ``POST   /v1/bots/{id}/triggers``                 add a cron / signal / watch / webhook trigger (a webhook's secret is in this reply only)
 ``PATCH  /v1/bots/{id}/triggers/{tid}``           enable / disable, and/or new settings (D-257: schedules are editable)
 ``DELETE /v1/bots/{id}/triggers/{tid}``
+``POST   /v1/bots/{id}/triggers/{tid}/run``       run this schedule now (its task, layout, recipients; not limited)
 ``POST   /v1/bots/{id}/runs``                     run now (manual) or ask it something (chat)
 ``GET    /v1/bots/{id}/runs``                     recent runs (``?kind=chat`` for the conversation)
 ``GET    /v1/bots/inbox?days=1``                  every bot's non-chat runs since local midnight (D-253 inbox)
@@ -205,6 +206,19 @@ def set_trigger(bot_id: str, trigger_id: str, body: TriggerState, _: Principal =
 def delete_trigger(bot_id: str, trigger_id: str, _: Principal = Depends(request_principal)) -> None:
     with store.engine().begin() as conn:
         store.delete_trigger(conn, bot_id, trigger_id)
+
+
+@router.post("/{bot_id}/triggers/{trigger_id}/run", status_code=202)
+def run_trigger(bot_id: str, trigger_id: str, who: Principal = Depends(request_principal)) -> dict[str, Any]:
+    try:
+        with store.engine().begin() as conn:
+            bot = store.get_bot(conn, bot_id)
+            trig = store.get_trigger(conn, trigger_id)
+            if not trig or trig["bot_id"] != bot_id:
+                raise HTTPException(status_code=404, detail="trigger not found")
+            return schedule.run_now(conn, bot, trig, who=who.user_id)
+    except (store.BotError, KeyError) as exc:
+        raise _bad(exc) from exc
 
 
 @router.post("/{bot_id}/runs", status_code=202)
