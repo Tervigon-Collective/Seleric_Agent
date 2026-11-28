@@ -73,7 +73,11 @@ def loop_effort() -> str | None:
 
 def is_reasoning_model(name: str) -> bool:
     """Reasoning deployments take ``reasoning_effort`` and a completion cap that includes their thinking."""
-    return name.lower().startswith(("gpt-5", "o1", "o3", "o4"))
+    n = name.lower()
+    if n.startswith(("o1", "o3", "o4")):
+        return True
+    major = n.removeprefix("gpt-").split(".")[0].split("-")[0]  # gpt-6.2-astra -> 6, gpt-4o -> 4o
+    return n.startswith("gpt-") and major.isdigit() and int(major) >= 5
 
 
 class EffortModel(WrapperModel):
